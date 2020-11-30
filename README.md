@@ -4,9 +4,11 @@ Continued development on OldManBeard's CleanModels application for Neverwinter N
 # Installation
 
 On Ubuntu/Debian
-`$ git clone https://github.com/plenarius/cleanmodels`
-`$ cd cleanmodels`
-`$ sudo apt-get install swi-prolog`
-`$ swipl -p library=/usr/lib/swi-prolog/xpce/prolog/lib -g go -o cleanmodels352 -c cleanmodels352.pl`
+```
+$ git clone https://github.com/plenarius/cleanmodels
+$ cd cleanmodels
+$ sudo apt-get install swi-prolog
+$ swipl -p library=/usr/lib/swi-prolog/xpce/prolog/lib -g go -o cleanmodels352 -c cleanmodels352.pl
+```
 
 This will create an executable cleanmodels352 binary.
