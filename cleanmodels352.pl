@@ -7,6 +7,7 @@
 /* ============================== */ 
 
 :- dynamic bug_count/2, total_fixes/1.
+:- use_module(library(pce)).
 
 :- ensure_loaded(output_models).
 :- ensure_loaded(load_binary).

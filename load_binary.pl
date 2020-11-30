@@ -885,7 +885,7 @@ sg_collapse([F0|G1],Graph2,NewGraph2,F0) :-
   del_edges(Graph2,IntEdges,ExtGraph),
   compose([F0-G1],ExtGraph,OutEdgeGraph),
   edges(OutEdgeGraph,E1),
-  transpose(OutEdgeGraph,InEdgeGraph),
+  transpose_ugraph(OutEdgeGraph,InEdgeGraph),
   edges(InEdgeGraph,E2),
   ord_union(E1,E2,CrossEdges),
   del_vertices(ExtGraph,G1,RimGraph),
