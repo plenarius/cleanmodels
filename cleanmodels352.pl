@@ -65,6 +65,7 @@ go :-
   g_user_option(placeable_with_transparency,PlaceableWithTransparency),
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
+  g_user_option(render,RenderAll),
   % g_user_option(skinmesh_bodies,SkinMeshBodies),
   % g_user_option(rescaleXYZ,Rescale),
 
@@ -113,6 +114,7 @@ go :-
     % write('Skinmesh Bodies: '), write(SkinMeshBodies), nl
    ; true),
   write('Cull Invisible Meshes: '), write(InvisibleMeshCull), nl,
+  write('Render Trimesh: '), write(RenderAll), nl,
   % write('Rescale X,Y,Z: '), write(Rescale), nl,
   (secret(Secret), write('Secret option: '), write(Secret), nl, fail ; true),
   nl,
@@ -162,6 +164,7 @@ go :-
    % write(SmallLogStream,'Skinmesh Bodies: '), write(SmallLogStream,SkinMeshBodies), nl(SmallLogStream)
    ; true),
   write(SmallLogStream,'Cull Invisible Meshes: '), write(SmallLogStream,InvisibleMeshCull), nl(SmallLogStream),
+  write(SmallLogStream,'Render Trimesh: '), write(SmallLogStream,RenderAll), nl(SmallLogStream),
   % write(SmallLogStream,'Rescale X,Y,Z: '), write(SmallLogStream,Rescale), nl(SmallLogStream),
   (secret(Secret), write(SmallLogStream,'Secret option: '), write(SmallLogStream,Secret), nl(SmallLogStream), fail ; true),
   nl(SmallLogStream),
@@ -338,6 +341,7 @@ g_user_option(merge_by_bitmap,no).
 g_user_option(placeable_with_transparency,no).
 g_user_option(transparency_key,glass).
 g_user_option(invisible_mesh_cull,yes).
+g_user_option(render,default).
 % g_user_option(skinmesh_bodies,no_change).
 % g_user_option(rescaleXYZ,no).
 
@@ -393,6 +397,7 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog) :-
   g_user_option(placeable_with_transparency,PlaceableWithTransparency),
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
+  g_user_option(render,RenderAll),
   % g_user_option(skinmesh_bodies,SkinMeshBodies),
   % g_user_option(rescaleXYZ,Rescale),
 
@@ -440,6 +445,7 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog) :-
   writeq(:-asserta(g_user_option(placeable_with_transparency,PlaceableWithTransparency))), write('.'), nl,
   writeq(:-asserta(g_user_option(transparency_key,TransparencyKey))), write('.'), nl,
   writeq(:-asserta(g_user_option(invisible_mesh_cull,InvisibleMeshCull))), write('.'), nl,
+  writeq(:-asserta(g_user_option(render,RenderAll))), write('.'), nl,
   % writeq(:-asserta(g_user_option(skinmesh_bodies,SkinMeshBodies))), write('.'), nl,
   % writeq(:-asserta(g_user_option(rescaleXYZ,Rescale))), write('.'), nl,
 
@@ -582,6 +588,14 @@ do_gui :-
   send(@invisible_mesh_cull_menu,append,menu_item(no, message(@prolog,set_cull_invisible,no))),
   send(@invisible_mesh_cull_menu,default(InvisibleMeshCull)),
   send(@invisible_mesh_cull_menu,alignment(left)),
+
+  g_user_option(render,RenderAll),
+  send(@shadow_options,append,(new(@render_all_menu,menu('Render Trimeshes:',tick_box)))),
+  send(@render_all_menu,append,menu_item(all, message(@prolog,set_render_all,all))),
+  send(@render_all_menu,append,menu_item(none, message(@prolog,set_render_all,none))),
+  send(@render_all_menu,append,menu_item(default, message(@prolog,set_render_all,default))),
+  send(@render_all_menu,alignment(left)),
+  send(@render_all_menu,default(RenderAll)),
 
   new(@tile_options,dialog),
 
@@ -1146,6 +1160,7 @@ set_tile_water(F)        :- asserta(g_user_option(tile_water,F)).
 set_meshmerge(F)         :- asserta(g_user_option(merge_by_bitmap,F)).
 set_transparency_key(F)  :- asserta(g_user_option(transparency_key,F)).
 set_cull_invisible(F)    :- asserta(g_user_option(invisible_mesh_cull,F)).
+set_render_all(F)        :- asserta(g_user_option(render,F)).
 % set_skinmesh_bodies(F)   :- asserta(g_user_option(skinmesh_bodies,F)).
 
 /*

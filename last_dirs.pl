@@ -41,3 +41,4 @@
 :-asserta(g_user_option(placeable_with_transparency,no)).
 :-asserta(g_user_option(transparency_key,glass)).
 :-asserta(g_user_option(invisible_mesh_cull,yes)).
+:-asserta(g_user_option(render,all)).

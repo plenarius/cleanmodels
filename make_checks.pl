@@ -2041,6 +2041,20 @@ check_for(animmesh_ratios_agree,File,SmallLogStream) :-
 /* CM345d: also apply this to skinmeshes in character models     */
 /* ============================================================= */ 
 
+check_for(render_everything,File,_) :-
+  once(g_user_option(render,RenderAll)),
+  (RenderAll=all -> Rdel=0, Radd=1; RenderAll=none -> Rdel=1, Radd=0; fail),
+  clause(gotdata(File,Model,node(trimesh,NodeName)),true,NodeRef),
+  once((retract(gotdata(File,Model,NodeName,NodeRef,render(Rdel))); true)),
+  (\+gotdata(File,Model,NodeName,NodeRef,render(Radd)) ->
+     asserta(gotdata(File,Model,NodeName,NodeRef,render(Radd))),
+     tab(2), write('render set to '), write(Radd), write(' in trimesh '), write(NodeName), nl,
+     increment_bug_count(File)
+     ;
+     true
+  ),
+  fail.
+
 check_for(shadow_everything,File,_) :- 
   once(g_user_option(shadow,Shadow)),
   (Shadow=all -> Sdel=0, Sadd=1; Shadow=none -> Sdel=1, Sadd=0; fail),
