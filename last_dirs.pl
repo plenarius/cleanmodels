@@ -1,0 +1,43 @@
+:-asserta(g_indir('c:/users/dad/documents/may 2014/cm3/test data/tilefade test/cm352d')).
+:-asserta(g_outdir('c:/users/dad/documents/may 2014/cm3/test data/tilefade test/cm352d bis')).
+:-asserta(g_logfile('test.log')).
+:-asserta(g_pattern('*.mdl')).
+:-asserta(g_small_log('test Summary.log')).
+:-asserta(g_user_option(classification,tile)).
+:-asserta(g_user_option(snap,decimal)).
+:-asserta(g_user_option(tvert_snap,512)).
+:-asserta(g_user_option(shadow,none)).
+:-asserta(g_user_option(repivot,none)).
+:-asserta(g_user_option(allow_split,no)).
+:-asserta(g_user_option(min_Size,4)).
+:-asserta(g_user_option(use_Smoothed,use)).
+:-asserta(g_user_option(split_Priority,concave)).
+:-asserta(g_user_option('pivots_below_z=0',disallow)).
+:-asserta(g_user_option(move_bad_pivots,no)).
+:-asserta(g_user_option(force_white,yes)).
+:-asserta(g_user_option(do_water,no)).
+:-asserta(g_user_option(water_key,water)).
+:-asserta(g_user_option(dynamic_water,yes)).
+:-asserta(g_user_option(wave_height,5)).
+:-asserta(g_user_option(rotate_water,1)).
+:-asserta(g_user_option(foliage,ignore)).
+:-asserta(g_user_option(foliage_key,trefol)).
+:-asserta(g_user_option(splotch,ignore)).
+:-asserta(g_user_option(splotch_key,splotch)).
+:-asserta(g_user_option(rotate_ground,no_change)).
+:-asserta(g_user_option(chamfer,no_change)).
+:-asserta(g_user_option(ground_key,ground)).
+:-asserta(g_user_option(fix_overhangs,yes)).
+:-asserta(g_user_option(map_aabb_material,no)).
+:-asserta(g_user_option(map_aabb_from,0)).
+:-asserta(g_user_option(map_aabb_to,0)).
+:-asserta(g_user_option(slice,undo)).
+:-asserta(g_user_option(slice_height,5.0)).
+:-asserta(g_user_option(tile_raise,no)).
+:-asserta(g_user_option(tile_raise_amount,1)).
+:-asserta(g_user_option(tile_water,no_change)).
+:-asserta(g_user_option(tile_ground,no_change)).
+:-asserta(g_user_option(merge_by_bitmap,yes)).
+:-asserta(g_user_option(placeable_with_transparency,no)).
+:-asserta(g_user_option(transparency_key,glass)).
+:-asserta(g_user_option(invisible_mesh_cull,yes)).
