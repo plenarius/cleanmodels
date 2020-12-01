@@ -82,7 +82,7 @@ output_file(_).
 
 output_model(File,Model) :-
   gotdata(File,Model,classification(C)),
-  tab(2), write(classification), tab(1), write(C), nl,
+  tab(8), write(classification), tab(1), write(C), nl,
   fail.
 
 /* Suppressed in CM343f
@@ -104,12 +104,12 @@ output_model(File,Model) :-
 
 output_model(File,Model) :-
   gotdata(File,Model,setsupermodel(Model,S)),
-  tab(2), write(setsupermodel), tab(1), write(Model), tab(1), print(S), nl,
+  tab(8), write(setsupermodel), tab(1), write(Model), tab(1), print(S), nl,
   fail.
 
 output_model(File,Model) :-
   (gotdata(File,Model,setanimationscale(S)) -> true; S=1),
-  tab(2), print(setanimationscale(S)), nl,
+  tab(8), print(setanimationscale(S)), nl,
   fail.
 
 /* Suppressed in CM343f
@@ -185,29 +185,29 @@ output_tree(_,_,_).
   
 output_node(File,Model,NodeName,NodeRef) :-
   clause(gotdata(File,Model,node(NodeType,NodeName)),true,NodeRef),
-  write(node), tab(1), write(NodeType), tab(1), write(NodeName), nl,
+  tab(4), write(node), tab(1), write(NodeType), tab(1), write(NodeName), nl,
   fail.
 
 output_node(File,Model,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,parent(P)),
   (P=P1/_ -> Data=parent(P1) ; Data=parent(P)),
-  tab(2), print(Data), nl,
+  tab(8), print(Data), nl,
   fail.
 
 output_node(File,Model,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,'#part-number'(P)),
-  tab(2), write('#part-number'), tab(1), write(P), nl,
+  tab(8), write('#part-number'), tab(1), write(P), nl,
   fail.
 
 output_node(File,Model,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,Data),
   Data=..[A|_], \+outlistparm(A,_), A\=='parent', A\=='#part-number', A\=='sampleperiod',
-  tab(2), print(Data), nl,
+  tab(8), print(Data), nl,
   fail.
 
 output_node(File,Model,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,sampleperiod(_)),
-  tab(2), print(sampleperiod(0)), nl,
+  tab(8), print(sampleperiod(0)), nl,
   fail.
 
 output_node(File,Model,NodeName,NodeRef) :-
@@ -215,7 +215,7 @@ output_node(File,Model,NodeName,NodeRef) :-
   outlistparm(A,_), Q=..[A,N],
   \+ ((A=multimaterial, NodeType=aabb)),
   gotdata(File,Model,NodeName,NodeRef,Q),
-  tab(2), write(A), tab(1), (A\=aabb -> write(N), nl;true),
+  tab(8), write(A), tab(1), (A\=aabb -> write(N), nl;true),
   output_list(File,Model,NodeName,NodeRef,A,N,0),
   fail.
 
@@ -232,13 +232,13 @@ output_list(File,Model,NodeName,NodeRef,colors,N,N1) :-
   Q=..[colors,N1,R,G,B], 
   gotdata(File,Model,NodeName,NodeRef,Q),
   R1 is R/255, G1 is G/255, B1 is B/255,
-  tab(4), printlist([R1,G1,B1]), nl, !,
+  tab(12), printlist([R1,G1,B1]), nl, !,
   N2 is N1+1, output_list(File,Model,NodeName,NodeRef,colors,N,N2). 
 
 output_list(File,Model,NodeName,NodeRef,A,N,N1) :-
   A\==colors, outlistparm(A,W), W1 is W+1, functor(Q,A,W1), Q=..[A,N1|L], 
   gotdata(File,Model,NodeName,NodeRef,Q),
-  tab(4), printlist(L), nl, !,
+  tab(12), printlist(L), nl, !,
   N2 is N1+1, output_list(File,Model,NodeName,NodeRef,A,N,N2). 
 
 outlistparm(multimaterial,1).
@@ -269,22 +269,22 @@ outlistparm(weights,1).
 
 output_anim(File,Model,AnimName) :-
   gotdata(File,Model,anim(AnimName),length(L)),
-  tab(2), print(length(L)), nl,
+  tab(8), print(length(L)), nl,
   fail.
 
 output_anim(File,Model,AnimName) :-
   gotdata(File,Model,anim(AnimName),transtime(L)),
-  tab(2), print(transtime(L)), nl,
+  tab(8), print(transtime(L)), nl,
   fail.
 
 output_anim(File,Model,AnimName) :-
   gotdata(File,Model,anim(AnimName),event(N,E)),
-  tab(2), print(event(N,E)), nl,
+  tab(8), print(event(N,E)), nl,
   fail.
 
 output_anim(File,Model,AnimName) :-
   gotdata(File,Model,anim(AnimName),animroot(Node)),
-  tab(2), print(animroot(Node)), nl, !,
+  tab(8), print(animroot(Node)), nl, !,
   output_anim_tree(File,Model,AnimName,'NULL').
 
 /* ================== */
@@ -344,21 +344,21 @@ output_anim_tree(_,_,_,_).
 output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
   clause(gotdata(File,Model,node(Type,NodeName)),true,NodeRef),
   (once((Type=light; Type=emitter; Type=reference; gotdata(File,Model,NodeName,NodeRef,AnimName,_))) -> OType=Type; OType=dummy),
-  tab(2), write(node), tab(1), write(OType), tab(1), write(NodeName), nl,
+  tab(8), write(node), tab(1), write(OType), tab(1), write(NodeName), nl,
   gotdata(File,Model,NodeName,NodeRef,parent(P)),
-  tab(4), write(parent), tab(1), (P=Parent/_ -> write(Parent) ; write(P)), nl,
+  tab(12), write(parent), tab(1), (P=Parent/_ -> write(Parent) ; write(P)), nl,
   fail.
 
 output_anim_node(File,Model,_,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,'#part-number'(P)),
-  tab(4), write('#part-number'), tab(1), write(P), nl,
+  tab(12), write('#part-number'), tab(1), write(P), nl,
   fail.
 
 output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
   clause(gotdata(File,Model,node(NodeType,NodeName)),true,NodeRef),
   gotdata(File,Model,NodeName,NodeRef,AnimName,Q),
   Q=..[Q0|_], once((paramtype(NodeType,T,Q0), atom(T))),
-  tab(4), print(Q), nl,
+  tab(12), print(Q), nl,
   fail.
 
 output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
@@ -373,9 +373,9 @@ output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
   gotdata(File,Model,NodeName,NodeRef,AnimName,Q),
   functor(Qk,Key,NArgs), /* Check added in CM344k */
   once(gotdata(File,Model,NodeName,NodeRef,AnimName,Qk)),
-  tab(4), print(Key), nl,
+  tab(12), print(Key), nl,
   output_animlist(File,Model,NodeName,NodeRef,AnimName,Key,NArgs,N,0),
-  tab(4), write(endlist), nl,
+  tab(12), write(endlist), nl,
   fail.
 
 output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
@@ -387,7 +387,7 @@ output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
   member(Q0,[verts,faces,tverts,tverts1,tverts2,tverts3]),
   Q=..[Q0,N],
   gotdata(File,Model,NodeName,NodeRef,Q),
-  tab(4), print(Q0), tab(1), write(N), nl,
+  tab(12), print(Q0), tab(1), write(N), nl,
   output_list(File,Model,NodeName,NodeRef,Q0,N,0),
   fail.
 
@@ -396,12 +396,12 @@ output_anim_node(File,Model,AnimName,NodeName,NodeRef) :-
   member(Q0,[animverts,animtverts]),
   Q=..[Q0,N],
   gotdata(File,Model,NodeName,NodeRef,AnimName,Q),
-  tab(4), print(Q0), tab(1), write(N), nl,
+  tab(12), print(Q0), tab(1), write(N), nl,
   output_animlist(File,Model,NodeName,NodeRef,AnimName,Q0,4,N,0),
   fail.
 
 output_anim_node(_,_,_,_,_) :-
-  tab(2), write(endnode), nl.
+  tab(8), write(endnode), nl.
   
 /* ================== */
 /* output_animlist/9  */
@@ -421,11 +421,11 @@ output_animlist(File,Model,NodeName,NodeRef,AnimName,Key,NArgs,N,N1) :-
 /* =========================== */
 
 output_external_node_tree(File,Model,NodeName) :-
-  tab(2), write('node dummy '), write(NodeName), nl,
+  tab(8), write('node dummy '), write(NodeName), nl,
   external_node_parent(File,Model,NodeName,ParentName),
-  tab(4), write('parent '), write(ParentName), nl,
-  tab(4), write('#part-number -1'), nl,
-  tab(2), write('endnode'), nl,
+  tab(12), write('parent '), write(ParentName), nl,
+  tab(12), write('#part-number -1'), nl,
+  tab(8), write('endnode'), nl,
   fail.
 
 output_external_node_tree(File,Model,NodeName) :-
