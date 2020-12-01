@@ -283,7 +283,7 @@ check_and_output(File,OutDir,SmallLogStream) :-
 /* ============== */
 
 save_program :-
-  qsave_program('cleanmodels352.exe',[goal(go),stand_alone(true)]).
+  qsave_program('cleanmodels352',[goal(go),stand_alone(true),foreign(save)]).
 
 /* =========== */
 /* init_dirs/5 */
