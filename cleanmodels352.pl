@@ -174,7 +174,6 @@ go :-
   load_fix_models(InDir,OutDir,SmallLogStream),
   close(SmallLogStream),
   noprotocol,
-  nl, write('Program done. Hit ENTER key to close. '), get0(_),
   halt.
 
 /* ================= */
