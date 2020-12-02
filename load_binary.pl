@@ -505,8 +505,11 @@ get_common_mesh_data(File,Stream,ModelName,NodeName,NodeRef) :-
   get_int32(Stream,Tverts3RawDataPtr),
   get_int32(Stream,VertexNormalsPtr),
   get_int32(Stream,VertexColorsPtr),
-  ignore_bytes(24,Stream),
-  get_byte(Stream,LightMapped),
+  ignore_bytes(12,Stream),
+  get_int32(Stream,VertexTangentsPtr),
+  ignore_bytes(4,Stream),
+  get_int32(Stream,VertexBitangentsPtr),
+  ignore_bytes(8,Stream),
   get_byte(Stream,RotateTexture),
   ignore_bytes(10,Stream),
   byte_count(Stream,Return),
@@ -518,6 +521,8 @@ get_common_mesh_data(File,Stream,ModelName,NodeName,NodeRef) :-
   (TextureCount > 3 -> get_tverts(File,Stream,ModelName,NodeName,NodeRef,Tverts3RawDataPtr,VertexCount,'tverts3') ; true),
   get_vertexnormals(File,Stream,ModelName,NodeName,NodeRef,VertexNormalsPtr,VertexCount),
   get_vertexcolors(File,Stream,ModelName,NodeName,NodeRef,VertexColorsPtr,VertexCount),
+  get_vertexbitangents(File,Stream,VertexBitangentsPtr,VertexCount,VertexBitangentsList),
+  get_vertextangents(File,Stream,ModelName,NodeName,NodeRef,VertexTangentsPtr,VertexBitangentsList,VertexCount),
   get_faces(File,Stream,ModelName,NodeName,NodeRef,FaceArrayPtr,NFaces),
   seek(Stream,Return,bof,_),
   assertz(gotdata(File,ModelName,NodeName,NodeRef,diffuse(DiffuseR,DiffuseG,DiffuseB))),
@@ -651,6 +656,10 @@ getflaretextnames(File,Stream,ModelName,NodeName,NodeRef,[H|T],N,This) :-
 /* get_vertexnormals1/7 */
 /* get_vertexcolors/7   */
 /* get_vertexcolors1/7  */
+/* get_vertexbitangents/5  */
+/* get_vertexbitangent_list/4  */
+/* get_vertextangents/7  */
+/* get_vertextangents1/7 */
 /* ==================== */
 
 get_faces(_,_,_,_,_,0,_) :- !.
@@ -741,6 +750,7 @@ get_vertexnormals(File,Stream,ModelName,NodeName,NodeRef,VertexNormalsPtr,Vertex
   Start is RawDataOffset+12+VertexNormalsPtr,
   seek(Stream,Start,bof,_),
   get_vertexnormals1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,0),
+  assertz(gotdata(File,ModelName,NodeName,NodeRef,normals(VertexCount))),
   !.
 
 get_vertexnormals1(_,_,_,_,_,VertexCount,ThisVertex) :- ThisVertex>=VertexCount, !.
@@ -749,7 +759,7 @@ get_vertexnormals1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,ThisVertex
  get_float(Stream,X),
  get_float(Stream,Y),
  get_float(Stream,Z),
- assertz(gotbinary(NodeRef,File,vertex_normals(ThisVertex,X,Y,Z))),
+ assertz(gotdata(File,ModelName,NodeName,NodeRef,normals(ThisVertex,X,Y,Z))),
  NextVertex is ThisVertex+1,
  !,
  get_vertexnormals1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,NextVertex).
@@ -778,6 +788,51 @@ get_vertexcolors1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,ThisVertex)
  NextVertex is ThisVertex+1,
  !,
  get_vertexcolors1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,NextVertex).
+  
+get_vertexbitangents(_,_,-1,_,_) :- !.
+
+get_vertexbitangents(_,_,_,0,_) :- !.
+
+get_vertexbitangents(File,Stream,VertexBitangentsPtr,VertexCount,VertexBitangentList) :-
+  gotbinary(File,file_header(_,RawDataOffset,_)),
+  Start is RawDataOffset+12+VertexBitangentsPtr,
+  seek(Stream,Start,bof,_),
+  get_vertexbitangent_list(Stream,VertexCount,0,VertexBitangentList),
+  !.
+
+get_vertexbitangent_list(_,Num,This,[]) :- This>=Num, !.
+
+get_vertexbitangent_list(Stream,Num,This,[H|T]) :-
+  get_float(Stream,H),
+  Next is This+1,
+  !,
+  get_vertexbitangent_list(Stream,Num,Next,T).
+  
+get_vertextangents(_,_,_,_,_,-1,_,_) :- !.
+
+get_vertextangents(_,_,_,_,_,_,[],_) :- !.
+
+get_vertextangents(_,_,_,_,_,_,_,0) :- !.
+
+get_vertextangents(File,Stream,ModelName,NodeName,NodeRef,VertexTangentsPtr,VertexBitangentsList,VertexCount) :-
+  gotbinary(File,file_header(_,RawDataOffset,_)),
+  Start is RawDataOffset+12+VertexTangentsPtr,
+  seek(Stream,Start,bof,_),
+  get_vertextangents1(File,Stream,ModelName,NodeName,NodeRef,VertexBitangentsList,VertexCount,0),
+  assertz(gotdata(File,ModelName,NodeName,NodeRef,tangents(VertexCount))),
+  !.
+
+get_vertextangents1(_,_,_,_,_,_,VertexCount,ThisVertex) :- ThisVertex>=VertexCount, !.
+
+get_vertextangents1(File,Stream,ModelName,NodeName,NodeRef,VertexBitangentsList,VertexCount,ThisVertex) :-
+ get_float(Stream,X),
+ get_float(Stream,Y),
+ get_float(Stream,Z),
+ get_list_element(VertexBitangentsList,ThisVertex,Bitangent),
+ assertz(gotdata(File,ModelName,NodeName,NodeRef,tangents(ThisVertex,X,Y,Z,Bitangent))),
+ NextVertex is ThisVertex+1,
+ !,
+ get_vertextangents1(File,Stream,ModelName,NodeName,NodeRef,VertexBitangentsList,VertexCount,NextVertex).
   
 /* ======================= */
 /* get_vertexsets/9        */
@@ -932,10 +987,10 @@ sg_graph2(_,[]).
 sg_smooth(NodeRef,F1,F2) :-
   sg_adj(NodeRef,F1,F2,V1a,V2a),
   sg_adj(NodeRef,F2,F1,V2b,V1b),
-  gotbinary(NodeRef,_,vertex_normals(V1a,X1,Y1,Z1)),
-  gotbinary(NodeRef,_,vertex_normals(V1b,X1,Y1,Z1)),
-  gotbinary(NodeRef,_,vertex_normals(V2a,X2,Y2,Z2)),
-  gotbinary(NodeRef,_,vertex_normals(V2b,X2,Y2,Z2)).
+  gotbinary(NodeRef,_,normals(V1a,X1,Y1,Z1)),
+  gotbinary(NodeRef,_,normals(V1b,X1,Y1,Z1)),
+  gotbinary(NodeRef,_,normals(V2a,X2,Y2,Z2)),
+  gotbinary(NodeRef,_,normals(V2b,X2,Y2,Z2)).
 
 sg_adj(NodeRef,F1,F2) :- gotbinary(NodeRef,_,face_data(F1,_,_,_,_,_,F2,_,_,_,_,_)), F2\= -1.
 sg_adj(NodeRef,F1,F2) :- gotbinary(NodeRef,_,face_data(F1,_,_,_,_,_,_,F2,_,_,_,_)), F2\= -1.
@@ -1269,6 +1324,7 @@ sniff_byte(_).
 /* ================ */
 /* upcase_special/3 */
 /* cm3_is_digit/1   */
+/* get_list_element/1 */
 /* ================ */
 
 upcase_special(Model,RawNodeName,NodeName) :-
@@ -1314,6 +1370,10 @@ get_float_list(Stream,N,[H|T]) :-
   N1 is N-1,
   get_float_list(Stream,N1,T),
   !.
+
+get_list_element([],N,_) :- N=<0, !.
+
+get_list_element(List,Element,X) :- nth0(Element,List,X).
 
 /* =============== */
 /* get_ptr_array/2 */

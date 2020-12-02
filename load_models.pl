@@ -524,14 +524,14 @@ interpret_tokens(File,animnode(ModelName,NodeName,NodeRef,AnimName),animnode(Mod
 interpret_tokens(File,animnode(ModelName,NodeName,NodeRef,AnimName),alist(ModelName,NodeName,NodeRef,AnimName,Q0,W,0),[T0]) :-
   name(TN0,T0), downcase_atom(TN0,Q0),
   clause(gotdata(File,ModelName,node(animmesh,NodeName)),true,NodeRef),
-  member(Q0,[verts,tverts,faces,animverts,animtverts]),
+  member(Q0,[verts,tverts,faces,animverts,animtverts,normals,tangents]),
   paramtype(anim,mx(W),Q0),
   !.
 
 interpret_tokens(File,animnode(Model,NodeName,NodeRef,AnimName),nlist(Model,NodeName,NodeRef,AnimName,Q0,W,Max,0),[T0,T1|_]) :-
   name(TN0,T0), downcase_atom(TN0,Q0),
   clause(gotdata(File,Model,node(animmesh,NodeName)),true,NodeRef),
-  member(Q0,[verts,tverts,faces,animverts,animtverts]),
+  member(Q0,[verts,tverts,faces,animverts,animtverts,normals,tangents]),
   paramtype(anim,mx(W),Q0),
   my_number_chars(Max,T1), Max>0, !,
   Qx=..[Q0,_], retractall(gotdata(File,Model,NodeName,NodeRef,AnimName,Qx)),
@@ -670,7 +670,6 @@ paramtype(trimesh,man,texture1).
 paramtype(trimesh,man,texture2).
 paramtype(trimesh,man,materialname).
 paramtype(trimesh,mn1,tilefade).
-paramtype(trimesh,mn1,lightmapped).
 paramtype(trimesh,mn1,rotatetexture).
 paramtype(trimesh,mn3,center).
 paramtype(trimesh,man,center).
@@ -686,6 +685,8 @@ paramtype(trimesh,mx(3),texindices1).
 paramtype(trimesh,mx(3),texindices2).
 paramtype(trimesh,mx(3),texindices3).
 paramtype(trimesh,mx(8),faces).
+paramtype(trimesh,mx(3),normals).
+paramtype(trimesh,mx(4),tangents).
 
 paramtype(skin,A,B) :- paramtype(trimesh,A,B).
 paramtype(skin,mx(an),weights).
@@ -881,6 +882,8 @@ paramtype(anim,mx(3),tverts).
 paramtype(anim,mx(8),faces).
 paramtype(anim,mx(3),animverts).
 paramtype(anim,mx(3),animtverts).
+paramtype(anim,mx(3),normals).
+paramtype(anim,mx(4),tangents).
 
 paramtype(reference,A,B) :- paramtype(dummy,A,B).
 paramtype(reference,man,refmodel).

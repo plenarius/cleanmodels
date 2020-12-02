@@ -262,6 +262,8 @@ outlistparm(flarecolorshifts,3).
 /* outlistparm(animverts,3).  */
 /* outlistparm(animtverts,3). */
 outlistparm(weights,1).
+outlistparm(normals,3).
+outlistparm(tangents,4).
 
 /* ============= */
 /* output_anim/3 */
