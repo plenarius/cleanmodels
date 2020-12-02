@@ -664,10 +664,11 @@ paramtype(trimesh,mn1,shadow).
 paramtype(trimesh,mn1,beaming).
 paramtype(trimesh,mn1,render).
 paramtype(trimesh,mn1,transparencyhint).
+paramtype(trimesh,man,renderhint).
 paramtype(trimesh,man,bitmap).
 paramtype(trimesh,man,texture1).
 paramtype(trimesh,man,texture2).
-paramtype(trimesh,man,texture3).
+paramtype(trimesh,man,materialname).
 paramtype(trimesh,mn1,tilefade).
 paramtype(trimesh,mn1,lightmapped).
 paramtype(trimesh,mn1,rotatetexture).
