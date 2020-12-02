@@ -424,7 +424,7 @@ get_node_specific_data(File,Stream,ModelName,NodeName,NodeRef,97) :-
   get_int32(Stream,SkinWeightsRawPtr),
   get_int32(Stream,SkinBoneRefRawPtr),
   ignore_bytes(44,Stream),
-  get_bonepartnumbers(File,Stream,NodeRef,17,0),
+  get_bonepartnumbers(File,Stream,NodeRef,64,0),
   gotbinary(File,file_header(_,RawDataOffset,_)),
   gotdata(File,ModelName,NodeName,NodeRef,verts(NVerts)),
   Pos1 is RawDataOffset+12+SkinWeightsRawPtr,
@@ -608,7 +608,7 @@ do_skinbones(_,_,Weight,_,[]) :- Weight=:=0.0, !.
 
 do_skinbones(_,_,_,BoneRef,[]) :- BoneRef<0, !.
 
-do_skinbones(_,_,_,BoneRef,[]) :- BoneRef>17, !.
+do_skinbones(_,_,_,BoneRef,[]) :- BoneRef>64, !.
 
 do_skinbones(File,NodeRef,Weight,BoneRef,List) :-
   gotbinary(NodeRef,File,bonepartnumber(BoneRef,BonePartNumber)),

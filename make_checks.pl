@@ -1071,27 +1071,12 @@ check_for(unknown_bones,File,SmallLogStream) :-
   fail.
 
 check_for(too_many_bones,File,SmallLogStream) :-
-  gotdata(File,Model,classification(Classification)),
-  Classification\=='CHARACTER',
   clause(gotdata(File,Model,node(skin,NodeName)),true,NodeRef),
   bagof(W,N^gotdata(File,Model,NodeName,NodeRef,weights(N,W)),Bag), flatten(Bag,FlatBag),
   setof(Bone,(member(Bone,FlatBag), \+number(Bone)),AllBones), length(AllBones,NBones),
-  NBones>17,
-  report_error(['more than 17 bones in',NodeName],SmallLogStream),
-  bad_error(File),
-  fail.
-
-check_for(too_many_bones,File,SmallLogStream) :-
-  gotdata(File,Model,classification('CHARACTER')),
-  clause(gotdata(File,Model,node(skin,NodeName)),true,NodeRef),
-  bagof(W,N^gotdata(File,Model,NodeName,NodeRef,weights(N,W)),Bag), flatten(Bag,FlatBag),
-  setof(Bone,(member(Bone,FlatBag), \+number(Bone)),AllBones), length(AllBones,NBones),
-  (NBones>21 ->
-     report_error(['more than 21 bones in',NodeName],SmallLogStream),
+  (NBones>64 ->
+     report_error(['more than 64 bones in',NodeName],SmallLogStream),
      bad_error(File)
-     ;
-   NBones>17 ->
-     report_warning(['more than 17 bones in',NodeName,' - will not compile'],SmallLogStream)
      ;
    true),
   fail.
