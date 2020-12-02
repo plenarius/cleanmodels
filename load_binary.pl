@@ -509,7 +509,7 @@ get_common_mesh_data(File,Stream,ModelName,NodeName,NodeRef) :-
   get_int32(Stream,VertexTangentsPtr),
   ignore_bytes(4,Stream),
   get_int32(Stream,VertexBitangentsPtr),
-  ignore_bytes(8,Stream),
+  get_byte(Stream,LightMapped),
   get_byte(Stream,RotateTexture),
   ignore_bytes(10,Stream),
   byte_count(Stream,Return),
