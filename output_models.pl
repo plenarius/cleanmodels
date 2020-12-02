@@ -220,7 +220,7 @@ output_node(File,Model,NodeName,NodeRef) :-
   fail.
 
 output_node(_,_,_,_) :-
-  write(endnode), nl.
+  tab(4), write(endnode), nl.
 
 /* ============= */
 /* output_list/7 */
