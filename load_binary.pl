@@ -759,6 +759,7 @@ get_vertexnormals1(File,Stream,ModelName,NodeName,NodeRef,VertexCount,ThisVertex
  get_float(Stream,X),
  get_float(Stream,Y),
  get_float(Stream,Z),
+ assertz(gotbinary(NodeRef,File,vertex_normals(ThisVertex,X,Y,Z))),
  assertz(gotdata(File,ModelName,NodeName,NodeRef,normals(ThisVertex,X,Y,Z))),
  NextVertex is ThisVertex+1,
  !,
@@ -987,10 +988,10 @@ sg_graph2(_,[]).
 sg_smooth(NodeRef,F1,F2) :-
   sg_adj(NodeRef,F1,F2,V1a,V2a),
   sg_adj(NodeRef,F2,F1,V2b,V1b),
-  gotbinary(NodeRef,_,normals(V1a,X1,Y1,Z1)),
-  gotbinary(NodeRef,_,normals(V1b,X1,Y1,Z1)),
-  gotbinary(NodeRef,_,normals(V2a,X2,Y2,Z2)),
-  gotbinary(NodeRef,_,normals(V2b,X2,Y2,Z2)).
+  gotbinary(NodeRef,_,vertex_normals(V1a,X1,Y1,Z1)),
+  gotbinary(NodeRef,_,vertex_normals(V1b,X1,Y1,Z1)),
+  gotbinary(NodeRef,_,vertex_normals(V2a,X2,Y2,Z2)),
+  gotbinary(NodeRef,_,vertex_normals(V2b,X2,Y2,Z2)).
 
 sg_adj(NodeRef,F1,F2) :- gotbinary(NodeRef,_,face_data(F1,_,_,_,_,_,F2,_,_,_,_,_)), F2\= -1.
 sg_adj(NodeRef,F1,F2) :- gotbinary(NodeRef,_,face_data(F1,_,_,_,_,_,_,F2,_,_,_,_)), F2\= -1.
