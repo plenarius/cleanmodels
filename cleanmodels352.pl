@@ -8,6 +8,7 @@
 
 :- dynamic bug_count/2, total_fixes/1.
 :- use_module(library(pce)).
+:- use_module(library(optparse), [opt_arguments/3]).
 
 :- ensure_loaded(output_models).
 :- ensure_loaded(load_binary).
@@ -21,7 +22,7 @@
 version('CleanModels 3 Version 3.5.2d').
 
 go :-
-  init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog),
+  init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile),
   absolute_file_name(LogFile,[relative_to(OutDir)],AbsLogFile),
   absolute_file_name(SmallLog,[relative_to(OutDir)],AbsSmallLog),
   open(AbsSmallLog,write,SmallLogStream,[close_on_abort(true)]),
@@ -73,119 +74,125 @@ go :-
   write('Input Directory: '), write(InDir), nl,
   write('Files: '), write(Pattern), nl,
   write('Output Directory: '), write(OutDir), nl,
-  write('Output Model Class: '), write(Classification), nl,
-  write('Snap: '), write(Snap), nl,
-  write('Snap tverts: '), write(TSnap), nl,
-  write('Shadow: '), write(Shadow), nl,
-  (Shadow\=none -> write('Repivot: '), write(Repivot), nl; true),
-  (Repivot\=none -> write('Allow Split: '), write(Split), nl; true),
-  (Split\=no -> write('Min. Size: '), write(MinSize), nl; true),
-  (Split\=no -> write('Smoothing Groups: '), write(Smoothed), nl; true),
-  (Split\=no -> write('Split First: '), write(Priority), nl; true),
-  (Repivot\=none -> write('Pivots below Z=0: '), write(AllowBelow), nl; true),
-  (Repivot\=none -> write('Move Bad Pivots: '), write(MoveBadPivots), nl; true),
-  write('Force non-black nodes to ambient/diffuse 1 1 1: '), write(ForceWhite), nl,
-  ( once((Classification==tile; Classification==automatic)) ->
-    write('Apply Water Fixups: '), write(DoWater), nl,
-    (DoWater\=no -> write('Water Bitmap Key(s): '), write(WaterKey), nl; true),
-    (DoWater\=no -> write('Dynamic Water: '), write(DynamicWater), nl; true),
-    (DoWater\=no, DynamicWater==wavy -> write('Wave Height: '), write(WaveHeight), write('0cm'), nl; true),
-    (DoWater\=no -> write('Set rotatetexture to: '), write(RotateWater), nl; true),
-    (DoWater\=no, DynamicWater\=wavy -> write('Tile Water Repeat Pattern: '), write(TileWaterRepeatCount), nl; true),
-    write('Tree Foliage: '), write(Foliage), nl,
-    (Foliage\=ignore -> write('Foliage Bitmap Key(s): '), write(FoliageKey), nl; true),
-    write('Splotches: '), write(Splotch), nl,
-    (Splotch\=ignore -> write('Splotch Bitmap Key(s): '), write(SplotchKey), nl; true),
-    write('Ground rotatetexture to: '), write(RotateGround), nl,
-    write('Tile Edge Chamfers: '), write(Chamfer), nl,
-    write('Tile ground planes: '), write(TileGroundRepeatCount), nl,
-    ((RotateGround==no_change, Chamfer==no_change, TileGroundRepeatCount==no_change) -> true; write('Ground Key(s): '), write(GroundKey), nl),
-    write('Repair aabb overhangs: '), write(FixOverhangs), nl,
-    write('Change walkmesh materials: '), (MapAABB=='yes' -> write('from '), write(AABBFrom), write(' to '), write(AABBTo) ; write('no')), nl,
-    write('Slice: '), write(Slice), nl,
-    (Slice==yes -> write('Slice Height: '), write(SliceHeight), write('m'), nl; true),
-    write('Tile raise/lower: '), write(TileRaise),
-    (TileRaise\='no' -> write(' by '), write(TileRaiseAmount), write('m'); true), nl
-    ; true),
-  write('MeshMerge by bitmap: '), write(MergeBy), nl,
-  (once((Classification==character ; Classification==automatic)) ->
-    write('Placeable with transparency: '), write(PlaceableWithTransparency), nl,
-    (PlaceableWithTransparency\=no -> write('Transparency bitmap key(s): '), write(TransparencyKey), nl; true) %, 
-    % write('Skinmesh Bodies: '), write(SkinMeshBodies), nl
-   ; true),
-  write('Cull Invisible Meshes: '), write(InvisibleMeshCull), nl,
-  write('Render Trimesh: '), write(RenderAll), nl,
-  % write('Rescale X,Y,Z: '), write(Rescale), nl,
-  (secret(Secret), write('Secret option: '), write(Secret), nl, fail ; true),
-  nl,
+  (Decompile==false
+    ->
+      write('Output Model Class: '), write(Classification), nl,
+      write('Snap: '), write(Snap), nl,
+      write('Snap tverts: '), write(TSnap), nl,
+      write('Shadow: '), write(Shadow), nl,
+      (Shadow\=none -> write('Repivot: '), write(Repivot), nl; true),
+      (Repivot\=none -> write('Allow Split: '), write(Split), nl; true),
+      (Split\=no -> write('Min. Size: '), write(MinSize), nl; true),
+      (Split\=no -> write('Smoothing Groups: '), write(Smoothed), nl; true),
+      (Split\=no -> write('Split First: '), write(Priority), nl; true),
+      (Repivot\=none -> write('Pivots below Z=0: '), write(AllowBelow), nl; true),
+      (Repivot\=none -> write('Move Bad Pivots: '), write(MoveBadPivots), nl; true),
+      write('Force non-black nodes to ambient/diffuse 1 1 1: '), write(ForceWhite), nl,
+      ( once((Classification==tile; Classification==automatic)) ->
+        write('Apply Water Fixups: '), write(DoWater), nl,
+        (DoWater\=no -> write('Water Bitmap Key(s): '), write(WaterKey), nl; true),
+        (DoWater\=no -> write('Dynamic Water: '), write(DynamicWater), nl; true),
+        (DoWater\=no, DynamicWater==wavy -> write('Wave Height: '), write(WaveHeight), write('0cm'), nl; true),
+        (DoWater\=no -> write('Set rotatetexture to: '), write(RotateWater), nl; true),
+        (DoWater\=no, DynamicWater\=wavy -> write('Tile Water Repeat Pattern: '), write(TileWaterRepeatCount), nl; true),
+        write('Tree Foliage: '), write(Foliage), nl,
+        (Foliage\=ignore -> write('Foliage Bitmap Key(s): '), write(FoliageKey), nl; true),
+        write('Splotches: '), write(Splotch), nl,
+        (Splotch\=ignore -> write('Splotch Bitmap Key(s): '), write(SplotchKey), nl; true),
+        write('Ground rotatetexture to: '), write(RotateGround), nl,
+        write('Tile Edge Chamfers: '), write(Chamfer), nl,
+        write('Tile ground planes: '), write(TileGroundRepeatCount), nl,
+        ((RotateGround==no_change, Chamfer==no_change, TileGroundRepeatCount==no_change) -> true; write('Ground Key(s): '), write(GroundKey), nl),
+        write('Repair aabb overhangs: '), write(FixOverhangs), nl,
+        write('Change walkmesh materials: '), (MapAABB=='yes' -> write('from '), write(AABBFrom), write(' to '), write(AABBTo) ; write('no')), nl,
+        write('Slice: '), write(Slice), nl,
+        (Slice==yes -> write('Slice Height: '), write(SliceHeight), write('m'), nl; true),
+        write('Tile raise/lower: '), write(TileRaise),
+        (TileRaise\='no' -> write(' by '), write(TileRaiseAmount), write('m'); true), nl
+        ; true),
+      write('MeshMerge by bitmap: '), write(MergeBy), nl,
+      (once((Classification==character ; Classification==automatic)) ->
+        write('Placeable with transparency: '), write(PlaceableWithTransparency), nl,
+        (PlaceableWithTransparency\=no -> write('Transparency bitmap key(s): '), write(TransparencyKey), nl; true) %, 
+        % write('Skinmesh Bodies: '), write(SkinMeshBodies), nl
+       ; true),
+      write('Cull Invisible Meshes: '), write(InvisibleMeshCull), nl,
+      write('Render Trimesh: '), write(RenderAll), nl,
+      % write('Rescale X,Y,Z: '), write(Rescale), nl,
+      (secret(Secret), write('Secret option: '), write(Secret), nl, fail ; true),
+      nl,
 
-  write(SmallLogStream,Version), tab(SmallLogStream,1), write(SmallLogStream,TimeStamp), nl(SmallLogStream),
-  write(SmallLogStream,'Input Directory: '), write(SmallLogStream,InDir), nl(SmallLogStream),
-  write(SmallLogStream,'Files: '), write(SmallLogStream,Pattern), nl(SmallLogStream),
-  write(SmallLogStream,'Output Directory: '), write(SmallLogStream,OutDir), nl(SmallLogStream),
-  write(SmallLogStream,'Output Model Class: '), write(SmallLogStream,Classification), nl(SmallLogStream),
-  write(SmallLogStream,'Snap: '), write(SmallLogStream,Snap), nl(SmallLogStream),
-  write(SmallLogStream,'Snap tverts: '), write(SmallLogStream,TSnap), nl(SmallLogStream),
-  write(SmallLogStream,'Shadow: '), write(SmallLogStream,Shadow), nl(SmallLogStream),
-  (Shadow\=none -> write(SmallLogStream,'Repivot: '), write(SmallLogStream,Repivot), nl(SmallLogStream); true),
-  (Repivot\=none -> write(SmallLogStream,'Allow Split: '), write(SmallLogStream,Split), nl(SmallLogStream); true),
-  (Split\=no -> write(SmallLogStream,'Min. Size: '), write(SmallLogStream,MinSize), nl(SmallLogStream); true),
-  (Split\=no -> write(SmallLogStream,'Smoothing Groups: '), write(SmallLogStream,Smoothed), nl(SmallLogStream); true),
-  (Split\=no -> write(SmallLogStream,'Split First: '), write(SmallLogStream,Priority), nl(SmallLogStream); true),
-  (Repivot\=none -> write(SmallLogStream,'Pivots below Z=0: '), write(SmallLogStream,AllowBelow), nl(SmallLogStream); true),
-  (Repivot\=none -> write(SmallLogStream,'Move Bad Pivots: '), write(SmallLogStream,MoveBadPivots), nl(SmallLogStream); true),
-  write(SmallLogStream,'Force non-black nodes to ambient/diffuse 1 1 1: '), write(SmallLogStream,ForceWhite), nl(SmallLogStream),
-  ( once((Classification==tile; Classification==automatic)) ->
-    write(SmallLogStream,'Apply Water Fixups: '), write(SmallLogStream,DoWater), nl(SmallLogStream),
-    (DoWater\=no -> write(SmallLogStream,'Water Bitmap Key(s): '), write(SmallLogStream,WaterKey), nl(SmallLogStream); true),
-    (DoWater\=no -> write(SmallLogStream,'Dynamic Water : '), write(SmallLogStream,DynamicWater), nl(SmallLogStream); true),
-    (DoWater\=no, DynamicWater==wavy -> write(SmallLogStream,'Wave Height: '), write(SmallLogStream,WaveHeight), write(SmallLogStream,'0cm'), nl(SmallLogStream); true),
-    (DoWater\=no -> write(SmallLogStream,'Set rotatetexture to: '), write(SmallLogStream,RotateWater), nl(SmallLogStream); true),
-    (DoWater\=no, DynamicWater\=wavy -> write(SmallLogStream,'Tile Water Repeat Pattern: '), write(SmallLogStream,TileWaterRepeatCount), nl(SmallLogStream); true),
-    write(SmallLogStream,'Tree Foliage: '), write(SmallLogStream,Foliage), nl(SmallLogStream),
-    (Foliage\=ignore -> write(SmallLogStream,'Foliage Bitmap Key(s): '), write(SmallLogStream,FoliageKey), nl(SmallLogStream); true),
-    write(SmallLogStream,'Splotches: '), write(SmallLogStream,Splotch), nl(SmallLogStream),
-    (Splotch\=ignore -> write(SmallLogStream,'Splotch Bitmap Key(s): '), write(SmallLogStream,SplotchKey), nl(SmallLogStream); true),
-    write(SmallLogStream,'Ground rotatetexture to: '), write(SmallLogStream,RotateGround), nl(SmallLogStream),
-    write(SmallLogStream,'Tile Edge Chamfers: '), write(SmallLogStream,Chamfer), nl(SmallLogStream),
-    write(SmallLogStream,'Tile ground planes: '), write(SmallLogStream,TileGroundRepeatCount), nl(SmallLogStream),
-    ((RotateGround==no_change, Chamfer==no_change, TileGroundRepeatCount==no_change) -> true; write(SmallLogStream,'Ground Key(s): '), write(SmallLogStream,GroundKey), nl(SmallLogStream)),
-    write(SmallLogStream,'Repair aabb overhangs: '), write(SmallLogStream,FixOverhangs), nl(SmallLogStream),
-    write(SmallLogStream,'Change walkmesh materials: '), (MapAABB==yes -> write(SmallLogStream,'from '), write(SmallLogStream,AABBFrom), write(SmallLogStream,' to '), write(SmallLogStream,AABBTo) ; write(SmallLogStream,no)), nl(SmallLogStream),
-    write(SmallLogStream,'Slice: '), write(SmallLogStream,Slice), nl(SmallLogStream),
-    (Slice==yes -> write(SmallLogStream,'Slice Height: '), write(SmallLogStream,SliceHeight), write(SmallLogStream,'m'), nl(SmallLogStream); true),
-    write(SmallLogStream,'Tile raise/lower: '), write(SmallLogStream,TileRaise),
-    (TileRaise\='no' -> write(SmallLogStream,' by '), write(SmallLogStream,TileRaiseAmount), write(SmallLogStream,'m'); true), nl(SmallLogStream)
-    ; true),
-  write(SmallLogStream,'MeshMerge by bitmap: '), write(SmallLogStream,MergeBy), nl(SmallLogStream),
-  (once((Classification==character ; Classification==automatic)) ->
-   write(SmallLogStream,'Placeable with transparency: '), write(SmallLogStream,PlaceableWithTransparency), nl(SmallLogStream),
-   (PlaceableWithTransparency\=no -> write(SmallLogStream,'Transparency bitmap key(s): '), write(SmallLogStream,TransparencyKey), nl(SmallLogStream); true) %,
-   % write(SmallLogStream,'Skinmesh Bodies: '), write(SmallLogStream,SkinMeshBodies), nl(SmallLogStream)
-   ; true),
-  write(SmallLogStream,'Cull Invisible Meshes: '), write(SmallLogStream,InvisibleMeshCull), nl(SmallLogStream),
-  write(SmallLogStream,'Render Trimesh: '), write(SmallLogStream,RenderAll), nl(SmallLogStream),
-  % write(SmallLogStream,'Rescale X,Y,Z: '), write(SmallLogStream,Rescale), nl(SmallLogStream),
-  (secret(Secret), write(SmallLogStream,'Secret option: '), write(SmallLogStream,Secret), nl(SmallLogStream), fail ; true),
-  nl(SmallLogStream),
+      write(SmallLogStream,Version), tab(SmallLogStream,1), write(SmallLogStream,TimeStamp), nl(SmallLogStream),
+      write(SmallLogStream,'Input Directory: '), write(SmallLogStream,InDir), nl(SmallLogStream),
+      write(SmallLogStream,'Files: '), write(SmallLogStream,Pattern), nl(SmallLogStream),
+      write(SmallLogStream,'Output Directory: '), write(SmallLogStream,OutDir), nl(SmallLogStream),
+      write(SmallLogStream,'Output Model Class: '), write(SmallLogStream,Classification), nl(SmallLogStream),
+      write(SmallLogStream,'Snap: '), write(SmallLogStream,Snap), nl(SmallLogStream),
+      write(SmallLogStream,'Snap tverts: '), write(SmallLogStream,TSnap), nl(SmallLogStream),
+      write(SmallLogStream,'Shadow: '), write(SmallLogStream,Shadow), nl(SmallLogStream),
+      (Shadow\=none -> write(SmallLogStream,'Repivot: '), write(SmallLogStream,Repivot), nl(SmallLogStream); true),
+      (Repivot\=none -> write(SmallLogStream,'Allow Split: '), write(SmallLogStream,Split), nl(SmallLogStream); true),
+      (Split\=no -> write(SmallLogStream,'Min. Size: '), write(SmallLogStream,MinSize), nl(SmallLogStream); true),
+      (Split\=no -> write(SmallLogStream,'Smoothing Groups: '), write(SmallLogStream,Smoothed), nl(SmallLogStream); true),
+      (Split\=no -> write(SmallLogStream,'Split First: '), write(SmallLogStream,Priority), nl(SmallLogStream); true),
+      (Repivot\=none -> write(SmallLogStream,'Pivots below Z=0: '), write(SmallLogStream,AllowBelow), nl(SmallLogStream); true),
+      (Repivot\=none -> write(SmallLogStream,'Move Bad Pivots: '), write(SmallLogStream,MoveBadPivots), nl(SmallLogStream); true),
+      write(SmallLogStream,'Force non-black nodes to ambient/diffuse 1 1 1: '), write(SmallLogStream,ForceWhite), nl(SmallLogStream),
+      ( once((Classification==tile; Classification==automatic)) ->
+        write(SmallLogStream,'Apply Water Fixups: '), write(SmallLogStream,DoWater), nl(SmallLogStream),
+        (DoWater\=no -> write(SmallLogStream,'Water Bitmap Key(s): '), write(SmallLogStream,WaterKey), nl(SmallLogStream); true),
+        (DoWater\=no -> write(SmallLogStream,'Dynamic Water : '), write(SmallLogStream,DynamicWater), nl(SmallLogStream); true),
+        (DoWater\=no, DynamicWater==wavy -> write(SmallLogStream,'Wave Height: '), write(SmallLogStream,WaveHeight), write(SmallLogStream,'0cm'), nl(SmallLogStream); true),
+        (DoWater\=no -> write(SmallLogStream,'Set rotatetexture to: '), write(SmallLogStream,RotateWater), nl(SmallLogStream); true),
+        (DoWater\=no, DynamicWater\=wavy -> write(SmallLogStream,'Tile Water Repeat Pattern: '), write(SmallLogStream,TileWaterRepeatCount), nl(SmallLogStream); true),
+        write(SmallLogStream,'Tree Foliage: '), write(SmallLogStream,Foliage), nl(SmallLogStream),
+        (Foliage\=ignore -> write(SmallLogStream,'Foliage Bitmap Key(s): '), write(SmallLogStream,FoliageKey), nl(SmallLogStream); true),
+        write(SmallLogStream,'Splotches: '), write(SmallLogStream,Splotch), nl(SmallLogStream),
+        (Splotch\=ignore -> write(SmallLogStream,'Splotch Bitmap Key(s): '), write(SmallLogStream,SplotchKey), nl(SmallLogStream); true),
+        write(SmallLogStream,'Ground rotatetexture to: '), write(SmallLogStream,RotateGround), nl(SmallLogStream),
+        write(SmallLogStream,'Tile Edge Chamfers: '), write(SmallLogStream,Chamfer), nl(SmallLogStream),
+        write(SmallLogStream,'Tile ground planes: '), write(SmallLogStream,TileGroundRepeatCount), nl(SmallLogStream),
+        ((RotateGround==no_change, Chamfer==no_change, TileGroundRepeatCount==no_change) -> true; write(SmallLogStream,'Ground Key(s): '), write(SmallLogStream,GroundKey), nl(SmallLogStream)),
+        write(SmallLogStream,'Repair aabb overhangs: '), write(SmallLogStream,FixOverhangs), nl(SmallLogStream),
+        write(SmallLogStream,'Change walkmesh materials: '), (MapAABB==yes -> write(SmallLogStream,'from '), write(SmallLogStream,AABBFrom), write(SmallLogStream,' to '), write(SmallLogStream,AABBTo) ; write(SmallLogStream,no)), nl(SmallLogStream),
+        write(SmallLogStream,'Slice: '), write(SmallLogStream,Slice), nl(SmallLogStream),
+        (Slice==yes -> write(SmallLogStream,'Slice Height: '), write(SmallLogStream,SliceHeight), write(SmallLogStream,'m'), nl(SmallLogStream); true),
+        write(SmallLogStream,'Tile raise/lower: '), write(SmallLogStream,TileRaise),
+        (TileRaise\='no' -> write(SmallLogStream,' by '), write(SmallLogStream,TileRaiseAmount), write(SmallLogStream,'m'); true), nl(SmallLogStream)
+        ; true),
+      write(SmallLogStream,'MeshMerge by bitmap: '), write(SmallLogStream,MergeBy), nl(SmallLogStream),
+      (once((Classification==character ; Classification==automatic)) ->
+       write(SmallLogStream,'Placeable with transparency: '), write(SmallLogStream,PlaceableWithTransparency), nl(SmallLogStream),
+       (PlaceableWithTransparency\=no -> write(SmallLogStream,'Transparency bitmap key(s): '), write(SmallLogStream,TransparencyKey), nl(SmallLogStream); true) %,
+       % write(SmallLogStream,'Skinmesh Bodies: '), write(SmallLogStream,SkinMeshBodies), nl(SmallLogStream)
+       ; true),
+      write(SmallLogStream,'Cull Invisible Meshes: '), write(SmallLogStream,InvisibleMeshCull), nl(SmallLogStream),
+      write(SmallLogStream,'Render Trimesh: '), write(SmallLogStream,RenderAll), nl(SmallLogStream),
+      % write(SmallLogStream,'Rescale X,Y,Z: '), write(SmallLogStream,Rescale), nl(SmallLogStream),
+      (secret(Secret), write(SmallLogStream,'Secret option: '), write(SmallLogStream,Secret), nl(SmallLogStream), fail ; true),
+      nl(SmallLogStream),
 
-  ( once((Classification==tile; Classification==automatic)) -> load_edge_tiles(InDir) ; true ),
+      ( once((Classification==tile; Classification==automatic)) -> load_edge_tiles(InDir) ; true )
+    ;
+    write('Performing Binary Model Decompilations Only '), nl,
+    true
+  ),
   get_files(InDir,Pattern),
-  load_fix_models(InDir,OutDir,SmallLogStream),
+  load_fix_models(InDir,OutDir,SmallLogStream,Decompile),
   close(SmallLogStream),
   noprotocol,
   halt.
 
 /* ================= */
-/* load_fix_models/3 */
+/* load_fix_models/4 */
 /* ================= */
 
-load_fix_models(_,_,_) :-
+load_fix_models(_,_,_,_) :-
   retractall(total_fixes(_)),
   asserta(total_fixes(0)),
   fail.
 
-load_fix_models(InDir,OutDir,SmallLogStream) :-
+load_fix_models(InDir,OutDir,SmallLogStream,Decompile) :-
   mdl_file(File),
   clear_memory,
   cm3_load_file(InDir,File),
@@ -198,13 +205,18 @@ load_fix_models(InDir,OutDir,SmallLogStream) :-
      ;
      true
   ),
-  check_and_output(File,OutDir,SmallLogStream),
+  check_and_output(File,OutDir,SmallLogStream,Decompile),
   fail.
 
-load_fix_models(_,_,SmallLogStream) :-
-  total_fixes(Total),
-  write('Total Fixes = '), write(Total), nl,
-  write(SmallLogStream,'Total Fixes = '), write(SmallLogStream,Total), nl(SmallLogStream).
+load_fix_models(_,_,SmallLogStream,Decompile) :-
+  (Decompile==false
+    ->
+    total_fixes(Total),
+    write('Total Fixes = '), write(Total), nl,
+    write(SmallLogStream,'Total Fixes = '), write(SmallLogStream,Total), nl(SmallLogStream)
+    ;
+    true
+  ).
 
 /* ============== */
 /* clear_memory/0 */
@@ -248,27 +260,27 @@ clear_memory :-
   garbage_collect.
 
 /* ================== */
-/* check_and_output/3 */
+/* check_and_output/4 */
 /* ================== */
 
-check_and_output(File,_,SmallLogStream) :-
+check_and_output(File,_,SmallLogStream,_) :-
   load_failed(File),
   nl, nl,
   write(SmallLogStream,'**** '), write(SmallLogStream,File), write(SmallLogStream,' failed to load'),
   nl(SmallLogStream), nl(SmallLogStream), !.
 
-check_and_output(File,_,SmallLogStream) :-
-  write(SmallLogStream,File), nl(SmallLogStream), 
-  check_for(_,File,SmallLogStream),
+check_and_output(File,_,SmallLogStream,Decompile) :-
+  write(SmallLogStream,File), nl(SmallLogStream),
+  (Decompile==false -> check_for(_,File,SmallLogStream); true),
   fail.
 
-check_and_output(File,_,SmallLogStream) :-
+check_and_output(File,_,SmallLogStream,_) :-
   check_failed(File),
   write('*** Cannot output model - too buggy ***'), nl, nl,
   write(SmallLogStream,'**** '), write(SmallLogStream,File), write(SmallLogStream,' is too buggy to output'),
   nl(SmallLogStream), nl(SmallLogStream), !.
 
-check_and_output(File,OutDir,SmallLogStream) :-
+check_and_output(File,OutDir,SmallLogStream,_) :-
   working_directory(WkDir,OutDir),
   output_file(File),
   nl, nl,
@@ -285,7 +297,7 @@ save_program :-
   qsave_program('cleanmodels352',[goal(go),stand_alone(true),foreign(save)]).
 
 /* =========== */
-/* init_dirs/5 */
+/* init_dirs/6 */
 /* do_gui/0    */
 /* =========== */
 
@@ -344,14 +356,37 @@ g_user_option(render,default).
 % g_user_option(skinmesh_bodies,no_change).
 % g_user_option(rescaleXYZ,no).
 
-init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog) :-
+init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   /* InitFile = 'last_dirs.pl', */
-  /* For compatibility across SWI-Prolog 6/7 because the meaning of argv changed */
-  current_prolog_flag(version,V), (V>=60502 -> Flag=os_argv ; Flag=argv), 
-  current_prolog_flag(Flag,[_|Arg]),
-  (current_prolog_flag(saved_program,true), Arg\==[] -> [InitFile|_]=Arg ; InitFile = 'last_dirs.pl'),
+  OptsSpec =
+     [[opt(gui), type(boolean), default(true),
+        longflags(['gui']),
+        help('opens the ui for flag selection')],
+     [opt(decompile), type(boolean), default(false),
+        shortflags(['d']), longflags(['decompile']),
+        help('only does decompilation, no fixes')],
+     [opt(indir), meta('DIR'), type(atom), default(''),
+        shortflags([i]), longflags(['indir']),
+        help('DIR containing models to be fixed/decompiled')],
+     [opt(outdir), type(atom), default(''),
+        shortflags([o]), longflags(['outdir']),
+        help('output directory of fixed/decompiled models')],
+     [opt(pattern), type(atom), default(''),
+        shortflags([p]), longflags(['pattern']),
+        help('filename pattern of models to process')]
+     ],
+  opt_arguments(OptsSpec, Opts, PositionalArgs),
+  (current_prolog_flag(saved_program,true), PositionalArgs\==[] -> [InitFile|_]=PositionalArgs ; InitFile = 'last_dirs.pl'),
+  memberchk(gui(Gui), Opts),
+  memberchk(decompile(Decompile), Opts),
+  memberchk(indir(OptsInDir), Opts),
+  memberchk(outdir(OptsOutDir), Opts),
+  memberchk(pattern(OptsPattern), Opts),
   (exists_file(InitFile) -> consult(InitFile); true),
-  do_gui,
+  (OptsInDir\=='' -> set_indir(OptsInDir) ; true),
+  (OptsOutDir\=='' -> set_outdir(OptsOutDir) ; true),
+  (OptsPattern\=='' -> set_pattern(OptsPattern) ; true),
+  (Gui==true -> do_gui; true),
   g_indir(InDir),
   g_pattern(Pattern),
   g_outdir(OutDir),
