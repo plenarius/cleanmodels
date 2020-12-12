@@ -90,7 +90,7 @@ cm3_load_file(InDir,File) :-
   (load_failed(File) ->
      write('** Load failed for file '), write(File), write(' **'), nl
      ;
-     write(File), write(' loaded.'), nl
+     write('MDL '), write(File), write(' loaded.'), nl
   ),
   working_directory(_,WkDir).
 

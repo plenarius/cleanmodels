@@ -20,6 +20,7 @@
 /* =============== */
 
 import_binary(File) :-
+  write('Binary file '), write(File), write(' detected, attempting import.'), nl,
   clear_binary_data,
   open(File,read,Stream,[type(binary)]),
   get_file_header(File,Stream),
@@ -131,6 +132,7 @@ get_model_header(File,Stream,ModelName,RootNodePtr,AnimHeaderPtrList) :-
   assertz(gotbinary(File,model_header(ModelName,ClassificationCode,IgnoreFog,AnimationScale,SuperModelName,bbMin(BBMinX,BBMinY,BBMinZ),bbMax(BBMaxX,BBMaxY,BBMaxZ),ModelRadius,RootNodePtr,AnimHeaderPtrList))),
   assertz(gotdata(File,ModelName,newmodel(ModelName))),
   (classification_code(ClassificationCode,Classification) -> assertz(gotdata(File,ModelName,classification(Classification))) ; true),
+  write('Binary model classified as '), write(Classification), nl,
   assertz(gotdata(File,ModelName,setsupermodel(ModelName,SuperModelName))),
   assertz(gotdata(File,ModelName,setanimationscale(AnimationScale))),
   assertz(gotdata(File,ModelName,bmin(BBMinX,BBMinY,BBMinZ))), /* Not recognised by NWMax */
