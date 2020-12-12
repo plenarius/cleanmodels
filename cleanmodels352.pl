@@ -290,11 +290,11 @@ check_and_output(File,OutDir,SmallLogStream,_) :-
   !.
 
 /* ============== */
-/* save_program/0 */
+/* save_program/1 */
 /* ============== */
 
-save_program :-
-  qsave_program('cleanmodels352',[goal(go),stand_alone(true),foreign(save)]).
+save_program(File) :-
+  qsave_program(File,[goal(go),stand_alone(true),foreign(save)]).
 
 /* =========== */
 /* init_dirs/6 */
