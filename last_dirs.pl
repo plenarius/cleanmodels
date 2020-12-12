@@ -1,12 +1,12 @@
-:-asserta(g_indir('c:/users/dad/documents/may 2014/cm3/test data/tilefade test/cm352d')).
-:-asserta(g_outdir('c:/users/dad/documents/may 2014/cm3/test data/tilefade test/cm352d bis')).
-:-asserta(g_logfile('test.log')).
+:-asserta(g_indir('input')).
+:-asserta(g_outdir('output')).
+:-asserta(g_logfile('cm.log')).
 :-asserta(g_pattern('*.mdl')).
-:-asserta(g_small_log('test Summary.log')).
-:-asserta(g_user_option(classification,tile)).
-:-asserta(g_user_option(snap,decimal)).
-:-asserta(g_user_option(tvert_snap,512)).
-:-asserta(g_user_option(shadow,none)).
+:-asserta(g_small_log('cm_summary.log')).
+:-asserta(g_user_option(classification,automatic)).
+:-asserta(g_user_option(snap,none)).
+:-asserta(g_user_option(tvert_snap,no)).
+:-asserta(g_user_option(shadow,default)).
 :-asserta(g_user_option(repivot,none)).
 :-asserta(g_user_option(allow_split,no)).
 :-asserta(g_user_option(min_Size,4)).
@@ -37,8 +37,8 @@
 :-asserta(g_user_option(tile_raise_amount,1)).
 :-asserta(g_user_option(tile_water,no_change)).
 :-asserta(g_user_option(tile_ground,no_change)).
-:-asserta(g_user_option(merge_by_bitmap,yes)).
+:-asserta(g_user_option(merge_by_bitmap,no)).
 :-asserta(g_user_option(placeable_with_transparency,no)).
 :-asserta(g_user_option(transparency_key,glass)).
 :-asserta(g_user_option(invisible_mesh_cull,yes)).
-:-asserta(g_user_option(render,all)).
+:-asserta(g_user_option(render,default)).
