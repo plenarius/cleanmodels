@@ -3,6 +3,7 @@
 /* CleanModels3  by OldMansBeard  */
 /*                                */
 /* This version dated 2014-05-08  */
+/* Later modifications by orth    */
 /*                                */
 /* ============================== */ 
 
@@ -279,7 +280,8 @@ check_and_output(File,_,SmallLogStream,_) :-
 
 check_and_output(File,OutDir,SmallLogStream,_) :-
   working_directory(WkDir,OutDir),
-  output_file(File),
+  downcase_atom(File,F1),
+  output_file(F1),
   nl, nl,
   write(SmallLogStream,'  Exported okay.'),
   nl(SmallLogStream), nl(SmallLogStream),

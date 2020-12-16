@@ -4,6 +4,7 @@
 /* Part of the CleanModels 3 suite by OldMansBeard    */
 /*                                                    */
 /* This version dated 2014-05-09                      */
+/* Later modifications by orth                        */
 /*                                                    */
 /* ================================================== */ 
 
@@ -60,7 +61,9 @@ check_for(classification,File,_) :-
 check_for(wrong_model_name,File,SmallLogStream) :-
   atom_concat(TileName,'.mdl',File),
   gotdata(File,Model,newmodel(Model)),
-  Model\=TileName,
+  downcase_atom(Model,MLower),
+  downcase_atom(TileName,TLower),
+  MLower\=TLower,
   report_error([Model,'is in the wrong file'],SmallLogStream),
   bad_error(File),
   fail.

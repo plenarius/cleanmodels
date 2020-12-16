@@ -3,7 +3,8 @@
 /* Predicates for reading NWN ascii .mdl files        */
 /* Part of the CleanModels 3 suite by OldMansBeard    */
 /*                                                    */
-/* This version dated 2014-04-25                    */
+/* This version dated 2014-04-25                      */
+/* Later modifications by orth                        */
 /*                                                    */
 /* ================================================== */ 
 
@@ -66,7 +67,7 @@ get_files1([],WkDir) :-
   !, working_directory(_,WkDir).
 
 get_files1([F|F0],WkDir) :-
-  downcase_atom(F,F1), assertz(mdl_file(F1)), !,
+  assertz(mdl_file(F)), !,
   get_files1(F0,WkDir).
 
 /* =============== */
@@ -77,6 +78,7 @@ cm3_load_file(InDir,File) :-
   working_directory(WkDir,InDir),
   retractall(load_failed(File)),
   (exists_file(File) ->
+    write('Attempting to read '), write(File), nl,
     open(File,read,Stream0,[type(binary)]),
     get_byte(Stream0,Test0),
     get_word(Stream0,3,Test),

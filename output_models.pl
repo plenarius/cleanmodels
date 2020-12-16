@@ -4,6 +4,7 @@
 /* Part of the CleanModels 3 suite by OldMansBeard    */
 /*                                                    */
 /* This version dated 2013-08-10                      */
+/* Later modifications by orth                        */
 /*                                                    */
 /* ================================================== */ 
 
@@ -15,6 +16,7 @@ output_models :-
   mdl_file(File),
   \+ load_failed(File),
   \+ check_failed(File),
+  downcase_atom(File,F1), write(F1), nl, !,
   output_file(File),
   fail.
 

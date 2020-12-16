@@ -4,6 +4,7 @@
 /* Part of the CleanModels 3 suite by OldMansBeard         */
 /*                                                         */
 /* This version dated 2013-08-13                           */
+/* Later modifications by orth                             */
 /*                                                         */
 /* ======================================================= */ 
 
