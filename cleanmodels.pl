@@ -16,9 +16,8 @@
 :- ensure_loaded(fix_pivots).
 :- ensure_loaded(tilefade).
 :- ensure_loaded(rebuild_wok).
-:- ensure_loaded(skinmesh).
 
-version('CleanModels 3 Version 3.5.2d').
+version('CleanModels 3 Version 3.7.0').
 
 go :-
   init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile),
@@ -66,7 +65,6 @@ go :-
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
   g_user_option(render,RenderAll),
-  % g_user_option(skinmesh_bodies,SkinMeshBodies),
   % g_user_option(rescaleXYZ,Rescale),
 
   version(Version), write(Version), tab(1), write(TimeStamp), nl,
@@ -352,7 +350,6 @@ g_user_option(placeable_with_transparency,no).
 g_user_option(transparency_key,glass).
 g_user_option(invisible_mesh_cull,yes).
 g_user_option(render,default).
-% g_user_option(skinmesh_bodies,no_change).
 % g_user_option(rescaleXYZ,no).
 
 init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
@@ -437,7 +434,6 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
   g_user_option(render,RenderAll),
-  % g_user_option(skinmesh_bodies,SkinMeshBodies),
   % g_user_option(rescaleXYZ,Rescale),
 
   tell(InitFile),
@@ -485,7 +481,6 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   writeq(:-asserta(g_user_option(transparency_key,TransparencyKey))), write('.'), nl,
   writeq(:-asserta(g_user_option(invisible_mesh_cull,InvisibleMeshCull))), write('.'), nl,
   writeq(:-asserta(g_user_option(render,RenderAll))), write('.'), nl,
-  % writeq(:-asserta(g_user_option(skinmesh_bodies,SkinMeshBodies))), write('.'), nl,
   % writeq(:-asserta(g_user_option(rescaleXYZ,Rescale))), write('.'), nl,
 
   /* Support for secret options added in CM343f */
@@ -524,7 +519,6 @@ set_meshmerge(F)         :- asserta(g_user_option(merge_by_bitmap,F)).
 set_transparency_key(F)  :- asserta(g_user_option(transparency_key,F)).
 set_cull_invisible(F)    :- asserta(g_user_option(invisible_mesh_cull,F)).
 set_render_all(F)        :- asserta(g_user_option(render,F)).
-% set_skinmesh_bodies(F)   :- asserta(g_user_option(skinmesh_bodies,F)).
 
 /*
 set_xyz_scale0(no) :-

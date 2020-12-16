@@ -3375,48 +3375,6 @@ check_for(nodes_match_supermodel,File,_) :-
   (cm3_verbose ->tab(2), write('aligned position of '), write(NodeName), write(' to supermodel'), nl ; true),
   fail.
 
-check_for(skinmesh_bodies,File,SmallLogStream) :-
-  \+ check_failed(File),
-  gotdata(File,Model,classification('CHARACTER')),
-  once(g_user_option(skinmesh_bodies,SkinMeshBodies)), SkinMeshBodies=='make',
-  make_skinmesh_body(File,Model,SmallLogStream),
-  fail.
-
-/* Dropped in CM3.6.2b - we aren't going to use the wings node to animate heads */
-/*
-check_for(head_wings,File,_) :-
-  \+ check_failed(File),
-  gotdata(File,Model,classification('CHARACTER')),
-  \+sub_atom(Model,_,4,_,robe),
-  once(g_user_option(skinmesh_bodies,SkinMeshBodies)), SkinMeshBodies=='make',
-  clause(gotdata(File,Model,node(dummy,wings)),true,WingsRef),
-  clause(gotdata(File,Model,node(_,head_g)),true,HeadRef),
-  clause(gotdata(File,Model,wings,WingsRef,parent(P)),true,Eref),
-  (P\== head_g/HeadRef ->
-    erase(Eref),
-    asserta(gotdata(File,Model,wings,WingsRef,parent(head_g/HeadRef))),
-    tab(2), write('reparented wings node to head_g'), nl
-    ; true),
-  retractall(gotdata(File,Model,wings,WingsRef,position(_,_,_))),
-  asserta(gotdata(File,Model,wings,WingsRef,position(0,0,0))),
-  retractall(gotdata(File,Model,wings,WingsRef,orientation(_,_,_,_))),
-  asserta(gotdata(File,Model,wings,WingsRef,orientation(0,0,0,0))),
-  fail.
-*/
-
-check_for(head_wings,File,_) :-
-  \+ check_failed(File),
-  gotdata(File,Model,classification('CHARACTER')),
-  sub_atom(Model,_,4,_,robe),
-  once(g_user_option(skinmesh_bodies,SkinMeshBodies)), SkinMeshBodies=='make',
-  member(Part,[head_g,head,wings]),
-  clause(gotdata(File,Model,node(_,Part)),true,PartRef),
-  retractall(gotdata(File,Model,node(_,Part))),
-  retractall(gotdata(File,Model,Part,PartRef,_)),
-  retractall(gotdata(File,Model,Part,PartRef,_,_)),
-  tab(2), write(Part), write(' deleted from robe model '), write(Model), nl,
-  fail.
-
 check_for(correct_supermodel,File,_) :-
   \+ check_failed(File),
   gotdata(File,Model,classification('CHARACTER')),
