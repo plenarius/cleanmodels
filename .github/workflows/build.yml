@@ -189,8 +189,8 @@ jobs:
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "build${{ steps.vars.outputs.version }}-HEAD"
-        prerelease: true
-        draft: true
+        prerelease: false
+        draft: false
         title: "build${{ steps.vars.outputs.version }}-HEAD"
         files: |
           ./zips/cleanmodels-cli.linux.amd64.zip
@@ -203,8 +203,8 @@ jobs:
       with:
         repo_token: "${{ secrets.GITHUB_TOKEN }}"
         automatic_release_tag: "latest"
-        prerelease: true
-        draft: true
+        prerelease: false
+        draft: false
         title: "build${{ steps.vars.outputs.version }}-HEAD"
         files: |
           ./zips/cleanmodels-cli.linux.amd64.zip
