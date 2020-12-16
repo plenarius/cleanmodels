@@ -1,0 +1,212 @@
+name: Build CLI
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-16.04, macos-latest, ubuntu-latest]
+        include:
+          - os: ubuntu-16.04
+            arch: linux
+            zip_name: cleanmodels-cli.linux.amd64
+            executable: cleanmodels-cli
+            swipl-executable: swipl
+          - os: macos-latest
+            arch: macosx
+            zip_name: cleanmodels-cli.macosx.amd64
+            executable: cleanmodels-cli
+            swipl-executable: swipl
+          - os: ubuntu-latest
+            arch: windows
+            zip_name: cleanmodels-cli.windows.amd64
+            executable: cleanmodels-cli.exe
+            swipl-executable: swipl.exe
+            toolchain: -D CMAKE_TOOLCHAIN_FILE=cmake/cross/linux_win64.cmake
+
+    name: Building ${{ matrix.zip_name }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Checkout SWI-Prolog
+      uses: actions/checkout@v2
+      with:
+        repository: plenarius/swipl
+        path: ./swipl
+
+    - name: Set outputs
+      id: vars
+      run: |
+          echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+
+    - name: Update Embedded Version String with sha code
+      run: sed -i'.bak' -e "s:version('\(.*\)')\.:version\('\1 [${{ steps.vars.outputs.sha_short }}]'\)\.:g" cleanmodels.pl
+
+    - name: Install Ubuntu Build Dependencies
+      if: matrix.arch == 'linux'
+      run: sudo apt-get install ninja-build
+
+    - name: Install MacOS Build Dependencies
+      if: matrix.arch == 'macosx'
+      run: brew install ninja
+
+    - name: Install Windows Build Dependencies
+      if: matrix.arch == 'windows'
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt-get install wine-stable wine-binfmt
+        sudo apt-get install ninja-build mingw-w64 libz-mingw-w64-dev
+        sudo ln -s /usr/lib/gcc/x86_64-w64-mingw32/?.?-win32/libgcc_s_seh-1.dll /usr/x86_64-w64-mingw32/lib/libgcc_s_seh-1.dll
+        sudo update-binfmts --import /usr/share/binfmts/wine
+
+    - name: Create Build Environment
+      run: cmake -E make_directory ./swipl/build
+
+    - name: Configure CMake
+      env: 
+        MINGW64_ROOT: /usr/x86_64-w64-mingw32/
+      working-directory: ./swipl
+      shell: cmake -P {0}
+      run: |
+        set(ENV{PATH} "$ENV{GITHUB_WORKSPACE}:$ENV{PATH}")
+        execute_process(
+          COMMAND cmake ${{ matrix.toolchain }}
+            -B build
+            -S .
+            -D CMAKE_BUILD_TYPE=Release
+            -D USE_GMP=OFF
+            -D USE_TCMALLOC=OFF
+            -D SWIPL_SHARED_LIB=OFF
+            -D SWIPL_PACKAGES=OFF
+            -D INSTALL_DOCUMENTATION=OFF
+            -D MULTI_THREADED=OFF
+            -D BUILD_SWIPL_LD=OFF
+            -D BUILD_TESTING=OFF
+            -G Ninja
+          RESULT_VARIABLE result
+        )
+        if (NOT result EQUAL 0)
+          message(FATAL_ERROR "Bad exit status")
+        endif()
+
+    - name: Build SWI Prolog
+      shell: cmake -P {0}
+      working-directory: ./swipl/build
+      run: |
+        execute_process(
+          COMMAND ninja
+          RESULT_VARIABLE result
+        )
+        if (NOT result EQUAL 0)
+          message(FATAL_ERROR "Build failed")
+        endif()
+
+    - name: Build Clean Models CLI
+      shell: bash
+      run: ./swipl/build/src/${{ matrix.swipl-executable }} -g go --stand_alone --foreign=save -o ${{ matrix.executable }} -c cleanmodels.pl
+
+    - name: Restore Resource Hacker from Cache
+      if: matrix.arch == 'windows'
+      id: resourcehacker
+      uses: actions/cache@v1
+      with:
+        path: resourcehacker
+        key: resourcehacker
+
+    - name: Install Resource Hacker
+      if: |
+        matrix.arch == 'windows' &&
+        steps.resourcehacker.outputs.cache-hit != 'true'
+      run: |
+        mkdir resourcehacker
+        cd resourcehacker
+        wget http://www.angusj.com/resourcehacker/resource_hacker.zip
+        unzip resource_hacker.zip
+
+    - name: Update Windows Resource File
+      env:
+        TERM: dumb
+      if: matrix.arch == 'windows'
+      run: |
+        xvfb-run --server-args="-screen 0, 1280x720x24" -a \
+        wineconsole --backend=curses ".\resourcehacker\ResourceHacker.exe" -open ".\build\cleanmodels-cli.rc" -save ".\cleanmodels-cli.res" -action compile -log CON
+
+    - name: Update Windows Executable
+      env:
+        TERM: dumb
+      if: matrix.arch == 'windows'
+      run: |
+        xvfb-run --server-args="-screen 0, 1280x720x24" -a \
+        wineconsole --backend=curses ".\resourcehacker\ResourceHacker.exe" -open ".\${{ matrix.executable }}" -save ".\temp.exe" -action addoverwrite -res ".\cleanmodels-cli.res" -mask ,,,
+        mv temp.exe ${{ matrix.executable }}
+
+    - name: Compress
+      run: |
+        mkdir zips
+        zip ${{ github.workspace }}/zips/${{ matrix.zip_name }}.zip ${{ matrix.executable }} last_dirs.pl
+
+    - name: Upload Binaries
+      uses: actions/upload-artifact@v2
+      if: github.event_name == 'push'
+      with:
+       path: ${{ github.workspace }}/zips
+       name: ${{ matrix.zip_name }}.zip
+
+  release:
+    name: Uploading Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set outputs
+      id: vars
+      run: |
+          echo "::set-output name=version::$(grep version\(\' cleanmodels.pl | cut -d" " -f4 | cut -d"'" -f1)"
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v2
+      with:
+        path: ${{ github.workspace }}/zips
+
+    - name: Tag With Version and Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      if: github.event_name == 'push'
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "build${{ steps.vars.outputs.version }}-HEAD"
+        prerelease: true
+        draft: true
+        title: "build${{ steps.vars.outputs.version }}-HEAD"
+        files: |
+          ./zips/cleanmodels-cli.linux.amd64.zip
+          ./zips/cleanmodels-cli.macosx.amd64.zip
+          ./zips/cleanmodels-cli.windows.amd64.zip
+
+    - name: Tag With Latest and Release
+      uses: "marvinpinto/action-automatic-releases@latest"
+      if: github.event_name == 'push'
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: true
+        draft: true
+        title: "build${{ steps.vars.outputs.version }}-HEAD"
+        files: |
+          ./zips/cleanmodels-cli.linux.amd64.zip
+          ./zips/cleanmodels-cli.macosx.amd64.zip
+          ./zips/cleanmodels-cli.windows.amd64.zip
