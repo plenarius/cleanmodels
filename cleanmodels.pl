@@ -287,6 +287,15 @@ check_and_output(File,OutDir,SmallLogStream,_) :-
   !.
 
 /* ============== */
+/* show_help   /1 */
+/* ============== */
+
+show_help(OptsSpec) :-
+  opt_help(OptsSpec, HelpText),
+  write(HelpText), nl,
+  halt.
+
+/* ============== */
 /* save_program/1 */
 /* ============== */
 
@@ -295,7 +304,6 @@ save_program(File) :-
 
 /* =========== */
 /* init_dirs/6 */
-/* do_gui/0    */
 /* =========== */
 
 :- dynamic g_indir/1.
@@ -355,15 +363,15 @@ g_user_option(render,default).
 init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   /* InitFile = 'last_dirs.pl', */
   OptsSpec =
-     [[opt(gui), type(boolean), default(false),
-        longflags(['gui']),
-        help('opens the ui for flag selection')],
+     [[opt(help), type(boolean), default(false),
+        shortflags(['h']), longflags(['help']),
+        help('provides command line help')],
      [opt(decompile), type(boolean), default(false),
         shortflags(['d']), longflags(['decompile']),
         help('only does decompilation, no fixes')],
-     [opt(indir), meta('DIR'), type(atom), default(''),
+     [opt(indir), type(atom), default(''),
         shortflags([i]), longflags(['indir']),
-        help('DIR containing models to be fixed/decompiled')],
+        help('directory containing models to be fixed/decompiled')],
      [opt(outdir), type(atom), default(''),
         shortflags([o]), longflags(['outdir']),
         help('output directory of fixed/decompiled models')],
@@ -376,7 +384,8 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
      ],
   opt_arguments(OptsSpec, Opts, PositionalArgs),
   (current_prolog_flag(saved_program,true), PositionalArgs\==[] -> [InitFile|_]=PositionalArgs ; InitFile = 'last_dirs.pl'),
-  memberchk(gui(Gui), Opts),
+  memberchk(help(Help), Opts),
+  (Help==true -> show_help(OptsSpec) ; true),
   memberchk(decompile(Decompile), Opts),
   memberchk(indir(OptsInDir), Opts),
   memberchk(outdir(OptsOutDir), Opts),
@@ -387,8 +396,6 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   (OptsInDir\=='' -> set_indir(OptsInDir) ; true),
   (OptsOutDir\=='' -> set_outdir(OptsOutDir) ; true),
   (OptsPattern\=='' -> set_pattern(OptsPattern) ; true),
-  (Gui==true -> ensure_loaded(gui); true),
-  (Gui==true -> do_gui; true),
   g_indir(InDir),
   g_pattern(Pattern),
   g_outdir(OutDir),
