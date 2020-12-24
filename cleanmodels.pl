@@ -66,7 +66,7 @@ go :-
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
   g_user_option(render,RenderAll),
-  % g_user_option(rescaleXYZ,Rescale),
+  g_user_option(rescaleXYZ,Rescale),
 
   version(Version), write(Version), tab(1), write(TimeStamp), nl,
   write('Input Directory: '), write(InDir), nl,
@@ -116,7 +116,7 @@ go :-
        ; true),
       write('Cull Invisible Meshes: '), write(InvisibleMeshCull), nl,
       write('Render Trimesh: '), write(RenderAll), nl,
-      % write('Rescale X,Y,Z: '), write(Rescale), nl,
+      write('Rescale X,Y,Z: '), write(Rescale), nl,
       (secret(Secret), write('Secret option: '), write(Secret), nl, fail ; true),
       nl,
 
@@ -166,7 +166,7 @@ go :-
        ; true),
       write(SmallLogStream,'Cull Invisible Meshes: '), write(SmallLogStream,InvisibleMeshCull), nl(SmallLogStream),
       write(SmallLogStream,'Render Trimesh: '), write(SmallLogStream,RenderAll), nl(SmallLogStream),
-      % write(SmallLogStream,'Rescale X,Y,Z: '), write(SmallLogStream,Rescale), nl(SmallLogStream),
+      write(SmallLogStream,'Rescale X,Y,Z: '), write(SmallLogStream,Rescale), nl(SmallLogStream),
       (secret(Secret), write(SmallLogStream,'Secret option: '), write(SmallLogStream,Secret), nl(SmallLogStream), fail ; true),
       nl(SmallLogStream),
 
@@ -360,7 +360,7 @@ g_user_option(placeable_with_transparency,no).
 g_user_option(transparency_key,glass).
 g_user_option(invisible_mesh_cull,yes).
 g_user_option(render,default).
-% g_user_option(rescaleXYZ,no).
+g_user_option(rescaleXYZ,1.0).
 
 init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   /* InitFile = 'last_dirs.pl', */
@@ -443,7 +443,7 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   g_user_option(transparency_key,TransparencyKey),
   g_user_option(invisible_mesh_cull,InvisibleMeshCull),
   g_user_option(render,RenderAll),
-  % g_user_option(rescaleXYZ,Rescale),
+  g_user_option(rescaleXYZ,Rescale),
 
   tell(InitFile),
   writeq(:-asserta(g_indir(InDir))), write('.'), nl,
@@ -490,7 +490,7 @@ init_dirs(InDir,Pattern,OutDir,LogFile,SmallLog,Decompile) :-
   writeq(:-asserta(g_user_option(transparency_key,TransparencyKey))), write('.'), nl,
   writeq(:-asserta(g_user_option(invisible_mesh_cull,InvisibleMeshCull))), write('.'), nl,
   writeq(:-asserta(g_user_option(render,RenderAll))), write('.'), nl,
-  % writeq(:-asserta(g_user_option(rescaleXYZ,Rescale))), write('.'), nl,
+  writeq(:-asserta(g_user_option(rescaleXYZ,Rescale))), write('.'), nl,
 
   /* Support for secret options added in CM343f */
   (secret(Secret), writeq(:-asserta(secret(Secret))), write('.'), nl, fail ; true),
@@ -529,20 +529,10 @@ set_transparency_key(F)  :- asserta(g_user_option(transparency_key,F)).
 set_cull_invisible(F)    :- asserta(g_user_option(invisible_mesh_cull,F)).
 set_render_all(F)        :- asserta(g_user_option(render,F)).
 
-/*
-set_xyz_scale0(no) :-
-	asserta(g_user_option(rescaleXYZ,no)),
-	send(@rescaleX,active(@off)), send(@rescaleY,active(@off)), send(@rescaleZ,active(@off)).
-
-set_xyz_scale0(yes) :-
-	asserta(g_user_option(rescaleXYZ,yes)),
-	send(@rescaleX,active(@on)), send(@rescaleY,active(@on)), send(@rescaleZ,active(@on)).
-
 set_xyz_scaleX(_)        :- once(g_user_option(rescaleXYZ,R)), R==no, !.
 set_xyz_scaleX(Xs)       :- atom_number(Xs,X), asserta(g_user_option(rescaleXYZ,[X|_])).
 set_xyz_scaleY(_ )       :- once(g_user_option(rescaleXYZ,R)), R==no, !.
 set_xyz_scaleY(Ys)       :- once(g_user_option(rescaleXYZ,[X|_])), atom_number(Ys,Y), asserta(g_user_option(rescaleXYZ,[X,Y|_])).
 set_xyz_scaleZ(_ )       :- once(g_user_option(rescaleXYZ,R)), R==no, !.
 set_xyz_scaleZ(Zs)       :- once(g_user_option(rescaleXYZ,[X,Y|_])), atom_number(Zs,Z), asserta(g_user_option(rescaleXYZ,[X,Y,Z])).
-*/
 

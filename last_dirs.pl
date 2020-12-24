@@ -27,7 +27,7 @@
 :-asserta(g_user_option(rotate_ground,no_change)).
 :-asserta(g_user_option(chamfer,no_change)).
 :-asserta(g_user_option(ground_key,ground)).
-:-asserta(g_user_option(fix_overhangs,yes)).
+:-asserta(g_user_option(fix_overhangs,no)).
 :-asserta(g_user_option(map_aabb_material,no)).
 :-asserta(g_user_option(map_aabb_from,0)).
 :-asserta(g_user_option(map_aabb_to,0)).
@@ -42,3 +42,4 @@
 :-asserta(g_user_option(transparency_key,glass)).
 :-asserta(g_user_option(invisible_mesh_cull,yes)).
 :-asserta(g_user_option(render,default)).
+:-asserta(g_user_option(rescaleXYZ,[1.0,1.0,1.0])).
