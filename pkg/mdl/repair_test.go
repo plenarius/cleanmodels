@@ -464,7 +464,7 @@ func TestRepairPivots(t *testing.T) {
 	}
 	model := testModel(node)
 
-	msgs := RepairPivots(model)
+	msgs := RepairPivots(model, PivotOptions{})
 	if len(msgs) == 0 {
 		t.Fatal("expected at least one pivot message")
 	}

@@ -189,6 +189,30 @@ func partitionFaces(mesh *MeshData, faces []int32, minB, maxB Vec3) (left, right
 	return nil, nil, 0, ErrDegenerateAABBTree
 }
 
+// RemapAABBMaterial swaps face Material IDs on all AABB (walkmesh) nodes.
+// from and to are the material IDs to remap.
+func RemapAABBMaterial(model *Model, from, to int) []string {
+	var out []string
+	for _, n := range model.Nodes {
+		if n == nil || n.Aabb == nil || n.Mesh == nil {
+			continue
+		}
+		count := 0
+		fromID := int32(from)
+		toID := int32(to)
+		for i := range n.Mesh.Faces {
+			if n.Mesh.Faces[i].Material == fromID {
+				n.Mesh.Faces[i].Material = toID
+				count++
+			}
+		}
+		if count > 0 {
+			out = append(out, fmt.Sprintf("node %q: remapped %d walkmesh faces from material %d to %d", n.Name, count, from, to))
+		}
+	}
+	return out
+}
+
 func splitByAxis(mesh *MeshData, faces []int32, axis int, avgCoord float32) (left, right []int32) {
 	for _, fi := range faces {
 		c := faceCentroid(mesh, fi).Index(axis)

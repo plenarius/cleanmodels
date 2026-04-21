@@ -70,6 +70,34 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 	return msgs
 }
 
+// UndoTileFade reverses a previous tilefade slice operation. Nodes with
+// TileFade==2 are deleted entirely; all other non-zero TileFade values
+// are reset to 0.
+func UndoTileFade(model *Model) []string {
+	var msgs []string
+	if model == nil {
+		return msgs
+	}
+	kept := make([]*Node, 0, len(model.Nodes))
+	for _, n := range model.Nodes {
+		if n == nil {
+			kept = append(kept, n)
+			continue
+		}
+		if n.Mesh != nil && n.Mesh.TileFade == 2 {
+			msgs = append(msgs, fmt.Sprintf("tilefade-undo: deleted node %q (TileFade=2)", n.Name))
+			continue
+		}
+		if n.Mesh != nil && n.Mesh.TileFade != 0 {
+			msgs = append(msgs, fmt.Sprintf("tilefade-undo: reset TileFade on node %q from %d to 0", n.Name, n.Mesh.TileFade))
+			n.Mesh.TileFade = 0
+		}
+		kept = append(kept, n)
+	}
+	model.Nodes = kept
+	return msgs
+}
+
 func uniqueMeshNodeName(m *Model, base string) string {
 	if m.FindNode(base) == nil {
 		return base

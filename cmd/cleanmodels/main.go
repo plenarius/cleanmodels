@@ -123,6 +123,39 @@ func runLegacy(args []string) int {
 	fixAll := fs.Bool("fix", false, "enable all repairs")
 	compileFlag := fs.Bool("compile", false, "compile ASCII to binary")
 
+	// Pivot sub-options
+	pivotAllowSplit := fs.Bool("pivot-allow-split", true, "allow mesh splitting when pivot search fails")
+	pivotBelowZ0 := fs.String("pivot-below-z0", "disallow", "Z>=0 constraint: disallow, allow, slice")
+	pivotMoveBad := fs.String("pivot-move-bad", "no", "fallback placement: no, top, middle, bottom")
+	pivotSmoothing := fs.String("pivot-smoothing", "use", "smoothing group handling: use, protect, ignore")
+	pivotMinFaces := fs.Int("pivot-min-faces", 4, "minimum faces per split side")
+	pivotSplitFirst := fs.String("pivot-split-first", "concave", "split priority: convex, concave")
+
+	// Tile operations
+	water := fs.Bool("water", false, "enable water processing")
+	waterKey := fs.String("water-key", "", "water bitmap substring key")
+	dynamicWater := fs.String("dynamic-water", "", "water animation mode: yes, no, wavy")
+	waveHeight := fs.Float64("wave-height", 0, "wave animation height")
+	rotateWater := fs.String("rotate-water", "", "set rotatetexture on water nodes: 0 or 1")
+	retileWater := fs.String("retile-water", "", "retile water UVs: 1, 2, 3")
+	foliage := fs.String("foliage", "", "foliage mode: tilefade, animate, de-animate, ignore")
+	foliageKey := fs.String("foliage-key", "", "foliage bitmap substring key")
+	splotch := fs.String("splotch", "", "splotch mode: animate")
+	splotchKey := fs.String("splotch-key", "", "splotch bitmap substring key")
+	rotateGround := fs.String("rotate-ground", "", "set rotatetexture on ground: 0 or 1")
+	groundKey := fs.String("ground-key", "", "ground bitmap substring key")
+	chamfer := fs.String("chamfer", "", "chamfer mode: add, delete")
+	retileGround := fs.String("retile-ground", "", "retile ground UVs: 1, 2, 3")
+	raiseLower := fs.String("raise-lower", "", "raise or lower tile: raise, lower")
+	raiseAmount := fs.Float64("raise-amount", 0, "raise/lower amount")
+	tilefadeUndo := fs.Bool("tilefade-undo", false, "undo tilefade slicing")
+
+	// Mesh extras
+	tvertSnap := fs.String("tvert-snap", "", "UV snap grid: 256, 512, 1024")
+	placeableTransparency := fs.Bool("placeable-transparency", false, "enable placeable transparency processing")
+	transparencyKey := fs.String("transparency-key", "", "transparency bitmap substring key")
+	remapWalkmeshMaterial := fs.String("remap-walkmesh-material", "", "AABB material remap: FROM:TO")
+
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [flags] <input_path> [output_path]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintf(os.Stderr, "Legacy mode. Consider using subcommands: check, repair, compile, decompile\n\n")
@@ -195,9 +228,38 @@ func runLegacy(args []string) int {
 			forceWhite:       *forceWhite,
 			mergeByBitmap:    *mergeByBitmap,
 			cullInvisible:    *cullInvisible,
+			pivot: pivotOpts{
+				allowSplit: *pivotAllowSplit,
+				belowZ0:    *pivotBelowZ0,
+				moveBad:    *pivotMoveBad,
+				smoothing:  *pivotSmoothing,
+				minFaces:   *pivotMinFaces,
+				splitFirst: *pivotSplitFirst,
+			},
+			tvertSnap:             *tvertSnap,
+			placeableTransparency: *placeableTransparency,
+			transparencyKey:       *transparencyKey,
+			remapWalkmeshMaterial: *remapWalkmeshMaterial,
+			tilefadeUndo:          *tilefadeUndo,
 		},
 		tileOpts: tileOpts{
-			tilefadeZ: float32(*tilefadeZ),
+			tilefadeZ:    float32(*tilefadeZ),
+			water:        *water,
+			waterKey:     *waterKey,
+			dynamicWater: *dynamicWater,
+			waveHeight:   *waveHeight,
+			rotateWater:  *rotateWater,
+			retileWater:  *retileWater,
+			foliage:      *foliage,
+			foliageKey:   *foliageKey,
+			splotch:      *splotch,
+			splotchKey:   *splotchKey,
+			rotateGround: *rotateGround,
+			groundKey:    *groundKey,
+			chamfer:      *chamfer,
+			retileGround: *retileGround,
+			raiseLower:   *raiseLower,
+			raiseAmount:  *raiseAmount,
 		},
 	}
 

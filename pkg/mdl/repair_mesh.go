@@ -300,6 +300,29 @@ func SnapVertices(model *Model, mode string) {
 	}
 }
 
+// SnapTVerts snaps UV texture vertex coordinates to a 1/grid resolution and sets W=0.
+// grid is the texture size (e.g. 256, 512, 1024).
+func SnapTVerts(model *Model, grid int) int {
+	if grid <= 0 {
+		return 0
+	}
+	g := float64(grid)
+	count := 0
+	for _, n := range model.Nodes {
+		if n == nil || n.Mesh == nil {
+			continue
+		}
+		for i := range n.Mesh.TVerts {
+			tv := &n.Mesh.TVerts[i]
+			tv.X = float32(math.Round(float64(tv.X)*g) / g)
+			tv.Y = float32(math.Round(float64(tv.Y)*g) / g)
+			tv.Z = 0
+			count++
+		}
+	}
+	return count
+}
+
 func snapVec3(v Vec3, grid float32) Vec3 {
 	return Vec3{
 		X: snapFloat(v.X, grid),

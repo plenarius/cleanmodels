@@ -35,6 +35,15 @@ type Event struct {
 	*Result `json:"result,omitempty"`
 }
 
+type pivotOpts struct {
+	allowSplit bool
+	belowZ0    string // "disallow", "allow", "slice"
+	moveBad    string // "no", "top", "middle", "bottom"
+	smoothing  string // "use", "protect", "ignore"
+	minFaces   int
+	splitFirst string // "convex", "concave"
+}
+
 type repairOpts struct {
 	fixPivots, fixAABB, fixTilefade, stripDegenerate bool
 	fixAnimations, reparentChildren, wrapRoot        bool
@@ -45,10 +54,34 @@ type repairOpts struct {
 	classification                                   string
 	snapMode                                         string
 	renderOverride, shadowOverride                   string
+
+	pivot pivotOpts
+
+	tvertSnap              string // "256", "512", "1024"
+	placeableTransparency  bool
+	transparencyKey        string
+	remapWalkmeshMaterial  string // "FROM:TO"
+	tilefadeUndo           bool
 }
 
 type tileOpts struct {
-	tilefadeZ float32
+	tilefadeZ     float32
+	water         bool
+	waterKey      string
+	dynamicWater  string // "yes", "no", "wavy"
+	waveHeight    float64
+	rotateWater   string // "0" or "1"
+	retileWater   string // "1", "2", "3"
+	foliage       string // "tilefade", "animate", "de-animate", "ignore"
+	foliageKey    string
+	splotch       string // "animate"
+	splotchKey    string
+	rotateGround  string // "0" or "1"
+	groundKey     string
+	chamfer       string // "add", "delete"
+	retileGround  string // "1", "2", "3"
+	raiseLower    string // "raise", "lower"
+	raiseAmount   float64
 }
 
 type procOpts struct {
@@ -230,7 +263,15 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 		}
 	}
 	if o.fixPivots {
-		msgs := mdl.RepairPivots(model)
+		popts := mdl.PivotOptions{
+			AllowSplit: o.pivot.allowSplit,
+			BelowZ0:    o.pivot.belowZ0,
+			MoveBad:    o.pivot.moveBad,
+			Smoothing:  o.pivot.smoothing,
+			MinFaces:   o.pivot.minFaces,
+			SplitFirst: o.pivot.splitFirst,
+		}
+		msgs := mdl.RepairPivots(model, popts)
 		for _, m := range msgs {
 			res.Repairs = append(res.Repairs, m)
 		}
@@ -284,6 +325,131 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 				res.Repairs = append(res.Repairs, fmt.Sprintf("split %d multiple edge(s) on shadow node %q to fix shadow tearing", fixed, n.Name))
 			}
 		}
+	}
+
+	if o.tilefadeUndo {
+		for _, m := range mdl.UndoTileFade(model) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tvertSnap != "" {
+		grid := 0
+		switch o.tvertSnap {
+		case "256":
+			grid = 256
+		case "512":
+			grid = 512
+		case "1024":
+			grid = 1024
+		}
+		if grid > 0 {
+			n := mdl.SnapTVerts(model, grid)
+			if n > 0 {
+				res.Repairs = append(res.Repairs, fmt.Sprintf("snapped %d tverts to 1/%d grid", n, grid))
+			}
+		}
+	}
+
+	if o.remapWalkmeshMaterial != "" {
+		parts := strings.SplitN(o.remapWalkmeshMaterial, ":", 2)
+		if len(parts) == 2 {
+			var from, to int
+			if _, err := fmt.Sscanf(parts[0], "%d", &from); err == nil {
+				if _, err := fmt.Sscanf(parts[1], "%d", &to); err == nil {
+					for _, m := range mdl.RemapAABBMaterial(model, from, to) {
+						res.Repairs = append(res.Repairs, m)
+					}
+				}
+			}
+		}
+	}
+
+	if o.placeableTransparency && o.transparencyKey != "" {
+		for _, m := range mdl.PlaceableTransparency(model, o.transparencyKey) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	// Tile operations
+	if o.tileOpts.rotateWater != "" && o.tileOpts.waterKey != "" {
+		val := int32(0)
+		if o.tileOpts.rotateWater == "1" {
+			val = 1
+		}
+		for _, m := range mdl.SetRotateTexture(model, o.tileOpts.waterKey, val) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tileOpts.retileWater != "" && o.tileOpts.waterKey != "" {
+		ts := 0
+		switch o.tileOpts.retileWater {
+		case "1":
+			ts = 1
+		case "2":
+			ts = 2
+		case "3":
+			ts = 3
+		}
+		if ts > 0 {
+			for _, m := range mdl.RetileUVs(model, o.tileOpts.waterKey, ts) {
+				res.Repairs = append(res.Repairs, m)
+			}
+		}
+	}
+
+	if o.tileOpts.rotateGround != "" && o.tileOpts.groundKey != "" {
+		val := int32(0)
+		if o.tileOpts.rotateGround == "1" {
+			val = 1
+		}
+		for _, m := range mdl.SetRotateTexture(model, o.tileOpts.groundKey, val) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tileOpts.retileGround != "" && o.tileOpts.groundKey != "" {
+		ts := 0
+		switch o.tileOpts.retileGround {
+		case "1":
+			ts = 1
+		case "2":
+			ts = 2
+		case "3":
+			ts = 3
+		}
+		if ts > 0 {
+			for _, m := range mdl.RetileUVs(model, o.tileOpts.groundKey, ts) {
+				res.Repairs = append(res.Repairs, m)
+			}
+		}
+	}
+
+	if o.tileOpts.foliage == "animate" && o.tileOpts.foliageKey != "" {
+		for _, m := range mdl.ReparentToModela(model, o.tileOpts.foliageKey, "foliage") {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tileOpts.splotch == "animate" && o.tileOpts.splotchKey != "" {
+		for _, m := range mdl.ReparentToModela(model, o.tileOpts.splotchKey, "splotch") {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tileOpts.raiseLower != "" && o.tileOpts.raiseAmount != 0 {
+		for _, m := range mdl.RaiseLowerTile(model, o.tileOpts.raiseLower, float32(o.tileOpts.raiseAmount)) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.tileOpts.chamfer != "" {
+		res.Repairs = append(res.Repairs, fmt.Sprintf("chamfer mode %q accepted but not yet implemented", o.tileOpts.chamfer))
+	}
+
+	if o.tileOpts.water && o.tileOpts.dynamicWater != "" {
+		res.Repairs = append(res.Repairs, fmt.Sprintf("dynamic-water mode %q accepted (water processing enabled)", o.tileOpts.dynamicWater))
 	}
 }
 

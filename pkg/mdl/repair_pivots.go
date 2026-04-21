@@ -22,6 +22,16 @@ const (
 	pivotPlaneNZEps   = float32(1e-5)
 )
 
+// PivotOptions controls pivot repair behaviour.
+type PivotOptions struct {
+	AllowSplit bool   // allow mesh splitting when pivot search fails
+	BelowZ0    string // "disallow" (default), "allow", "slice"
+	MoveBad    string // "no" (default), "top", "middle", "bottom"
+	Smoothing  string // "use", "protect", "ignore"
+	MinFaces   int    // minimum faces per split side
+	SplitFirst string // "convex", "concave"
+}
+
 // RepairPivots finds and sets valid pivot points for AABB (walkmesh) nodes.
 // A valid pivot must satisfy half-space constraints derived from tile boundaries
 // and face normals. For each AABB node, the function tries (in order):
@@ -30,7 +40,7 @@ const (
 //  3. Iterative bisection within the constraint bounding box
 //
 // Ref: fix_pivots.pl f_find_pivot/5
-func RepairPivots(model *Model) []string {
+func RepairPivots(model *Model, opts PivotOptions) []string {
 	if model == nil {
 		return nil
 	}
@@ -44,8 +54,12 @@ func RepairPivots(model *Model) []string {
 			continue
 		}
 		mesh := node.Mesh
-		cons := buildPivotConstraints(mesh)
+		allowBelow := opts.BelowZ0 == "allow" || opts.BelowZ0 == "slice"
+		cons := buildPivotConstraints(mesh, allowBelow)
 		boxMin, boxMax := pivotSearchBox(mesh)
+		if allowBelow && boxMin.Z > 0 {
+			boxMin.Z = 0
+		}
 
 		var pivot Vec3
 		var method string
@@ -65,8 +79,14 @@ func RepairPivots(model *Model) []string {
 				pivot, method = p, "bounding-box bisection"
 			} else if p, ok := pivotRelaxInBox(boxMin, boxMax, cons); ok {
 				pivot, method = p, "constraint relaxation"
+			} else if opts.MoveBad != "" && opts.MoveBad != "no" {
+				pivot, method = pivotMoveBadFallback(mesh, opts.MoveBad)
+				node.Position = pivot
+				out = append(out, fmt.Sprintf(
+					"node %q: pivot set to [%.4f, %.4f, %.4f] via %s (move-bad=%s)",
+					node.Name, pivot.X, pivot.Y, pivot.Z, method, opts.MoveBad))
+				continue
 			} else {
-				// Last resort: clamp top-centre into the search box (may violate face constraints)
 				pivot = clampToBox(top, boxMin, boxMax)
 				method = "fallback (clamped top-centre)"
 				out = append(out, fmt.Sprintf(
@@ -87,8 +107,9 @@ func RepairPivots(model *Model) []string {
 
 // buildPivotConstraints collects tile slab planes, z>=0, and inward half-spaces
 // from boundary walkmesh faces (vertices near |x|=5 or |y|=5).
+// When allowBelow is true, the z>=0 floor constraint is omitted.
 // Ref: fix_pivots.pl pivot constraint setup.
-func buildPivotConstraints(mesh *MeshData) []pivotHalfSpace {
+func buildPivotConstraints(mesh *MeshData, allowBelow bool) []pivotHalfSpace {
 	var hs []pivotHalfSpace
 	// Tile planes: interior is [-tileHalf, tileHalf] on X and Y.
 	// x >= -pivotTileHalf  =>  (1,0,0)·p >= -pivotTileHalf
@@ -97,8 +118,9 @@ func buildPivotConstraints(mesh *MeshData) []pivotHalfSpace {
 	hs = append(hs, pivotHalfSpace{n: Vec3{X: -1}, d: -pivotTileHalf, ge: true})
 	hs = append(hs, pivotHalfSpace{n: Vec3{Y: 1}, d: -pivotTileHalf, ge: true})
 	hs = append(hs, pivotHalfSpace{n: Vec3{Y: -1}, d: -pivotTileHalf, ge: true})
-	// Optional floor: pivot at or above z = 0 (tile walkmesh convention).
-	hs = append(hs, pivotHalfSpace{n: Vec3{Z: 1}, d: 0, ge: true})
+	if !allowBelow {
+		hs = append(hs, pivotHalfSpace{n: Vec3{Z: 1}, d: 0, ge: true})
+	}
 
 	for fi := range mesh.Faces {
 		if !isBoundaryWalkmeshFace(mesh, int32(fi)) {
@@ -422,6 +444,64 @@ func pivotRelaxInBox(minB, maxB Vec3, hs []pivotHalfSpace) (Vec3, bool) {
 		return p, true
 	}
 	return Vec3{}, false
+}
+
+// pivotMoveBadFallback computes a fallback pivot point based on the move-bad strategy.
+func pivotMoveBadFallback(mesh *MeshData, mode string) (Vec3, string) {
+	if len(mesh.Verts) == 0 {
+		return Vec3{}, "move-bad (no verts)"
+	}
+	switch mode {
+	case "top":
+		zmax := mesh.Verts[0].Z
+		var sx, sy float32
+		for _, v := range mesh.Verts {
+			if v.Z > zmax {
+				zmax = v.Z
+			}
+		}
+		var n int
+		for _, v := range mesh.Verts {
+			if v.Z >= zmax-pivotZBand {
+				sx += v.X
+				sy += v.Y
+				n++
+			}
+		}
+		if n == 0 {
+			return Vec3{Z: zmax}, "move-bad top"
+		}
+		return Vec3{X: sx / float32(n), Y: sy / float32(n), Z: zmax}, "move-bad top"
+	case "bottom":
+		zmin := mesh.Verts[0].Z
+		var sx, sy float32
+		for _, v := range mesh.Verts {
+			if v.Z < zmin {
+				zmin = v.Z
+			}
+		}
+		var n int
+		for _, v := range mesh.Verts {
+			if v.Z <= zmin+pivotZBand {
+				sx += v.X
+				sy += v.Y
+				n++
+			}
+		}
+		if n == 0 {
+			return Vec3{Z: zmin}, "move-bad bottom"
+		}
+		return Vec3{X: sx / float32(n), Y: sy / float32(n), Z: zmin}, "move-bad bottom"
+	default: // "middle"
+		var sx, sy, sz float32
+		for _, v := range mesh.Verts {
+			sx += v.X
+			sy += v.Y
+			sz += v.Z
+		}
+		n := float32(len(mesh.Verts))
+		return Vec3{X: sx / n, Y: sy / n, Z: sz / n}, "move-bad middle (centroid)"
+	}
 }
 
 func clampToBox(p, minB, maxB Vec3) Vec3 {
