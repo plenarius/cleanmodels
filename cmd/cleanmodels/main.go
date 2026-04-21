@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+var version = "dev"
+
 var subcommands = map[string]func([]string) int{
 	"check":     cmdCheck,
 	"repair":    cmdRepair,
@@ -42,7 +44,7 @@ func run(args []string) int {
 	}
 
 	if first == "version" || first == "--version" {
-		fmt.Println("cleanmodels dev")
+		fmt.Println("cleanmodels " + version)
 		return exitOK
 	}
 
