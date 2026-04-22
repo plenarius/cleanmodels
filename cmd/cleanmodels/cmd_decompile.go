@@ -13,6 +13,8 @@ func cmdDecompile(args []string) int {
 
 	force := fs.Bool("force", false, "treat input as binary even if auto-detection fails")
 
+	fs.BoolVar(force, "f", false, "alias for --force")
+
 	var cf commonFlags
 	cf.register(fs)
 

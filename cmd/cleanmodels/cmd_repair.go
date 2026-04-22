@@ -71,9 +71,12 @@ func cmdRepair(args []string) int {
 	transparencyKey := fs.String("transparency-key", "", "transparency bitmap substring key")
 	remapWalkmeshMaterial := fs.String("remap-walkmesh-material", "", "AABB material remap: FROM:TO")
 
-	dryRun := fs.Bool("dry-run", false, "report what would be fixed without writing")
+	dryRun := fs.Bool("dry-run", false, "report what would be fixed without writing output")
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run")
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
+
+	fs.BoolVar(fixAll, "a", false, "alias for --all")
+	fs.BoolVar(dryRun, "n", false, "alias for --dry-run")
 
 	var cf commonFlags
 	cf.register(fs)

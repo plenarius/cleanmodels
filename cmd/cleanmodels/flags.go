@@ -21,6 +21,12 @@ func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.quiet = fs.Bool("quiet", false, "suppress all output except errors")
 	cf.workers = fs.Int("workers", runtime.NumCPU(), "parallel workers for batch mode")
 	cf.recursive = fs.Bool("recursive", false, "process directories recursively")
+
+	fs.BoolVar(cf.jsonOut, "j", false, "alias for --json")
+	fs.BoolVar(cf.verbose, "v", false, "alias for --verbose")
+	fs.BoolVar(cf.quiet, "q", false, "alias for --quiet")
+	fs.IntVar(cf.workers, "w", *cf.workers, "alias for --workers")
+	fs.BoolVar(cf.recursive, "r", false, "alias for --recursive")
 }
 
 func (cf *commonFlags) apply(o *procOpts) {

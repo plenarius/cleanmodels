@@ -16,6 +16,9 @@ func cmdCheck(args []string) int {
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
 	dryRun := fs.Bool("dry-run", false, "report what would be fixed without writing output")
 
+	fs.BoolVar(fix, "f", false, "alias for --fix")
+	fs.BoolVar(dryRun, "n", false, "alias for --dry-run")
+
 	var cf commonFlags
 	cf.register(fs)
 
