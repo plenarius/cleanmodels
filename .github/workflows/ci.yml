@@ -60,12 +60,14 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          VERSION_TAG: ${{ github.ref_name }}
+          CLIENT_KEY: ${{ secrets.REPORT_CLIENT_KEY }}
         run: |
           EXT=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          if [ "${GOOS}" = "windows" ]; then EXT=".exe"; fi
           go build -trimpath \
-            -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
-            -o "cleanmodels-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" \
+            -ldflags="-s -w -X main.version=${VERSION_TAG} -X main.clientKey=${CLIENT_KEY}" \
+            -o "cleanmodels-${GOOS}-${GOARCH}${EXT}" \
             ./cmd/cleanmodels
 
       - name: Compress

@@ -19,6 +19,7 @@ var subcommands = map[string]func([]string) int{
 	"repair":    cmdRepair,
 	"compile":   cmdCompile,
 	"decompile": cmdDecompile,
+	"report":    cmdReport,
 }
 
 func main() {
@@ -65,6 +66,7 @@ Commands:
   repair      Apply repairs and transformations
   compile     Compile ASCII MDL to binary
   decompile   Decompile binary MDL to ASCII
+  report      Submit a bug report with model files
 
 Run 'cleanmodels <command> --help' for command-specific flags.
 
