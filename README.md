@@ -34,90 +34,168 @@ go build -o cleanmodels ./cmd/cleanmodels
 
 cleanmodels uses subcommands. Run `cleanmodels <command> --help` for full flag details.
 
+Most flags have short aliases for interactive use (e.g. `-r` for `--recursive`, `-v` for `--verbose`). The tables below show both forms.
+
+### Quick start
+
+```bash
+# Check a single model
+cleanmodels check plc_torch.mdl
+
+# Check an entire directory recursively
+cleanmodels check -r models/
+
+# Repair all common issues in a tileset, output to a separate folder
+cleanmodels repair -a -r tiles/ repaired/
+
+# Decompile a binary MDL to ASCII
+cleanmodels decompile plc_torch.mdl plc_torch.mdl
+```
+
+### Batch processing
+
+Point any subcommand at a directory to process all `.mdl` files inside it. No shell loops or scripts needed.
+
+```bash
+# All MDLs in a flat directory
+cleanmodels repair -a models/
+
+# Recursive (includes subdirectories)
+cleanmodels repair -a -r haks/
+
+# Output to a separate folder (originals untouched)
+cleanmodels repair -a -r haks/ cleaned/
+
+# Control parallelism (defaults to CPU count)
+cleanmodels repair -a -r -w 4 haks/
+```
+
+A live progress bar is shown automatically when output is a terminal.
+
+### Output and logging
+
+Warnings and progress are written to **stderr**. Structured results (JSON) go to **stdout**. This matters when redirecting output:
+
+```bash
+# Save warnings/progress to a file
+cleanmodels check -r -v models/ 2> log.txt
+
+# Save everything (stdout + stderr)
+cleanmodels check -r -v models/ &> log.txt
+
+# See output on screen AND save to file
+cleanmodels check -r -v models/ 2>&1 | tee log.txt
+
+# Machine-readable JSON output
+cleanmodels check -r -j models/ > results.json
+```
+
 ### check — validate models
 
-```
+```bash
 cleanmodels check models/
-cleanmodels check --recursive --json haks/
-cleanmodels check --fix --dry-run plc_torch.mdl
+cleanmodels check -r -j haks/
+cleanmodels check -f -n plc_torch.mdl
 cleanmodels check --exclude-checks emitter_spread,missing_bitmap models/
 ```
 
-| Flag | Description |
-|---|---|
-| `--fix` | Auto-fix safe issues (duplicate names, invalid parents) |
-| `--dry-run` | Report what would be fixed without writing |
-| `--include-checks` | Comma-separated check names to run exclusively |
-| `--exclude-checks` | Comma-separated check names to skip |
+| Flag | Short | Description |
+|---|---|---|
+| `--fix` | `-f` | Auto-fix safe issues (duplicate names, invalid parents) |
+| `--dry-run` | `-n` | Report what would be fixed without writing output |
+| `--include-checks` | | Comma-separated check names to run exclusively |
+| `--exclude-checks` | | Comma-separated check names to skip |
 
 ### repair — fix and transform models
 
-```
-cleanmodels repair --all plc_torch.mdl repaired/
+```bash
+cleanmodels repair -a plc_torch.mdl repaired/
 cleanmodels repair --fix-pivots --fix-aabb walkables/
 cleanmodels repair --scale 2.0 plc_chair.mdl
 cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 ```
 
-| Flag | Description |
-|---|---|
-| `--all` | Enable all repairs |
-| `--fix-pivots` | Repair walkmesh pivot points |
-| `--fix-aabb` | Rebuild AABB trees from walkmesh geometry |
-| `--fix-tilefade` | Slice tile geometry for tilefade |
-| `--tilefade-z` | Z height for tilefade slicing (default: 5.0) |
-| `--strip-degenerate` | Remove zero-area faces |
-| `--fix-animations` | Clamp negative/too-short animation lengths |
-| `--reparent-children` | Reparent children of AABB/light nodes |
-| `--wrap-root` | Wrap non-dummy root nodes in a dummy parent |
-| `--split-multiedge` | Split faces sharing multiple edges |
-| `--check` | Run validation checks after repair |
-| `--scale` | Scale all vertex positions |
-| `--scale-x/y/z` | Scale individual axes |
-| `--classification` | Override classification (CHARACTER, DOOR, EFFECT, ITEM, TILE) |
-| `--snap` | Vertex snapping mode: `binary`, `decimal`, `fine` |
-| `--render` | Force render flag: `all`, `none` |
-| `--shadow` | Force shadow flag: `all`, `none` |
-| `--force-white` | Set ambient/diffuse to 1,1,1 |
-| `--merge-by-bitmap` | Merge sibling trimeshes sharing a bitmap |
-| `--cull-invisible` | Convert invisible meshes to dummy nodes |
+| Flag | Short | Description |
+|---|---|---|
+| `--all` | `-a` | Enable all structural repairs |
+| `--dry-run` | `-n` | Report what would be fixed without writing output |
+| `--fix-pivots` | | Repair walkmesh pivot points |
+| `--fix-aabb` | | Rebuild AABB trees from walkmesh geometry |
+| `--fix-tilefade` | | Slice tile geometry for tilefade |
+| `--tilefade-z` | | Z height for tilefade slicing (default: 5.0) |
+| `--strip-degenerate` | | Remove zero-area faces |
+| `--fix-animations` | | Clamp negative/too-short animation lengths |
+| `--reparent-children` | | Reparent children of AABB/light nodes |
+| `--wrap-root` | | Wrap non-dummy root nodes in a dummy parent |
+| `--split-multiedge` | | Split faces sharing multiple edges |
+| `--check` | | Run validation checks after repair |
+| `--scale` | | Scale all vertex positions |
+| `--scale-x/y/z` | | Scale individual axes |
+| `--classification` | | Override classification (CHARACTER, DOOR, EFFECT, ITEM, TILE) |
+| `--snap` | | Vertex snapping mode: `binary`, `decimal`, `fine` |
+| `--render` | | Force render flag: `all`, `none` |
+| `--shadow` | | Force shadow flag: `all`, `none` |
+| `--force-white` | | Set ambient/diffuse to 1,1,1 |
+| `--merge-by-bitmap` | | Merge sibling trimeshes sharing a bitmap |
+| `--cull-invisible` | | Convert invisible meshes to dummy nodes |
 
 ### compile — ASCII to binary MDL
 
-```
+```bash
 cleanmodels compile plc_torch.mdl plc_torch.mdl
-cleanmodels compile --recursive models/ compiled/
+cleanmodels compile -r models/ compiled/
 ```
 
 ### decompile — binary to ASCII MDL
 
-```
+```bash
 cleanmodels decompile plc_torch.mdl plc_torch.mdl
-cleanmodels decompile --force mystery_file.bin output.mdl
+cleanmodels decompile -f mystery_file.bin output.mdl
 ```
 
-| Flag | Description |
-|---|---|
-| `--force` | Treat input as binary even if auto-detection fails |
+| Flag | Short | Description |
+|---|---|---|
+| `--force` | `-f` | Treat input as binary even if auto-detection fails |
 
 ### Common flags
 
-These flags work with all commands:
+These flags work with all subcommands:
+
+| Flag | Short | Description |
+|---|---|---|
+| `--json` | `-j` | Output results as JSON to stdout |
+| `--json-lines` | | Stream NDJSON events (for GUI/tool integration) |
+| `--verbose` | `-v` | Show all warnings and info |
+| `--quiet` | `-q` | Suppress all output except errors |
+| `--workers N` | `-w N` | Parallel workers for batch mode (default: CPU count) |
+| `--recursive` | `-r` | Process directories recursively |
+
+### report — submit a bug report
+
+If you encounter a model that crashes or produces incorrect output, you can submit a report directly from the CLI. Reports are sent to a relay that creates a GitHub issue — no GitHub account required.
+
+```bash
+# Report a problematic model
+cleanmodels report model.mdl
+
+# Include details about what went wrong
+cleanmodels report --error "missing faces after decompile" model.mdl
+
+# Report multiple files with context
+cleanmodels report --command "repair --fix-pivots" --notes "visual artifacts" tile1.mdl tile2.mdl
+```
 
 | Flag | Description |
 |---|---|
-| `--json` | Output results as JSON |
-| `--json-lines` | Stream NDJSON events (for GUI/tool integration) |
-| `--verbose` | Show all warnings and info |
-| `--quiet` | Suppress all output except errors |
-| `--workers N` | Parallel workers for batch mode (default: CPU count) |
-| `--recursive` | Process directories recursively |
+| `--command` | The cleanmodels command that was run |
+| `--error` | Error output or description of the problem (optional) |
+| `--notes` | Additional notes or context |
 
 ### Legacy mode
 
 For backwards compatibility with [cleanmodels-qt](https://github.com/plenarius/cleanmodels-qt) and existing scripts, the old flat-flag interface still works:
 
-```
+```bash
 cleanmodels --check --fix-pivots input/ output/
 cleanmodels --decompile-only model.mdl output.mdl
 ```
