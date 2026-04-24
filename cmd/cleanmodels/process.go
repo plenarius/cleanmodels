@@ -21,6 +21,7 @@ type Result struct {
 	Warnings []mdl.DecompileWarning `json:"warnings,omitempty"`
 	Checks   []mdl.CheckResult      `json:"checks,omitempty"`
 	Repairs  []string               `json:"repairs,omitempty"`
+	Actions  []string               `json:"actions,omitempty"`
 	Error    string                 `json:"error,omitempty"`
 }
 
@@ -576,7 +577,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 				res.Error = err.Error()
 				return res, model, parseErrs, err
 			}
-			res.Repairs = append(res.Repairs, fmt.Sprintf("compiled to binary: %s", outPath))
+			res.Actions = append(res.Actions, fmt.Sprintf("compiled to binary: %s", outPath))
 		case binMode || o.forceBin:
 			if outputPath != "" {
 				if err := mdl.WriteFile(model, outputPath); err != nil {

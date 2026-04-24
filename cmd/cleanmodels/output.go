@@ -73,7 +73,7 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 		return
 	}
 
-	if fixes == 0 && len(res.Warnings) == 0 && len(parseErrs) == 0 && countCheckErrors(res.Checks) == 0 {
+	if fixes == 0 && len(res.Actions) == 0 && len(res.Warnings) == 0 && len(parseErrs) == 0 && countCheckErrors(res.Checks) == 0 {
 		if verbose {
 			fmt.Fprintf(tw.w, "%s %s\n", tw.bold(baseName), tw.green("clean"))
 		}
@@ -93,9 +93,15 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 	if errCount > 0 {
 		parts = append(parts, tw.red(fmt.Sprintf("%d %s", errCount, pluralize(errCount, "error", "errors"))))
 	}
+	if len(parts) == 0 && len(res.Actions) > 0 {
+		parts = append(parts, tw.green("ok"))
+	}
 	fmt.Fprintf(tw.w, "%s  %s\n", tw.bold(baseName), strings.Join(parts, ", "))
 
 	// Detail lines
+	for _, a := range res.Actions {
+		fmt.Fprintf(tw.w, "  %s %s\n", tw.dim("[ACTION]"), a)
+	}
 	for _, r := range res.Repairs {
 		fmt.Fprintf(tw.w, "  %s %s\n", tw.green("[REPAIR]"), r)
 	}
@@ -261,6 +267,8 @@ func (tw *termWriter) formatBatchLine(idx, total int, baseName string, res Resul
 		status = tw.red(fmt.Sprintf("%d %s", errCount, pluralize(errCount, "error", "errors")))
 	} else if fixes > 0 {
 		status = tw.green(fmt.Sprintf("%d %s", fixes, pluralize(fixes, "repair", "repairs")))
+	} else if len(res.Actions) > 0 {
+		status = tw.green("ok")
 	} else {
 		status = tw.dim("clean")
 	}
