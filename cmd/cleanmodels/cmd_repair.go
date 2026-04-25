@@ -70,6 +70,8 @@ func cmdRepair(args []string) int {
 	placeableTransparency := fs.Bool("placeable-transparency", false, "enable placeable transparency processing")
 	transparencyKey := fs.String("transparency-key", "", "transparency bitmap substring key")
 	remapWalkmeshMaterial := fs.String("remap-walkmesh-material", "", "AABB material remap: FROM:TO")
+	standardizeTexture0 := fs.Bool("standardize-texture0", false, "emit texture0 instead of bitmap in output")
+	stripEEExtras := fs.Bool("strip-ee-extras", false, "remove wirecolor, specular, shininess from output")
 
 	dryRun := fs.Bool("dry-run", false, "report what would be fixed without writing output")
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run")
@@ -131,11 +133,13 @@ func cmdRepair(args []string) int {
 				minFaces:   *pivotMinFaces,
 				splitFirst: *pivotSplitFirst,
 			},
-			tvertSnap:             *tvertSnap,
-			placeableTransparency: *placeableTransparency,
-			transparencyKey:       *transparencyKey,
-			remapWalkmeshMaterial: *remapWalkmeshMaterial,
-			tilefadeUndo:          *tilefadeUndo,
+		tvertSnap:             *tvertSnap,
+		placeableTransparency: *placeableTransparency,
+		transparencyKey:       *transparencyKey,
+		remapWalkmeshMaterial: *remapWalkmeshMaterial,
+		tilefadeUndo:          *tilefadeUndo,
+		standardizeTexture0:   *standardizeTexture0,
+		stripEEExtras:         *stripEEExtras,
 		},
 		tileOpts: tileOpts{
 			tilefadeZ:    float32(*tilefadeZ),

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/plenarius/cleanmodels/pkg/checks"
 )
 
 func cmdCheck(args []string) int {
@@ -15,6 +18,7 @@ func cmdCheck(args []string) int {
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run (exclusive)")
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
 	dryRun := fs.Bool("dry-run", false, "report what would be fixed without writing output")
+	listChecks := fs.Bool("list", false, "list all available checks as JSON and exit")
 
 	fs.BoolVar(fix, "f", false, "alias for --fix")
 	fs.BoolVar(dryRun, "n", false, "alias for --dry-run")
@@ -35,6 +39,17 @@ func cmdCheck(args []string) int {
 		}
 		return exitUsage
 	}
+
+	if *listChecks {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(checks.ListAll()); err != nil {
+			fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+			return exitErrors
+		}
+		return exitOK
+	}
+
 	pos := fs.Args()
 	if len(pos) < 1 {
 		fs.Usage()

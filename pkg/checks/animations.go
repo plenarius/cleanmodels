@@ -9,10 +9,10 @@ import (
 )
 
 func init() {
-	Register("animation_length", "animations", checkAnimationLength)
-	Register("animation_root", "animations", checkAnimationRoot)
-	Register("missing_end_keys", "animations", checkMissingEndKeys)
-	Register("animation_transtime", "animations", checkAnimationTransTime)
+	Register("animation_length", "animations", false, "Detect negative or too-short animation lengths", checkAnimationLength)
+	Register("animation_root", "animations", true, "Fix missing or invalid animation root references", checkAnimationRoot)
+	Register("missing_end_keys", "animations", false, "Detect animations missing end-time keyframes", checkMissingEndKeys)
+	Register("animation_transtime", "animations", true, "Clamp negative animation transition times to 0", checkAnimationTransTime)
 }
 
 func keyTimeMatchesLength(t, length float32) bool {

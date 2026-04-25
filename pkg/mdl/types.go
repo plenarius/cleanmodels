@@ -489,6 +489,7 @@ type Model struct {
 	IgnoreFog       int32
 	FileDependancy  string
 	FileType        string // "binary" or "ascii"
+	UseTexture0     bool   // emit "texture0" instead of "bitmap" in ASCII output
 
 	Nodes      []*Node
 	Animations []Animation

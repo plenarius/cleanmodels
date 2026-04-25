@@ -337,3 +337,48 @@ func snapFloat(f, grid float32) float32 {
 	}
 	return float32(math.Round(float64(f)/float64(grid))) * grid
 }
+
+// StandardizeTexture0 sets the UseTexture0 flag so the writer emits
+// "texture0" instead of "bitmap" in ASCII output. Returns the count of
+// mesh nodes that have a bitmap value (i.e., will be affected).
+func StandardizeTexture0(model *Model) int {
+	count := 0
+	for _, n := range model.Nodes {
+		if n != nil && n.Mesh != nil && n.Mesh.Bitmap != "" {
+			count++
+		}
+	}
+	if count > 0 {
+		model.UseTexture0 = true
+	}
+	return count
+}
+
+// StripEEExtras zeros out vestigial EE fields: WireColor, Specular, Shininess.
+func StripEEExtras(model *Model) int {
+	count := 0
+	for _, n := range model.Nodes {
+		if n == nil {
+			continue
+		}
+		nodeChanged := false
+		if n.WireColor.X != 0 || n.WireColor.Y != 0 || n.WireColor.Z != 0 {
+			n.WireColor = Vec3{}
+			nodeChanged = true
+		}
+		if n.Mesh != nil {
+			if n.Mesh.Specular.X != 0 || n.Mesh.Specular.Y != 0 || n.Mesh.Specular.Z != 0 {
+				n.Mesh.Specular = Vec3{}
+				nodeChanged = true
+			}
+			if n.Mesh.Shininess != 0 {
+				n.Mesh.Shininess = 0
+				nodeChanged = true
+			}
+		}
+		if nodeChanged {
+			count++
+		}
+	}
+	return count
+}

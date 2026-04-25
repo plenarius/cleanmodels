@@ -10,15 +10,15 @@ import (
 )
 
 func init() {
-	Register("duplicate_node_names", "structural", checkDuplicateNodeNames)
-	Register("missing_parents", "structural", checkMissingParents)
-	Register("base_dummy_wrong_type", "structural", checkBaseDummyWrongType)
-	Register("base_dummy_parent_null", "structural", checkBaseDummyParentNull)
-	Register("duplicate_animations", "structural", checkDuplicateAnimations)
-	Register("aabb_has_child_nodes", "structural", checkAabbHasChildNodes)
-	Register("light_has_child_nodes", "structural", checkLightHasChildNodes)
-	Register("too_many_walkmeshes", "structural", checkTooManyWalkmeshes)
-	Register("node_name_length", "structural", checkNodeNameLength)
+	Register("duplicate_node_names", "structural", true, "Fix duplicate node names by appending a unique suffix", checkDuplicateNodeNames)
+	Register("missing_parents", "structural", true, "Reparent orphaned nodes to the model root", checkMissingParents)
+	Register("base_dummy_wrong_type", "structural", false, "Detect root node with non-dummy type", checkBaseDummyWrongType)
+	Register("base_dummy_parent_null", "structural", true, "Set root node parent to NULL if incorrect", checkBaseDummyParentNull)
+	Register("duplicate_animations", "structural", true, "Merge duplicate animation blocks", checkDuplicateAnimations)
+	Register("aabb_has_child_nodes", "structural", false, "Detect child nodes under AABB nodes", checkAabbHasChildNodes)
+	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
+	Register("too_many_walkmeshes", "structural", false, "Detect multiple AABB walkmesh nodes", checkTooManyWalkmeshes)
+	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
 }
 
 

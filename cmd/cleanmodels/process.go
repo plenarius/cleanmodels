@@ -63,6 +63,8 @@ type repairOpts struct {
 	transparencyKey        string
 	remapWalkmeshMaterial  string // "FROM:TO"
 	tilefadeUndo           bool
+	standardizeTexture0    bool
+	stripEEExtras          bool
 }
 
 type tileOpts struct {
@@ -369,6 +371,20 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 	if o.placeableTransparency && o.transparencyKey != "" {
 		for _, m := range mdl.PlaceableTransparency(model, o.transparencyKey) {
 			res.Repairs = append(res.Repairs, m)
+		}
+	}
+
+	if o.standardizeTexture0 {
+		n := mdl.StandardizeTexture0(model)
+		if n > 0 {
+			res.Repairs = append(res.Repairs, fmt.Sprintf("standardized bitmap to texture0 on %d mesh nodes", n))
+		}
+	}
+
+	if o.stripEEExtras {
+		n := mdl.StripEEExtras(model)
+		if n > 0 {
+			res.Repairs = append(res.Repairs, fmt.Sprintf("stripped wirecolor/specular/shininess from %d nodes", n))
 		}
 	}
 

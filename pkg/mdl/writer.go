@@ -26,7 +26,7 @@ func WriteFile(model *Model, path string) error {
 
 // Write writes a model to an ASCII MDL writer.
 func Write(model *Model, w io.Writer) error {
-	wr := &writer{w: w}
+	wr := &writer{w: w, useTexture0: model.UseTexture0}
 
 	wr.printf("# Rewritten by cleanmodels-go\n")
 	if model.FileDependancy != "" {
@@ -53,8 +53,9 @@ func Write(model *Model, w io.Writer) error {
 }
 
 type writer struct {
-	w   io.Writer
-	err error
+	w           io.Writer
+	err         error
+	useTexture0 bool
 }
 
 func (w *writer) printf(format string, args ...interface{}) {
@@ -195,7 +196,11 @@ func (w *writer) writeMeshData(m *MeshData) {
 	w.indent(4, "shininess %s", fmtFloat(m.Shininess))
 
 	if m.Bitmap != "" {
-		w.indent(4, "bitmap %s", m.Bitmap)
+		if w.useTexture0 {
+			w.indent(4, "texture0 %s", m.Bitmap)
+		} else {
+			w.indent(4, "bitmap %s", m.Bitmap)
+		}
 	}
 	if m.Texture1 != "" {
 		w.indent(4, "texture1 %s", m.Texture1)

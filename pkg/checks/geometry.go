@@ -14,15 +14,15 @@ const (
 )
 
 func init() {
-	Register("vertex_face_consistency", "geometry", checkVertexFaceConsistency)
-	Register("tvert_consistency", "geometry", checkTvertConsistency)
-	Register("degenerate_faces", "geometry", checkDegenerateFaces)
-	Register("triangle_limit", "geometry", checkTriangleLimit)
-	Register("bone_limit", "geometry", checkBoneLimit)
-	Register("unnormalized_weights", "geometry", checkUnnormalizedWeights)
-	Register("constraint_count", "geometry", checkConstraintCount)
-	Register("faceless_trimesh", "geometry", checkFacelessTrimesh)
-	Register("multiple_edges", "geometry", checkMultipleEdges)
+	Register("vertex_face_consistency", "geometry", true, "Clamp out-of-range vertex indices in faces", checkVertexFaceConsistency)
+	Register("tvert_consistency", "geometry", true, "Clamp out-of-range UV indices in faces", checkTvertConsistency)
+	Register("degenerate_faces", "geometry", false, "Detect zero-area faces with repeated vertex indices", checkDegenerateFaces)
+	Register("triangle_limit", "geometry", false, "Detect meshes exceeding the EE triangle limit", checkTriangleLimit)
+	Register("bone_limit", "geometry", false, "Detect skin meshes exceeding the EE bone limit", checkBoneLimit)
+	Register("unnormalized_weights", "geometry", true, "Renormalize skin bone weights to sum to 1.0", checkUnnormalizedWeights)
+	Register("constraint_count", "geometry", true, "Fix danglymesh constraint count to match vertices", checkConstraintCount)
+	Register("faceless_trimesh", "geometry", true, "Set render=0 on mesh nodes with no faces", checkFacelessTrimesh)
+	Register("multiple_edges", "geometry", false, "Detect non-manifold edges that cause shadow tearing", checkMultipleEdges)
 }
 
 func meshGeometryNodeType(t string) bool {

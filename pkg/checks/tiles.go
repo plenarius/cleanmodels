@@ -8,9 +8,9 @@ import (
 )
 
 func init() {
-	Register("tilefade_validation", "tiles", checkTilefadeValidation)
-	Register("rotate_texture", "tiles", checkRotateTexture)
-	Register("lightmapped_tile", "tiles", checkLightmappedTile)
+	Register("tilefade_validation", "tiles", false, "Detect tilefade on non-TILE models", checkTilefadeValidation)
+	Register("rotate_texture", "tiles", false, "Detect RotateTexture on non-TILE models", checkRotateTexture)
+	Register("lightmapped_tile", "tiles", false, "Detect LightMapped on TILE model meshes", checkLightmappedTile)
 }
 
 func checkTilefadeValidation(model *mdl.Model, file string, _ bool) []mdl.CheckResult {

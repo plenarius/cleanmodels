@@ -2,19 +2,23 @@ package checks
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
+const nwnResrefLimit = 16
+
 func init() {
-	Register("black_ambient", "parameters", checkBlackAmbient)
-	Register("black_diffuse", "parameters", checkBlackDiffuse)
-	Register("renderhint_consistency", "parameters", checkRenderhintConsistency)
-	Register("tangent_validation", "parameters", checkTangentValidation)
-	Register("extreme_shininess", "parameters", checkExtremeShininess)
-	Register("null_bitmaps", "parameters", checkNullBitmaps)
-	Register("shadow_render_consistency", "parameters", checkShadowRenderConsistency)
-	Register("vertex_color_count", "parameters", checkVertexColorCount)
+	Register("black_ambient", "parameters", false, "Detect zero ambient with non-zero diffuse", checkBlackAmbient)
+	Register("black_diffuse", "parameters", false, "Detect zero diffuse color on mesh nodes", checkBlackDiffuse)
+	Register("renderhint_consistency", "parameters", true, "Clear mismatched renderhint/materialname pairs", checkRenderhintConsistency)
+	Register("tangent_validation", "parameters", false, "Detect missing tangents on normal-mapped meshes", checkTangentValidation)
+	Register("null_bitmaps", "parameters", true, "Set render=0 on meshes with missing bitmaps", checkNullBitmaps)
+	Register("shadow_render_consistency", "parameters", false, "Detect shadow=1 with render=0 inconsistency", checkShadowRenderConsistency)
+	Register("vertex_color_count", "parameters", true, "Fix vertex color array to match vertex count", checkVertexColorCount)
+	Register("resref_length", "parameters", false, "Detect texture/material names exceeding 16-char resref limit", checkResrefLength)
+	Register("plt_bitmap_match", "parameters", false, "Detect PLT bitmap names that don't match the model name", checkPltBitmapMatch)
 }
 
 func vec3IsZero(v mdl.Vec3) bool {
@@ -134,44 +138,6 @@ func checkTangentValidation(model *mdl.Model, file string, _ bool) []mdl.CheckRe
 	return out
 }
 
-func checkExtremeShininess(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
-	if model == nil {
-		return nil
-	}
-	var out []mdl.CheckResult
-	for _, n := range model.Nodes {
-		if n == nil || n.Mesh == nil {
-			continue
-		}
-		s := n.Mesh.Shininess
-		if s > 50 || s < 0 {
-			oldVal := s
-			var clamped float32
-			if s < 0 {
-				clamped = 0
-			} else {
-				clamped = 50
-			}
-			fixed := false
-			if fix {
-				n.Mesh.Shininess = clamped
-				fixed = true
-			}
-			out = append(out, mdl.CheckResult{
-				Check:    "extreme_shininess",
-				Node:     n.Name,
-				Severity: mdl.SevWarning,
-				Fixed:    fixed,
-				Message: fmt.Sprintf(
-					"%s: mesh node %q had shininess %g (expected 0..50), clamped to %g",
-					file, n.Name, oldVal, clamped,
-				),
-			})
-		}
-	}
-	return out
-}
-
 func checkNullBitmaps(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -266,6 +232,73 @@ func checkVertexColorCount(model *mdl.Model, file string, fix bool) []mdl.CheckR
 				Message: fmt.Sprintf(
 					"%s: mesh node %q had %d vertex colors but %d vertices, adjusted",
 					file, n.Name, oldCount, nv,
+				),
+			})
+		}
+	}
+	return out
+}
+
+func checkResrefLength(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil {
+		return nil
+	}
+	type field struct {
+		name string
+		val  string
+	}
+	var out []mdl.CheckResult
+	for _, n := range model.Nodes {
+		if n == nil || n.Mesh == nil {
+			continue
+		}
+		for _, f := range []field{
+			{"bitmap", n.Mesh.Bitmap},
+			{"texture1", n.Mesh.Texture1},
+			{"texture2", n.Mesh.Texture2},
+			{"materialname", n.Mesh.MaterialName},
+		} {
+			if len(f.val) > nwnResrefLimit {
+				out = append(out, mdl.CheckResult{
+					Check:    "resref_length",
+					Node:     n.Name,
+					Severity: mdl.SevWarning,
+					Message: fmt.Sprintf(
+						"%s: mesh node %q %s %q is %d chars (max %d)",
+						file, n.Name, f.name, f.val, len(f.val), nwnResrefLimit,
+					),
+				})
+			}
+		}
+	}
+	return out
+}
+
+func checkPltBitmapMatch(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil {
+		return nil
+	}
+	if !strings.EqualFold(model.Classification, "CHARACTER") {
+		return nil
+	}
+	var out []mdl.CheckResult
+	for _, n := range model.Nodes {
+		if n == nil || n.Mesh == nil || n.Mesh.Bitmap == "" {
+			continue
+		}
+		bmp := strings.ToLower(n.Mesh.Bitmap)
+		if !strings.Contains(bmp, "plt") {
+			continue
+		}
+		expected := strings.ToLower(model.Name)
+		if bmp != expected {
+			out = append(out, mdl.CheckResult{
+				Check:    "plt_bitmap_match",
+				Node:     n.Name,
+				Severity: mdl.SevWarning,
+				Message: fmt.Sprintf(
+					"%s: PLT bitmap %q does not match model name %q",
+					file, n.Mesh.Bitmap, model.Name,
 				),
 			})
 		}

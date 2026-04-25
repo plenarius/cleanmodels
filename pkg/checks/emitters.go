@@ -8,13 +8,13 @@ import (
 )
 
 func init() {
-	Register("emitter_update_valid", "emitters", checkEmitterUpdateValid)
-	Register("emitter_render_valid", "emitters", checkEmitterRenderValid)
-	Register("emitter_blend_valid", "emitters", checkEmitterBlendValid)
-	Register("emitter_negative_values", "emitters", checkEmitterNegativeValues)
-	Register("emitter_percent_range", "emitters", checkEmitterPercentRange)
-	Register("emitter_size_consistency", "emitters", checkEmitterSizeConsistency)
-	Register("emitter_missing_texture", "emitters", checkEmitterMissingTexture)
+	Register("emitter_update_valid", "emitters", true, "Fix invalid emitter Update mode", checkEmitterUpdateValid)
+	Register("emitter_render_valid", "emitters", true, "Fix invalid emitter Render mode", checkEmitterRenderValid)
+	Register("emitter_blend_valid", "emitters", true, "Fix invalid emitter Blend mode", checkEmitterBlendValid)
+	Register("emitter_negative_values", "emitters", false, "Detect negative emitter values (birthrate, mass, etc.)", checkEmitterNegativeValues)
+	Register("emitter_percent_range", "emitters", false, "Detect emitter percent values outside 0-1 range", checkEmitterPercentRange)
+	Register("emitter_size_consistency", "emitters", true, "Fix negative emitter size values", checkEmitterSizeConsistency)
+	Register("emitter_missing_texture", "emitters", true, "Set default texture on emitters with missing texture", checkEmitterMissingTexture)
 }
 
 var validEmitterUpdates = []string{"Fountain", "Single", "Explosion", "Lightning"}
@@ -140,7 +140,7 @@ var percentFields = []struct {
 	{"PercentEnd", func(e *mdl.EmitterData) *float32 { return &e.PercentEnd }},
 }
 
-func checkEmitterPercentRange(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
+func checkEmitterPercentRange(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
@@ -152,18 +152,11 @@ func checkEmitterPercentRange(model *mdl.Model, file string, fix bool) []mdl.Che
 		for _, f := range percentFields {
 			p := f.ptr(n.Emitter)
 			if !inUnitInterval(*p) {
-				old := *p
-				fixed := false
-				if fix {
-					*p = clamp01(*p)
-					fixed = true
-				}
 				out = append(out, mdl.CheckResult{
 					Check:    "emitter_percent_range",
 					Node:     n.Name,
-					Severity: mdl.SevWarning,
-					Fixed:    fixed,
-					Message:  fmt.Sprintf("%s: emitter node %q had %s %g, clamped to %g", file, n.Name, f.name, old, clamp01(old)),
+					Severity: mdl.SevInfo,
+					Message:  fmt.Sprintf("%s: emitter node %q has %s %g (outside 0-1 range)", file, n.Name, f.name, *p),
 				})
 			}
 		}

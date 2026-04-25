@@ -13,16 +13,31 @@ import (
 
 // CheckEntry holds a registered check with metadata.
 type CheckEntry struct {
-	Name     string
-	Category string
-	Fn       mdl.CheckFunc
+	Name        string        `json:"name"`
+	Category    string        `json:"category"`
+	Fixable     bool          `json:"fixable"`
+	Description string        `json:"description"`
+	Fn          mdl.CheckFunc `json:"-"`
 }
 
 var registry []CheckEntry
 
 // Register adds a check to the global registry.
-func Register(name, category string, fn mdl.CheckFunc) {
-	registry = append(registry, CheckEntry{Name: name, Category: category, Fn: fn})
+func Register(name, category string, fixable bool, description string, fn mdl.CheckFunc) {
+	registry = append(registry, CheckEntry{
+		Name:        name,
+		Category:    category,
+		Fixable:     fixable,
+		Description: description,
+		Fn:          fn,
+	})
+}
+
+// ListAll returns metadata for all registered checks (no model required).
+func ListAll() []CheckEntry {
+	out := make([]CheckEntry, len(registry))
+	copy(out, registry)
+	return out
 }
 
 // RunAll runs all registered checks on a model.
