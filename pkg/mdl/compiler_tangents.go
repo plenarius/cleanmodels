@@ -149,16 +149,23 @@ func generateTangents(exp *expandedMesh) ([]Vec3, []Vec3) {
 // tangents (parsed from ASCII or recovered from a previous decompile), they
 // are expanded to GPU vertices and split into tangent + bitangent rather than
 // regenerated — this preserves authored handedness and avoids round-trip
-// drift. Otherwise the Mikktspace generator produces tangents from geometry.
+// drift. Otherwise tangents are generated from geometry only when the mesh
+// declares RenderHint NormalAndSpecMapped, mirroring the game compiler's
+// behavior — non-normal-mapped meshes don't need tangents at runtime, so
+// emitting them would just waste MDX bytes.
 //
 // Returns (nil, nil) when no tangents can be produced (no UVs, no normals,
-// or the existing tangent table doesn't cover the referenced vertices).
+// the existing tangent table doesn't cover the referenced vertices, or the
+// mesh isn't normal-mapped and has no authored tangents).
 func resolveTangents(mesh *MeshData, exp *expandedMesh) ([]Vec3, []Vec3) {
 	if exp == nil || len(exp.positions) == 0 {
 		return nil, nil
 	}
 	if useExistingTangents(mesh, exp) {
 		return expandExistingTangents(mesh, exp)
+	}
+	if mesh == nil || mesh.RenderHint != "NormalAndSpecMapped" {
+		return nil, nil
 	}
 	return generateTangents(exp)
 }

@@ -349,6 +349,7 @@ beginmodelgeom withuvs
     parent withuvs
     bitmap brick
     render 1
+    renderhint NormalAndSpecMapped
     verts 4
       -1 -1 0
        1 -1 0
@@ -389,4 +390,142 @@ donemodel withuvs
 // degenerate tangent computation tends to produce.
 func isBadFloat(x float32) bool {
 	return math.IsNaN(float64(x)) || math.IsInf(float64(x), 0)
+}
+
+// makeTangentTestNode builds a single-mesh Node with one face whose 3
+// corner positions are at the given coordinates and whose per-vertex
+// tangents are the supplied vectors. Used by TestCompareNodeTangents to
+// exercise the oracle comparison helper with controlled inputs (no
+// dependency on the compiler/decompiler pipeline).
+func makeTangentTestNode(name string, positions [3]Vec3, tangents [3]Vec4) *Node {
+	return &Node{
+		Name: name,
+		Mesh: &MeshData{
+			Verts:    []Vec3{positions[0], positions[1], positions[2]},
+			Tangents: []Vec4{tangents[0], tangents[1], tangents[2]},
+			Faces: []Face{{
+				Verts: [3]int32{0, 1, 2},
+			}},
+		},
+	}
+}
+
+// TestCompareNodeTangents exercises the oracle tangent comparison
+// helper directly with synthetic Node pairs. The oracle test
+// (TestOracleTangents) only activates when both compilers emit tangent
+// data for the same mesh; until we get a normal-mapped game-compiled
+// fixture into the suite, this is the only thing that proves the
+// matching/dot-product logic is correct.
+func TestCompareNodeTangents(t *testing.T) {
+	tx := func(x, y, z, w float32) Vec4 { return Vec4{X: x, Y: y, Z: z, W: w} }
+
+	cases := []struct {
+		name             string
+		ours             [3]Vec4
+		game             [3]Vec4
+		gamePos          [3]Vec3 // override game positions; zero value = same as ours
+		wantMatched      int
+		wantUnmatched    int
+		wantBadAlign     int
+		wantMeanDotMin   float64
+		wantMeanDotMax   float64
+		wantSkipMeanDot  bool
+	}{
+		{
+			name:           "identical tangents",
+			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			wantMatched:    3,
+			wantMeanDotMin: 0.999,
+			wantMeanDotMax: 1.001,
+		},
+		{
+			name:           "sign-flipped tangents (handedness diff) -> still |dot|=1",
+			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:           [3]Vec4{tx(-1, 0, 0, 1), tx(-1, 0, 0, 1), tx(-1, 0, 0, 1)},
+			wantMatched:    3,
+			wantMeanDotMin: 0.999,
+			wantMeanDotMax: 1.001,
+		},
+		{
+			name:           "orthogonal tangents -> |dot|=0, all flagged badAlign",
+			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:           [3]Vec4{tx(0, 1, 0, 1), tx(0, 1, 0, 1), tx(0, 1, 0, 1)},
+			wantMatched:    3,
+			wantBadAlign:   3,
+			wantMeanDotMin: 0,
+			wantMeanDotMax: 0.001,
+		},
+		{
+			name: "in-face vertex reorder still matches by position",
+			ours: [3]Vec4{tx(1, 0, 0, 1), tx(0, 1, 0, 1), tx(0, 0, 1, 1)},
+			// Game has the same per-position tangents but stores corners in
+			// reverse order — compareNodeTangents matches by position so the
+			// alignment should still come out perfect.
+			game: [3]Vec4{tx(0, 0, 1, 1), tx(0, 1, 0, 1), tx(1, 0, 0, 1)},
+			gamePos: [3]Vec3{
+				{0, 1, 0}, {1, 0, 0}, {0, 0, 0},
+			},
+			wantMatched:    3,
+			wantMeanDotMin: 0.999,
+			wantMeanDotMax: 1.001,
+		},
+		{
+			name:           "no positional match -> all unmatched",
+			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			gamePos: [3]Vec3{
+				{99, 99, 99}, {99, 99, 99}, {99, 99, 99},
+			},
+			wantUnmatched:   3,
+			wantSkipMeanDot: true,
+		},
+		{
+			name: "zero-length tangent -> unmatched (degenerate vector skipped)",
+			ours: [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game: [3]Vec4{tx(0, 0, 0, 1), tx(0, 0, 0, 1), tx(0, 0, 0, 1)},
+			wantUnmatched:   3,
+			wantSkipMeanDot: true,
+		},
+		{
+			name: "partial alignment -> mean reflects average",
+			// One perfect, one orthogonal, one perfect → mean = 2/3 ≈ 0.667
+			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:           [3]Vec4{tx(1, 0, 0, 1), tx(0, 1, 0, 1), tx(1, 0, 0, 1)},
+			wantMatched:    3,
+			wantBadAlign:   1,
+			wantMeanDotMin: 0.66,
+			wantMeanDotMax: 0.67,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			gamePos := c.gamePos
+			if gamePos == ([3]Vec3{}) {
+				gamePos = [3]Vec3{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}
+			}
+			ours := makeTangentTestNode("m", [3]Vec3{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, c.ours)
+			game := makeTangentTestNode("m", gamePos, c.game)
+
+			s := compareNodeTangents(ours, game)
+			if s.matched != c.wantMatched {
+				t.Errorf("matched=%d want=%d", s.matched, c.wantMatched)
+			}
+			if s.unmatched != c.wantUnmatched {
+				t.Errorf("unmatched=%d want=%d", s.unmatched, c.wantUnmatched)
+			}
+			if s.badAlign != c.wantBadAlign {
+				t.Errorf("badAlign=%d want=%d", s.badAlign, c.wantBadAlign)
+			}
+			if !c.wantSkipMeanDot && s.matched > 0 {
+				mean := s.dotSum / float64(s.matched)
+				if mean < c.wantMeanDotMin || mean > c.wantMeanDotMax {
+					t.Errorf("mean|dot|=%.4f want in [%.4f, %.4f]",
+						mean, c.wantMeanDotMin, c.wantMeanDotMax)
+				}
+			}
+		})
+	}
 }

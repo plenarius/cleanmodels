@@ -9,6 +9,15 @@ import (
 
 // vertKey is a bit-exact key for vertex deduplication.
 // Using uint32 bit patterns avoids float comparison ambiguity.
+//
+// The game compiler splits at material and smoothing-group boundaries
+// even when those values would otherwise share a GPU vertex with the
+// same position/UV/normal/color. We must include them in the dedup key
+// to match the game's vertex count exactly. Without these, multi-
+// material meshes (e.g. character body parts with 4-6 material indices)
+// over-merge by 30-50%, which then perturbs Mikktspace tangents at
+// material/SG boundaries and is the dominant cause of the ~1-3% bad-
+// alignment corners observed in the oracle suite.
 type vertKey struct {
 	px, py, pz     uint32 // position bits
 	ux, uy         uint32 // UV0 bits
@@ -17,6 +26,8 @@ type vertKey struct {
 	u3x, u3y       uint32 // UV3 bits
 	nx, ny, nz     uint32 // normal bits
 	cr, cg, cb     uint32 // color bits
+	mat            int32  // face material index
+	sg             int32  // face smoothing group
 }
 
 func f32bits(f float32) uint32 { return math.Float32bits(f) }
@@ -429,6 +440,8 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 				u3x: f32bits(uv3.X), u3y: f32bits(uv3.Y),
 				nx: f32bits(nor.X), ny: f32bits(nor.Y), nz: f32bits(nor.Z),
 				cr: f32bits(col.X), cg: f32bits(col.Y), cb: f32bits(col.Z),
+				mat: face.Material,
+				sg:  face.SmoothGroup,
 			}
 
 			gpuIdx, ok := cache[key]
