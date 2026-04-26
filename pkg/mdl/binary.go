@@ -13,6 +13,7 @@
 package mdl
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -31,19 +32,17 @@ const (
 )
 
 // DecompileFile reads a binary MDL from disk.
+//
+// The full file is slurped into memory and parsed from a bytes.Reader.
+// Binary MDLs top out in the low single-digit megabytes and the parser
+// does many small (4-byte) random-access reads via binary.Read, so reading
+// once and parsing in-memory avoids ~one syscall per field.
 func DecompileFile(path string) (*Model, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	return Decompile(f, info.Size())
+	return Decompile(bytes.NewReader(data), int64(len(data)))
 }
 
 // Decompile reads a binary MDL from a ReadSeeker.
