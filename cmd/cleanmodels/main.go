@@ -77,6 +77,7 @@ Common flags (all commands):
   --verbose       Show all warnings and info
   --workers N     Parallel workers for batch mode (default: CPU count)
   --recursive     Process directories recursively
+  --color MODE    ANSI color: auto, always, never (default: auto)
 
 Legacy mode:
   cleanmodels [flags] <input> [output]
@@ -98,6 +99,7 @@ func runLegacy(args []string) int {
 	verbose := fs.Bool("verbose", false, "show all warnings and info")
 	quiet := fs.Bool("quiet", false, "suppress all output except errors")
 	workers := fs.Int("workers", runtime.NumCPU(), "parallel workers for batch mode")
+	colorMode := fs.String("color", "auto", "ANSI color: auto, always, never")
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run")
 	recursive := fs.Bool("recursive", false, "process directories recursively")
@@ -170,6 +172,10 @@ func runLegacy(args []string) int {
 		}
 		return exitUsage
 	}
+	if err := validateColorMode(*colorMode); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+		return exitUsage
+	}
 
 	pos := fs.Args()
 	if len(pos) < 1 {
@@ -210,6 +216,7 @@ func runLegacy(args []string) int {
 		recursive:     *recursive,
 		dryRun:        *dryRun,
 		compile:       *compileFlag,
+		colorMode:     *colorMode,
 		repairOpts: repairOpts{
 			fixPivots:        *fixPivots || *fixAll,
 			fixAABB:          *fixAABB || *fixAll,

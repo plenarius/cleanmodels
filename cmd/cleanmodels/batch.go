@@ -55,7 +55,19 @@ func batchOutputPath(root, outputDir, filePath string) (string, error) {
 	return out, nil
 }
 
-func runBatch(root, outputDir string, o procOpts, tw *termWriter) int {
+// runBatch processes every MDL under root.
+//
+// Stream routing rule (single source of truth):
+//
+//   - Per-file diagnostic lines and the final human summary go to stdout in
+//     plain mode (errTw is unused there) so a `> log.txt` redirect captures
+//     the whole batch report.
+//   - In --json mode the JSON array goes to stdout; the human summary moves
+//     to stderr (via errTw) to keep stdout machine-clean.
+//   - In --json-lines mode every event (including a "summary" event) is on
+//     stdout; no human summary is emitted.
+//   - Errors and the empty-batch hint always go to stderr regardless of mode.
+func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 	files, err := collectMDLFiles(root, o.recursive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
@@ -64,9 +76,9 @@ func runBatch(root, outputDir string, o procOpts, tw *termWriter) int {
 
 	if len(files) == 0 {
 		if !o.quiet {
-			fmt.Fprintf(os.Stderr, "%s\n", suggestRecursive(root))
+			fmt.Fprintf(os.Stderr, "cleanmodels: %s\n", suggestRecursive(root))
 		}
-		return exitOK
+		return exitUsage
 	}
 
 	total := len(files)
@@ -86,9 +98,15 @@ func runBatch(root, outputDir string, o procOpts, tw *termWriter) int {
 		bo.jsonOut = true
 	}
 
-	// Use live progress (in-place rewriting) only when stdout is a real TTY.
+	// Use live progress (in-place rewriting) only when stdout is a real TTY,
+	// not in machine-output modes, and only above a small-batch threshold —
+	// for 2 or 3 files the streaming line-per-file form is calmer and avoids
+	// flashing cursor moves for an operation that completes in <1s.
 	// FORCE_COLOR alone is not enough — cursor control requires a real terminal.
-	useLive := isTerminal(int(os.Stdout.Fd())) && !o.jsonOut && !o.jsonLines && !o.quiet
+	const liveProgressMinFiles = 4
+	useLive := total >= liveProgressMinFiles &&
+		isTerminal(int(os.Stdout.Fd())) &&
+		!o.jsonOut && !o.jsonLines && !o.quiet
 	var lp *liveProgress
 	if useLive {
 		lp = newLiveProgress(tw, total)
@@ -203,10 +221,15 @@ func runBatch(root, outputDir string, o procOpts, tw *termWriter) int {
 		lp.finish()
 	}
 
-	if !o.quiet && !o.jsonOut && !o.jsonLines {
+	switch {
+	case o.quiet, o.jsonLines:
+		// Quiet emits nothing; json-lines already emitted a summary event.
+	case o.jsonOut:
+		// Stdout carries the JSON array; route the human counts to stderr.
+		errTw.printBatchSummary(procN, totalRepairs, totalW, totalE)
+	default:
+		// Plain mode: per-file lines went to stdout, summary follows them.
 		tw.printBatchSummary(procN, totalRepairs, totalW, totalE)
-	} else if !o.quiet && !o.jsonLines {
-		fmt.Fprintf(os.Stderr, "Processed %d files, %d warnings, %d errors\n", procN, totalW, totalE)
 	}
 	return exitCode
 }

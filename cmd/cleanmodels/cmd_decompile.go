@@ -31,6 +31,10 @@ func cmdDecompile(args []string) int {
 		}
 		return exitUsage
 	}
+	if err := cf.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+		return exitUsage
+	}
 	pos := fs.Args()
 	if len(pos) < 1 {
 		fs.Usage()

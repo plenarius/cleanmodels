@@ -20,9 +20,14 @@ const (
 )
 
 // termWriter wraps an io.Writer with optional ANSI color support.
+//
+// cols is the terminal width when stdout is a real TTY, or 0 when
+// piped/unknown. formatBatchLine uses it to keep diagnostic lines on
+// a single visual line on narrow terminals.
 type termWriter struct {
 	w     io.Writer
 	color bool
+	cols  int
 }
 
 func newTermWriter(w io.Writer, color bool) *termWriter {
@@ -253,34 +258,59 @@ func (lp *liveProgress) finish() {
 }
 
 // formatBatchLine returns a formatted batch line string (no trailing newline).
+//
+// When the term writer knows the terminal width (cols > 0), the dot leader
+// shrinks so the assembled line fits within cols-1 columns and avoids the
+// trailing wrap that doubles every progress line on narrow terminals. When
+// cols is 0 (piped, unknown), the historical 50-char filename region is
+// preserved.
 func (tw *termWriter) formatBatchLine(idx, total int, baseName string, res Result) string {
 	width := len(fmt.Sprintf("%d", total))
 	prefix := fmt.Sprintf("[%*d/%d]", width, idx, total)
 
 	fixes := countFixes(res)
 
-	var status string
-	if res.Error != "" {
-		status = tw.red("ERROR: " + truncate(res.Error, 40))
-	} else if countCheckErrors(res.Checks) > 0 {
+	var statusPlain string
+	var statusColored string
+	switch {
+	case res.Error != "":
+		statusPlain = "ERROR: " + truncate(res.Error, 40)
+		statusColored = tw.red(statusPlain)
+	case countCheckErrors(res.Checks) > 0:
 		errCount := countCheckErrors(res.Checks)
-		status = tw.red(fmt.Sprintf("%d %s", errCount, pluralize(errCount, "error", "errors")))
-	} else if fixes > 0 {
-		status = tw.green(fmt.Sprintf("%d %s", fixes, pluralize(fixes, "repair", "repairs")))
-	} else if len(res.Actions) > 0 {
-		status = tw.green("ok")
-	} else {
-		status = tw.dim("clean")
+		statusPlain = fmt.Sprintf("%d %s", errCount, pluralize(errCount, "error", "errors"))
+		statusColored = tw.red(statusPlain)
+	case fixes > 0:
+		statusPlain = fmt.Sprintf("%d %s", fixes, pluralize(fixes, "repair", "repairs"))
+		statusColored = tw.green(statusPlain)
+	case len(res.Actions) > 0:
+		statusPlain = "ok"
+		statusColored = tw.green(statusPlain)
+	default:
+		statusPlain = "clean"
+		statusColored = tw.dim(statusPlain)
 	}
 
 	nameLen := len(baseName)
+	// Default historical region: 50 chars between prefix and status.
 	leaderLen := 50 - nameLen
 	if leaderLen < 3 {
 		leaderLen = 3
 	}
+	if tw.cols > 0 {
+		// Visible budget: prefix + " " + baseName + " " + dots + " " + status.
+		// Reserve one trailing column to avoid edge-of-window wrap glyphs.
+		fixed := len(prefix) + 1 + nameLen + 2 + len(statusPlain) + 1
+		if budget := tw.cols - fixed; budget < leaderLen {
+			leaderLen = budget
+		}
+		if leaderLen < 3 {
+			leaderLen = 3
+		}
+	}
 	leader := " " + strings.Repeat(".", leaderLen) + " "
 
-	return fmt.Sprintf("%s %s%s%s", prefix, baseName, tw.dim(leader), status)
+	return fmt.Sprintf("%s %s%s%s", prefix, baseName, tw.dim(leader), statusColored)
 }
 
 func truncate(s string, max int) string {
@@ -291,9 +321,17 @@ func truncate(s string, max int) string {
 }
 
 // shouldColorize returns true if output should use ANSI color codes.
-// Respects NO_COLOR env var (https://no-color.org/) and checks if the
-// file descriptor is attached to a terminal.
-func shouldColorize(fd uintptr) bool {
+// mode: "always" forces on, "never" forces off, "auto" (or empty)
+// honors NO_COLOR (https://no-color.org/) and FORCE_COLOR env vars,
+// then falls back to TTY detection on the supplied descriptor.
+// Explicit mode beats env vars; env vars beat TTY detection.
+func shouldColorize(fd uintptr, mode string) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	}
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}

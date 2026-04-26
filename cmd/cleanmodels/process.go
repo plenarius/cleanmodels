@@ -93,6 +93,7 @@ type procOpts struct {
 	compile                                                        bool
 	workers                                                        int
 	include, exclude                                               map[string]bool
+	colorMode                                                      string // "auto", "always", "never"
 
 	repairOpts
 	tileOpts
@@ -173,16 +174,26 @@ func isBinaryMDL(path string) (bool, error) {
 
 func dispatch(inputPath, outputPath string, opts procOpts) int {
 	useColor := !opts.jsonOut && !opts.jsonLines && !opts.quiet
-	tw := newTermWriter(os.Stdout, useColor && shouldColorize(os.Stdout.Fd()))
+	tw := newTermWriter(os.Stdout, useColor && shouldColorize(os.Stdout.Fd(), opts.colorMode))
+	if isTerminal(int(os.Stdout.Fd())) {
+		tw.cols = terminalWidth(int(os.Stdout.Fd()))
+	}
+	// errTw mirrors the colour decision but targets stderr. Diagnostic
+	// summary lines route here so they never collide with --json data on
+	// stdout, even when the user pipes only stdout to a file.
+	errTw := newTermWriter(os.Stderr, useColor && shouldColorize(os.Stderr.Fd(), opts.colorMode))
+	if isTerminal(int(os.Stderr.Fd())) {
+		errTw.cols = terminalWidth(int(os.Stderr.Fd()))
+	}
 	fi, err := os.Stat(inputPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", wrapWithSuggestion(err, inputPath))
 		return exitErrors
 	}
 	if fi.IsDir() {
-		return runBatch(inputPath, outputPath, opts, tw)
+		return runBatch(inputPath, outputPath, opts, tw, errTw)
 	}
-	return runSingle(inputPath, outputPath, opts, tw)
+	return runSingle(inputPath, outputPath, opts, tw, errTw)
 }
 
 func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
@@ -645,7 +656,11 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 }
 
 // runSingle processes a single file with the given options and output configuration.
-func runSingle(inputPath, outputPath string, o procOpts, tw *termWriter) int {
+//
+// Stream routing follows the same rule as runBatch: in plain mode all human
+// output (detail + summary) goes to stdout; in --json mode the human summary
+// moves to stderr (errTw) so stdout stays machine-clean.
+func runSingle(inputPath, outputPath string, o procOpts, tw, errTw *termWriter) int {
 	if o.jsonLines {
 		emitEvent(Event{Type: "start", File: filepath.Base(inputPath), Index: 1, Total: 1})
 	}
@@ -684,9 +699,18 @@ func runSingle(inputPath, outputPath string, o procOpts, tw *termWriter) int {
 		}
 	}
 
-	if !o.quiet && !o.jsonOut && !o.jsonLines {
+	switch {
+	case o.quiet, o.jsonLines:
+		// Quiet emits nothing; json-lines already emitted a per-file event.
+	case o.jsonOut:
+		// Stdout carries the JSON object; route the human counts to stderr.
 		w, e := tally(res, len(parseErrs))
-		fmt.Fprintf(os.Stderr, "\n%d %s, %d %s, %d %s\n",
+		fmt.Fprintf(errTw.w, "\n%d %s, %d %s, %d %s\n",
+			1, "file", w, pluralize(w, "warning", "warnings"), e, pluralize(e, "error", "errors"))
+	default:
+		// Plain mode: detail went to stdout, summary follows it.
+		w, e := tally(res, len(parseErrs))
+		fmt.Fprintf(tw.w, "\n%d %s, %d %s, %d %s\n",
 			1, "file", w, pluralize(w, "warning", "warnings"), e, pluralize(e, "error", "errors"))
 	}
 
