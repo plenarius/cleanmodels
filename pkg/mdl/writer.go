@@ -16,6 +16,7 @@ package mdl
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -56,6 +57,10 @@ type writer struct {
 	w           io.Writer
 	err         error
 	useTexture0 bool
+	// scratch is a reusable buffer for hot-path line building. Hot loops
+	// (vert/normal/face/key lists) format directly into scratch and emit
+	// each line with a single Write, avoiding fmt.Sprintf allocations.
+	scratch []byte
 }
 
 func (w *writer) printf(format string, args ...interface{}) {
@@ -77,6 +82,130 @@ func (w *writer) indent(level int, format string, args ...interface{}) {
 	w.printf("%s", prefix)
 	w.printf(format, args...)
 	w.printf("\n")
+}
+
+// emit writes w.scratch and resets its length. Caller is expected to
+// have built a complete line (including trailing newline) in scratch.
+func (w *writer) emit() {
+	if w.err != nil {
+		w.scratch = w.scratch[:0]
+		return
+	}
+	if len(w.scratch) > 0 {
+		_, w.err = w.w.Write(w.scratch)
+	}
+	w.scratch = w.scratch[:0]
+}
+
+// writeVec3Line emits "<indent>X Y Z\n" with no allocation per call.
+func (w *writer) writeVec3Line(level int, v Vec3) {
+	w.scratch = appendIndent(w.scratch[:0], level)
+	w.scratch = appendVec3(w.scratch, v)
+	w.scratch = append(w.scratch, '\n')
+	w.emit()
+}
+
+// writeVec4Line emits "<indent>X Y Z W\n".
+func (w *writer) writeVec4Line(level int, v Vec4) {
+	w.scratch = appendIndent(w.scratch[:0], level)
+	w.scratch = appendFloat(w.scratch, v.X)
+	w.scratch = append(w.scratch, ' ')
+	w.scratch = appendFloat(w.scratch, v.Y)
+	w.scratch = append(w.scratch, ' ')
+	w.scratch = appendFloat(w.scratch, v.Z)
+	w.scratch = append(w.scratch, ' ')
+	w.scratch = appendFloat(w.scratch, v.W)
+	w.scratch = append(w.scratch, '\n')
+	w.emit()
+}
+
+// writeFaceLine emits "<indent>v0 v1 v2 sg uv0 uv1 uv2 mat\n".
+func (w *writer) writeFaceLine(level int, f Face) {
+	b := appendIndent(w.scratch[:0], level)
+	b = strconv.AppendInt(b, int64(f.Verts[0]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.Verts[1]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.Verts[2]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendUint(b, uint64(f.SmoothGroup), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.UVs[0]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.UVs[1]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.UVs[2]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(f.Material), 10)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
+}
+
+// writeInt3Line emits "<indent>a b c\n".
+func (w *writer) writeInt3Line(level int, v [3]int32) {
+	b := appendIndent(w.scratch[:0], level)
+	b = strconv.AppendInt(b, int64(v[0]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(v[1]), 10)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(v[2]), 10)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
+}
+
+// writeFloatVec3Line emits "<indent>T X Y Z\n" — used for position keys.
+func (w *writer) writeFloatVec3Line(level int, t float32, v Vec3) {
+	b := appendIndent(w.scratch[:0], level)
+	b = appendFloat(b, t)
+	b = append(b, ' ')
+	b = appendVec3(b, v)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
+}
+
+// writeFloatVec4Line emits "<indent>T X Y Z W\n" — used for orientation keys.
+func (w *writer) writeFloatVec4Line(level int, t float32, v Vec4) {
+	b := appendIndent(w.scratch[:0], level)
+	b = appendFloat(b, t)
+	b = append(b, ' ')
+	b = appendFloat(b, v.X)
+	b = append(b, ' ')
+	b = appendFloat(b, v.Y)
+	b = append(b, ' ')
+	b = appendFloat(b, v.Z)
+	b = append(b, ' ')
+	b = appendFloat(b, v.W)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
+}
+
+// writeFloatFloatLine emits "<indent>T V\n" — used for float key lists.
+func (w *writer) writeFloatFloatLine(level int, t, v float32) {
+	b := appendIndent(w.scratch[:0], level)
+	b = appendFloat(b, t)
+	b = append(b, ' ')
+	b = appendFloat(b, v)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
+}
+
+// writeAabbEntryLine emits "<indent>minX minY minZ maxX maxY maxZ leaf\n".
+// Used for AABB walkmesh entries — typically thousands per tile.
+func (w *writer) writeAabbEntryLine(level int, e AabbEntry) {
+	b := appendIndent(w.scratch[:0], level)
+	b = appendVec3(b, e.BoundMin)
+	b = append(b, ' ')
+	b = appendVec3(b, e.BoundMax)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(e.LeafFace), 10)
+	b = append(b, '\n')
+	w.scratch = b
+	w.emit()
 }
 
 func (w *writer) writeModelHeader(m *Model) {
@@ -246,7 +375,7 @@ func (w *writer) writeMeshData(m *MeshData) {
 	if len(m.Verts) > 0 {
 		w.indent(4, "verts %d", len(m.Verts))
 		for _, v := range m.Verts {
-			w.indent(6, "%s", fmtVec3(v))
+			w.writeVec3Line(6, v)
 		}
 	}
 
@@ -268,7 +397,7 @@ func (w *writer) writeMeshData(m *MeshData) {
 	if len(m.Colors) > 0 {
 		w.indent(4, "colors %d", len(m.Colors))
 		for _, c := range m.Colors {
-			w.indent(6, "%s", fmtVec3(c))
+			w.writeVec3Line(6, c)
 		}
 	}
 
@@ -279,7 +408,7 @@ func (w *writer) writeMeshData(m *MeshData) {
 	if len(m.Tangents) > 0 {
 		w.indent(4, "tangents %d", len(m.Tangents))
 		for _, t := range m.Tangents {
-			w.indent(6, "%s %s %s %s", fmtFloat(t.X), fmtFloat(t.Y), fmtFloat(t.Z), fmtFloat(t.W))
+			w.writeVec4Line(6, t)
 		}
 	}
 }
@@ -336,7 +465,7 @@ func (w *writer) writeAabbData(a *AabbData) {
 	if len(a.Entries) > 0 {
 		w.indent(4, "aabb %d", len(a.Entries))
 		for _, e := range a.Entries {
-			w.indent(6, "%s %s %d", fmtVec3(e.BoundMin), fmtVec3(e.BoundMax), e.LeafFace)
+			w.writeAabbEntryLine(6, e)
 		}
 	}
 }
@@ -566,7 +695,7 @@ func (w *writer) writePositionKeys(keys []PositionKey) {
 	}
 	w.indent(6, "positionkey %d", len(keys))
 	for _, k := range keys {
-		w.indent(3, "%s %s", fmtFloat(k.Time), fmtVec3(k.Value))
+		w.writeFloatVec3Line(3, k.Time, k.Value)
 	}
 	w.indent(6, "endlist")
 }
@@ -577,7 +706,7 @@ func (w *writer) writeOrientationKeys(keys []OrientationKey) {
 	}
 	w.indent(6, "orientationkey %d", len(keys))
 	for _, k := range keys {
-		w.indent(3, "%s %s %s", fmtFloat(k.Time), fmtVec3(Vec3{X: k.Value.X, Y: k.Value.Y, Z: k.Value.Z}), fmtFloat(k.Value.W))
+		w.writeFloatVec4Line(3, k.Time, k.Value)
 	}
 	w.indent(6, "endlist")
 }
@@ -600,7 +729,7 @@ func (w *writer) writeFloatKeyList(name string, keys []FloatKey) {
 	}
 	w.indent(6, "%s %d", name, len(keys))
 	for _, k := range keys {
-		w.indent(3, "%s %s", fmtFloat(k.Time), fmtFloat(k.Value))
+		w.writeFloatFloatLine(3, k.Time, k.Value)
 	}
 	w.indent(6, "endlist")
 }
@@ -611,7 +740,7 @@ func (w *writer) writeColorKeyList(name string, keys []ColorKey) {
 	}
 	w.indent(6, "%s %d", name, len(keys))
 	for _, k := range keys {
-		w.indent(3, "%s %s", fmtFloat(k.Time), fmtVec3(k.Value))
+		w.writeFloatVec3Line(3, k.Time, k.Value)
 	}
 	w.indent(6, "endlist")
 }
@@ -621,12 +750,9 @@ func (w *writer) writeFaces(indent int, faces []Face) {
 		return
 	}
 	w.indent(indent, "faces %d", len(faces))
+	inner := indent + 2
 	for _, f := range faces {
-		w.indent(indent+2, "%d %d %d %d %d %d %d %d",
-			f.Verts[0], f.Verts[1], f.Verts[2],
-			f.SmoothGroup,
-			f.UVs[0], f.UVs[1], f.UVs[2],
-			f.Material)
+		w.writeFaceLine(inner, f)
 	}
 }
 
@@ -639,8 +765,9 @@ func (w *writer) writeVec3ListAt(indent int, name string, vecs []Vec3) {
 		return
 	}
 	w.indent(indent, "%s %d", name, len(vecs))
+	inner := indent + 2
 	for _, v := range vecs {
-		w.indent(indent+2, "%s", fmtVec3(v))
+		w.writeVec3Line(inner, v)
 	}
 }
 
@@ -650,6 +777,6 @@ func (w *writer) writeInt3List(name string, vals [][3]int32) {
 	}
 	w.indent(4, "%s %d", name, len(vals))
 	for _, v := range vals {
-		w.indent(6, "%d %d %d", v[0], v[1], v[2])
+		w.writeInt3Line(6, v)
 	}
 }
