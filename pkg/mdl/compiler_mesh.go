@@ -53,6 +53,12 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	}
 	c.lastExpanded = &expanded
 
+	// Resolve tangents up-front so the header can decide whether to emit a
+	// real MDX pointer or leave -1 ("not present"). Generation needs the
+	// expanded mesh's positions, normals, and UV0 — meshes without UVs
+	// (e.g. AABB walkmesh) keep both pointers at -1.
+	tangentsOut, bitangentsOut := resolveTangents(mesh, &expanded)
+
 	// uint32 p_func1, p_func2 (8 bytes) — engine fills at load
 	c.core.zeros(8)
 
@@ -187,11 +193,23 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	c.core.i32le(-1)
 	c.core.i32le(-1)
 	// int32 p_mdx_tangent / tex_anim3 (4) — EE tangents
-	c.core.i32le(-1)
+	mdxTangentPtrPos := -1
+	if len(tangentsOut) > 0 {
+		mdxTangentPtrPos = c.core.len()
+		c.core.i32le(0) // placeholder, patched after MDX tangent write
+	} else {
+		c.core.i32le(-1)
+	}
 	// int32 p_mdx_tex_anim4 (4, deprecated)
 	c.core.i32le(-1)
 	// int32 p_mdx_bitangent / tex_anim5 (4) — EE bitangent
-	c.core.i32le(-1)
+	mdxBitangentPtrPos := -1
+	if len(bitangentsOut) > 0 {
+		mdxBitangentPtrPos = c.core.len()
+		c.core.i32le(0) // placeholder, patched after MDX bitangent write
+	} else {
+		c.core.i32le(-1)
+	}
 
 	// byte light_mapped, rotate_texture (2)
 	c.core.u8(byte(mesh.LightMapped))
@@ -235,19 +253,25 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	writeUVs(expanded.uvs2, mdxTex2PtrPos)
 	writeUVs(expanded.uvs3, mdxTex3PtrPos)
 
-	// Write normals
-	if len(expanded.normals) > 0 {
-		normStart := int32(c.vol.len())
-		for _, n := range expanded.normals {
-			c.vol.vec3(n)
+	// Write a slice of Vec3 vertex attributes to the volatile MDX block and
+	// patch the corresponding header pointer. Mirrors the writeUVs closure
+	// above; centralising it keeps the guard semantics consistent across
+	// normals, tangents, and bitangents.
+	writeVec3Stream := func(data []Vec3, ptrPos int) {
+		if len(data) == 0 || ptrPos < 0 {
+			return
 		}
-		if mdxNormalPtrPos >= 0 {
-			c.core.patchU32(mdxNormalPtrPos, uint32(normStart))
+		start := int32(c.vol.len())
+		for _, v := range data {
+			c.vol.vec3(v)
 		}
+		c.core.patchU32(ptrPos, uint32(start))
 	}
 
+	writeVec3Stream(expanded.normals, mdxNormalPtrPos)
+
 	// Write colors as 4-byte RGBA (matching binary.go readMDXColors)
-	if len(expanded.colors) > 0 {
+	if len(expanded.colors) > 0 && mdxColorPtrPos >= 0 {
 		colorStart := int32(c.vol.len())
 		for _, col := range expanded.colors {
 			c.vol.u8(clampByte(col.X))
@@ -255,10 +279,14 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 			c.vol.u8(clampByte(col.Z))
 			c.vol.u8(0xFF) // alpha
 		}
-		if mdxColorPtrPos >= 0 {
-			c.core.patchU32(mdxColorPtrPos, uint32(colorStart))
-		}
+		c.core.patchU32(mdxColorPtrPos, uint32(colorStart))
 	}
+
+	// The decompiler reads both arrays back and reconstructs the per-vertex
+	// Vec4 W handedness from sign(dot(cross(normal, tangent), bitangent)) —
+	// see binary.go readMDXTangents.
+	writeVec3Stream(tangentsOut, mdxTangentPtrPos)
+	writeVec3Stream(bitangentsOut, mdxBitangentPtrPos)
 
 	return
 }
