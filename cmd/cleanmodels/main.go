@@ -23,7 +23,9 @@ var subcommands = map[string]func([]string) int{
 }
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	code := run(os.Args[1:])
+	runProfileCleanups()
+	os.Exit(code)
 }
 
 func run(args []string) int {
