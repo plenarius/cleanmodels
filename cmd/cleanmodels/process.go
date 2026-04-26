@@ -461,12 +461,37 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 		}
 	}
 
-	if o.tileOpts.chamfer != "" {
-		res.Repairs = append(res.Repairs, fmt.Sprintf("chamfer mode %q accepted but not yet implemented", o.tileOpts.chamfer))
+	switch o.tileOpts.chamfer {
+	case "add":
+		for _, m := range mdl.AddChamfers(model) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	case "delete":
+		for _, m := range mdl.DeleteChamfers(model) {
+			res.Repairs = append(res.Repairs, m)
+		}
+	case "":
+	default:
+		res.Repairs = append(res.Repairs, fmt.Sprintf("ignoring unknown chamfer mode %q (expected add|delete)", o.tileOpts.chamfer))
 	}
 
-	if o.tileOpts.water && o.tileOpts.dynamicWater != "" {
-		res.Repairs = append(res.Repairs, fmt.Sprintf("dynamic-water mode %q accepted (water processing enabled)", o.tileOpts.dynamicWater))
+	if o.tileOpts.water {
+		switch o.tileOpts.dynamicWater {
+		case "no":
+			for _, m := range mdl.ConvertWateryToTrimesh(model, o.tileOpts.waterKey) {
+				res.Repairs = append(res.Repairs, m)
+			}
+		case "wavy":
+			for _, m := range mdl.ApplyWavyWater(model, mdl.WavyWaterOptions{
+				WaterKey:   o.tileOpts.waterKey,
+				WaveHeight: o.tileOpts.waveHeight,
+			}) {
+				res.Repairs = append(res.Repairs, m)
+			}
+		case "yes", "":
+		default:
+			res.Repairs = append(res.Repairs, fmt.Sprintf("ignoring unknown dynamic-water mode %q (expected yes|no|wavy)", o.tileOpts.dynamicWater))
+		}
 	}
 }
 

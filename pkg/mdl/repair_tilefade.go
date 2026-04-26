@@ -28,6 +28,7 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 		return msgs
 	}
 
+	idx := nodeIndex(model)
 	for i := 0; i < len(model.Nodes); i++ {
 		n := model.Nodes[i]
 		if n == nil || n.Mesh == nil {
@@ -38,11 +39,11 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 		}
 		// trimesh or skin (both carry MeshData on Mesh)
 
-		if !meshCrossesTileFadeZ(model, n, n.Mesh, sliceZ) {
+		if !meshCrossesTileFadeZ(idx, n, n.Mesh, sliceZ) {
 			continue
 		}
 
-		above, below, skAbove, skBelow, err := splitMeshAtWorldZ(model, n, n.Mesh, sliceZ)
+		above, below, skAbove, skBelow, err := splitMeshAtWorldZ(idx, n, n.Mesh, sliceZ)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf("slice tilefade: node %q — %v", n.Name, err))
 			continue
@@ -64,6 +65,9 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 			"slice tilefade: node %q split at z=%g into %q (tilefade=0, %d faces) and %q (tilefade=1, %d faces)",
 			baseName, sliceZ, name0, len(below.Faces), name1, len(above.Faces),
 		))
+		// reparentNodes + cloned nodes invalidate idx for any remaining
+		// children whose Parent now points at the freshly-renamed node.
+		idx = nodeIndex(model)
 		i++ // skip the inserted node we just processed
 	}
 
@@ -146,95 +150,16 @@ func cloneNodeForTileFadeSplit(src *Node, newName string, mesh *MeshData, skin *
 	return dst
 }
 
-// --- world / local transform (tile-relative: node position + orientation + scale) ---
-
-// ancestorChain returns the chain of nodes from n up to root, with cycle detection.
-func ancestorChain(m *Model, n *Node) []*Node {
-	var chain []*Node
-	visited := make(map[string]bool)
-	for nd := n; nd != nil; {
-		key := strings.ToLower(nd.Name)
-		if visited[key] {
-			break
-		}
-		visited[key] = true
-		chain = append(chain, nd)
-		if nd.Parent == "" || strings.EqualFold(nd.Parent, "NULL") {
-			break
-		}
-		nd = m.FindNode(nd.Parent)
-	}
-	return chain
-}
-
-// localToParent maps a point from this node's local space into its parent's space.
-func localToParent(n *Node, v Vec3) Vec3 {
-	s := n.Scale
-	if s == 0 {
-		s = 1
-	}
-	sv := Vec3{X: v.X * s, Y: v.Y * s, Z: v.Z * s}
-	q := axisAngleToQuat(n.Orientation)
-	rv := quatRotateVec(q, sv)
-	return Vec3{X: rv.X + n.Position.X, Y: rv.Y + n.Position.Y, Z: rv.Z + n.Position.Z}
-}
-
-// parentToLocal maps a point from this node's parent space into this node's local space.
-func parentToLocal(n *Node, p Vec3) Vec3 {
-	t := Vec3{X: p.X - n.Position.X, Y: p.Y - n.Position.Y, Z: p.Z - n.Position.Z}
-	q := axisAngleToQuat(n.Orientation)
-	rv := quatRotateVec(quatConj(q), t)
-	s := n.Scale
-	if s == 0 {
-		s = 1
-	}
-	return Vec3{X: rv.X / s, Y: rv.Y / s, Z: rv.Z / s}
-}
-
-func localMeshVertexToWorld(m *Model, n *Node, v Vec3) Vec3 {
-	chain := ancestorChain(m, n)
-	cur := v
-	for _, nd := range chain {
-		cur = localToParent(nd, cur)
-	}
-	return cur
-}
-
-func worldToMeshVertexLocal(m *Model, n *Node, w Vec3) Vec3 {
-	chain := ancestorChain(m, n)
-	p := w
-	for i := len(chain) - 1; i >= 0; i-- {
-		p = parentToLocal(chain[i], p)
-	}
-	return p
-}
-
-func localMeshNormalToWorld(m *Model, n *Node, nl Vec3) Vec3 {
-	chain := ancestorChain(m, n)
-	nw := nl
-	for _, nd := range chain {
-		q := axisAngleToQuat(nd.Orientation)
-		nw = quatRotateVec(q, nw)
-	}
-	return vecNormalize(nw)
-}
-
-func worldNormalToMeshLocal(m *Model, n *Node, nw Vec3) Vec3 {
-	chain := ancestorChain(m, n)
-	nl := nw
-	for i := len(chain) - 1; i >= 0; i-- {
-		q := axisAngleToQuat(chain[i].Orientation)
-		nl = quatRotateVec(quatConj(q), nl)
-	}
-	return vecNormalize(nl)
-}
-
-func meshCrossesTileFadeZ(m *Model, n *Node, mesh *MeshData, sliceZ float32) bool {
+// meshCrossesTileFadeZ reports whether mesh straddles the world-space Z
+// plane sliceZ. idx must be the model's node index (built once per model);
+// callers that pass nil get a fresh-built index per call, which is fine for
+// one-shot diagnostics but wasteful inside per-face loops.
+func meshCrossesTileFadeZ(idx map[string]*Node, n *Node, mesh *MeshData, sliceZ float32) bool {
 	for fi := range mesh.Faces {
 		f := &mesh.Faces[fi]
-		z0 := localMeshVertexToWorld(m, n, meshVert(mesh, f.Verts[0])).Z
-		z1 := localMeshVertexToWorld(m, n, meshVert(mesh, f.Verts[1])).Z
-		z2 := localMeshVertexToWorld(m, n, meshVert(mesh, f.Verts[2])).Z
+		z0 := LocalToWorld(idx, n, meshVert(mesh, f.Verts[0])).Z
+		z1 := LocalToWorld(idx, n, meshVert(mesh, f.Verts[1])).Z
+		z2 := LocalToWorld(idx, n, meshVert(mesh, f.Verts[2])).Z
 		a0 := zAboveSlice(z0, sliceZ)
 		a1 := zAboveSlice(z1, sliceZ)
 		a2 := zAboveSlice(z2, sliceZ)
@@ -254,23 +179,6 @@ func meshVert(mesh *MeshData, idx int32) Vec3 {
 
 func zAboveSlice(worldZ, sliceZ float32) bool {
 	return worldZ > sliceZ+tilefadeZEpsilon
-}
-
-func quatConj(q Vec4) Vec4 {
-	return Vec4{X: -q.X, Y: -q.Y, Z: -q.Z, W: q.W}
-}
-
-// quatRotateVec applies a unit quaternion (x,y,z,w) to vector v.
-func quatRotateVec(q Vec4, v Vec3) Vec3 {
-	bx, by, bz, bw := q.X, q.Y, q.Z, q.W
-	tx := float32(2) * (by*v.Z - bz*v.Y)
-	ty := float32(2) * (bz*v.X - bx*v.Z)
-	tz := float32(2) * (bx*v.Y - by*v.X)
-	return Vec3{
-		X: v.X + bw*tx + (by*tz - bz*ty),
-		Y: v.Y + bw*ty + (bz*tx - bx*tz),
-		Z: v.Z + bw*tz + (bx*ty - by*tx),
-	}
 }
 
 // --- bundled vertex (per-corner data while clipping) ---
@@ -324,15 +232,15 @@ func readTileFadeVert(mesh *MeshData, skin *SkinData, vi, uvi int32) tileFadeVer
 }
 
 
-func worldZOf(m *Model, n *Node, v tileFadeVert) float32 {
-	return localMeshVertexToWorld(m, n, v.Pos).Z
+func worldZOf(idx map[string]*Node, n *Node, v tileFadeVert) float32 {
+	return LocalToWorld(idx, n, v.Pos).Z
 }
 
 // edgeSlice builds a new vertex on the edge v0—v1 where world Z == sliceZ.
 // Ref: tilefade.pl — plane/edge intersection then attribute interpolation.
-func edgeSlice(m *Model, n *Node, v0, v1 tileFadeVert, sliceZ float32) (tileFadeVert, bool) {
-	w0 := localMeshVertexToWorld(m, n, v0.Pos)
-	w1 := localMeshVertexToWorld(m, n, v1.Pos)
+func edgeSlice(idx map[string]*Node, n *Node, v0, v1 tileFadeVert, sliceZ float32) (tileFadeVert, bool) {
+	w0 := LocalToWorld(idx, n, v0.Pos)
+	w1 := LocalToWorld(idx, n, v1.Pos)
 	dz := w1.Z - w0.Z
 	if math.Abs(float64(dz)) < float64(tilefadeZEpsilon) {
 		return tileFadeVert{}, false
@@ -343,18 +251,18 @@ func edgeSlice(m *Model, n *Node, v0, v1 tileFadeVert, sliceZ float32) (tileFade
 	}
 	pw := vecLerp3(w0, w1, t)
 	out := tileFadeVert{
-		Pos: worldToMeshVertexLocal(m, n, pw),
-		Norm: worldNormalToMeshLocal(m, n, vecNormalize(vecLerp3(
-			localMeshNormalToWorld(m, n, v0.Norm),
-			localMeshNormalToWorld(m, n, v1.Norm),
+		Pos: WorldToLocal(idx, n, pw),
+		Norm: WorldNormalToLocal(idx, n, vecNormalize(vecLerp3(
+			LocalNormalToWorld(idx, n, v0.Norm),
+			LocalNormalToWorld(idx, n, v1.Norm),
 			t,
 		))),
-		UV:   vecLerp3(v0.UV, v1.UV, t),
-		UV1:  vecLerp3(v0.UV1, v1.UV1, t),
-		UV2:  vecLerp3(v0.UV2, v1.UV2, t),
-		UV3:  vecLerp3(v0.UV3, v1.UV3, t),
-		Color: vecLerp3(v0.Color, v1.Color, t),
-		Tan:   vecLerp4(v0.Tan, v1.Tan, t),
+		UV:     vecLerp3(v0.UV, v1.UV, t),
+		UV1:    vecLerp3(v0.UV1, v1.UV1, t),
+		UV2:    vecLerp3(v0.UV2, v1.UV2, t),
+		UV3:    vecLerp3(v0.UV3, v1.UV3, t),
+		Color:  vecLerp3(v0.Color, v1.Color, t),
+		Tan:    vecLerp4(v0.Tan, v1.Tan, t),
 		Weight: lerpVertexWeight(v0.Weight, v1.Weight, t),
 	}
 	return out, true
@@ -531,7 +439,7 @@ func orientTriangleForPlaneCut(a0, a1, a2 bool, v0, v1, v2 tileFadeVert) (va, vb
 	}
 }
 
-func splitMeshAtWorldZ(m *Model, n *Node, template *MeshData, sliceZ float32) (above, below *MeshData, skinAbove, skinBelow *SkinData, err error) {
+func splitMeshAtWorldZ(idx map[string]*Node, n *Node, template *MeshData, sliceZ float32) (above, below *MeshData, skinAbove, skinBelow *SkinData, err error) {
 	skin := n.Skin
 	ab := newMeshBuilderLike(template)
 	bl := newMeshBuilderLike(template)
@@ -568,9 +476,9 @@ func splitMeshAtWorldZ(m *Model, n *Node, template *MeshData, sliceZ float32) (a
 		v1 := readTileFadeVert(template, skin, f.Verts[1], f.UVs[1])
 		v2 := readTileFadeVert(template, skin, f.Verts[2], f.UVs[2])
 
-		z0 := worldZOf(m, n, v0)
-		z1 := worldZOf(m, n, v1)
-		z2 := worldZOf(m, n, v2)
+		z0 := worldZOf(idx, n, v0)
+		z1 := worldZOf(idx, n, v1)
+		z2 := worldZOf(idx, n, v2)
 		a0 := zAboveSlice(z0, sliceZ)
 		a1 := zAboveSlice(z1, sliceZ)
 		a2 := zAboveSlice(z2, sliceZ)
@@ -589,11 +497,11 @@ func splitMeshAtWorldZ(m *Model, n *Node, template *MeshData, sliceZ float32) (a
 			return nil, nil, nil, nil, fmt.Errorf("face %d: unexpected plane/triangle configuration", fi)
 		}
 		if loneAbove {
-			if err = splitOneAbove(m, n, template, sliceZ, bAbove, bBelow, f, va, vb, vc, useTI0, useTI1, useTI2, useTI3, tex0, tex1, tex2, tex3); err != nil {
+			if err = splitOneAbove(idx, n, template, sliceZ, bAbove, bBelow, f, va, vb, vc, useTI0, useTI1, useTI2, useTI3, tex0, tex1, tex2, tex3); err != nil {
 				return nil, nil, nil, nil, err
 			}
 		} else {
-			if err = splitOneAbove(m, n, template, sliceZ, bBelow, bAbove, f, va, vb, vc, useTI0, useTI1, useTI2, useTI3, tex0, tex1, tex2, tex3); err != nil {
+			if err = splitOneAbove(idx, n, template, sliceZ, bBelow, bAbove, f, va, vb, vc, useTI0, useTI1, useTI2, useTI3, tex0, tex1, tex2, tex3); err != nil {
 				return nil, nil, nil, nil, err
 			}
 		}
@@ -619,9 +527,9 @@ func (b *meshBuilderWithSkin) emitFace(template *MeshData, src *Face, v0, v1, v2
 // The first mesh builder receives the small corner triangle; the second
 // receives the two fan triangles on the opposite side.
 // Ref: tilefade.pl — two-triangle fan + corner triangle at the slice.
-func splitOneAbove(m *Model, n *Node, template *MeshData, sliceZ float32, triA, triB *meshBuilderWithSkin, src *Face, va, vb, vc tileFadeVert, useTI0, useTI1, useTI2, useTI3 bool, tex0, tex1, tex2, tex3 [3]int32) error {
-	iab, okAB := edgeSlice(m, n, va, vb, sliceZ)
-	iac, okAC := edgeSlice(m, n, va, vc, sliceZ)
+func splitOneAbove(idx map[string]*Node, n *Node, template *MeshData, sliceZ float32, triA, triB *meshBuilderWithSkin, src *Face, va, vb, vc tileFadeVert, useTI0, useTI1, useTI2, useTI3 bool, tex0, tex1, tex2, tex3 [3]int32) error {
+	iab, okAB := edgeSlice(idx, n, va, vb, sliceZ)
+	iac, okAC := edgeSlice(idx, n, va, vc, sliceZ)
 	if !okAB || !okAC {
 		return fmt.Errorf("degenerate slice intersection (parallel edge)")
 	}
