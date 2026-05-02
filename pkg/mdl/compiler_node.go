@@ -4,6 +4,7 @@ package mdl
 
 import (
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -288,6 +289,78 @@ func (c *compiler) writeReferenceHeader(n *Node) {
 }
 
 // writeSkinHeader writes header_skin (100 bytes) and skin MDX data.
+// pickTopBoneInfluences returns a copy of vw truncated to at most
+// maxBones influences, keeping the heaviest weights and renormalizing
+// the kept weights to sum to 1.0.
+//
+// Both NWN1.69 and NWN:EE binaries hard-cap skin verts at 4 bones each
+// (verified: load_binary.pl line 577 reads exactly 4 floats per vert,
+// borealis_nwn_mdl Mesh.hpp:124-132 documents "Each vertex can be
+// influenced by up to 4 bones", nwn.wiki Models page lists "There is
+// also a maximum of 4 bones per vertex"). Some Bioware-authored ASCII
+// files (c_fox.mdl, c_dogzombie.mdl, …) carry 5–6 bone entries on a
+// handful of verts; their original compiler silently truncated the
+// trailing entries and shipped binaries whose weights summed to less
+// than 1.0. By sorting by weight descending and renormalizing here we
+// keep the most influential bones AND restore the weight=1.0 invariant
+// the engine expects.
+//
+// Returns vw unchanged when len(vw.Bones) <= maxBones — we don't
+// silently re-touch already-good data, so the existing
+// unnormalized_weights check still catches drift in bad source files.
+//
+// Always returns a value with freshly-allocated slices when truncation
+// happens, so callers can mutate without aliasing the source Skin.Weights
+// slot, which is shared across every GPU vert that derives from the same
+// original ASCII vert via UV-driven expansion.
+func pickTopBoneInfluences(vw VertexWeight, maxBones int) VertexWeight {
+	if maxBones <= 0 {
+		return vw
+	}
+	n := len(vw.Bones)
+	if n > len(vw.Weights) {
+		n = len(vw.Weights)
+	}
+	if n == 0 || n <= maxBones {
+		return vw
+	}
+	type bw struct {
+		bone   string
+		weight float32
+	}
+	pairs := make([]bw, n)
+	for i := 0; i < n; i++ {
+		pairs[i] = bw{bone: vw.Bones[i], weight: vw.Weights[i]}
+	}
+	sort.SliceStable(pairs, func(i, j int) bool {
+		return pairs[i].weight > pairs[j].weight
+	})
+	pairs = pairs[:maxBones]
+
+	var sum float64
+	for _, p := range pairs {
+		sum += float64(p.weight)
+	}
+
+	out := VertexWeight{
+		Bones:   make([]string, 0, maxBones),
+		Weights: make([]float32, 0, maxBones),
+	}
+	if sum > 0 {
+		scale := float32(1.0 / sum)
+		for _, p := range pairs {
+			out.Bones = append(out.Bones, p.bone)
+			out.Weights = append(out.Weights, p.weight*scale)
+		}
+		return out
+	}
+	for _, p := range pairs {
+		out.Bones = append(out.Bones, p.bone)
+		out.Weights = append(out.Weights, p.weight)
+	}
+	return out
+}
+
 // Ref: binary.go readSkinHeader (lines 902-972)
 // Layout: weights_ProxyList(12) + 4×int32(16) + 3×ProxyList(36) + 17×int16+spare(36) = 100 bytes
 //
@@ -370,7 +443,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 			origIdx = int(mesh.Faces[gpuIdx/3].Verts[gpuIdx%3])
 		}
 		if origIdx >= 0 && origIdx < len(skin.Weights) {
-			vw := skin.Weights[origIdx]
+			vw := pickTopBoneInfluences(skin.Weights[origIdx], 4)
 			for bi := 0; bi < 4 && bi < len(vw.Bones); bi++ {
 				w := float32(0)
 				if bi < len(vw.Weights) {
@@ -404,6 +477,38 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 	}
 }
 
+// expandedConstraints maps the per-original-vert Constraints array onto the
+// GPU-expanded vert layout produced by buildExpandedMesh. The MDX vertex
+// section stores per-corner GPU verts (one per unique pos+UV+normal+colour
+// combo), so a single ASCII vert with N distinct UV uses ends up as N GPU
+// verts in the binary. For danglymesh nodes the engine treats constraints
+// as 1:1 with GPU verts: writing the un-expanded length leaves the binary
+// describing fewer constraints than verts, the trailing GPU verts get
+// undefined behaviour in the engine's dangle simulation, and a round-trip
+// decompile produces an ASCII danglymesh whose `verts` and `constraints`
+// counts disagree. Expanding here keeps both sides aligned.
+//
+// Returns dangly.Constraints unchanged when c.lastExpanded is unset (e.g.
+// danglymesh paths that didn't go through buildExpandedMesh) or when the
+// expanded vert count already matches — both cases mean no remap is
+// needed.
+func (c *compiler) expandedConstraints(dangly *DanglyData) []float32 {
+	if dangly == nil || len(dangly.Constraints) == 0 {
+		return nil
+	}
+	exp := c.lastExpanded
+	if exp == nil || len(exp.origVert) == len(dangly.Constraints) {
+		return dangly.Constraints
+	}
+	out := make([]float32, len(exp.origVert))
+	for i, oi := range exp.origVert {
+		if oi >= 0 && int(oi) < len(dangly.Constraints) {
+			out[i] = dangly.Constraints[oi]
+		}
+	}
+	return out
+}
+
 // writeDanglyHeader writes header_dangly (24 bytes).
 // Constraint data is deferred to writeDanglyConstraints so that subsequent
 // headers (aabb) are at the correct offset.
@@ -415,9 +520,10 @@ func (c *compiler) writeDanglyHeader(n *Node) {
 		c.core.zeros(24)
 		return
 	}
+	expanded := c.expandedConstraints(dangly)
 	c.danglyConstraintsPtrPos = c.core.placeholder()
-	c.core.u32le(uint32(len(dangly.Constraints)))
-	c.core.u32le(uint32(len(dangly.Constraints)))
+	c.core.u32le(uint32(len(expanded)))
+	c.core.u32le(uint32(len(expanded)))
 	c.core.f32le(dangly.Displacement)
 	c.core.f32le(dangly.Tightness)
 	c.core.f32le(dangly.Period)
@@ -425,14 +531,17 @@ func (c *compiler) writeDanglyHeader(n *Node) {
 }
 
 // writeDanglyConstraints writes constraint float data to core (deferred from writeDanglyHeader).
+// Constraints are expanded onto the GPU vert layout via expandedConstraints
+// so the count matches the mesh header's count_vertexes field.
 func (c *compiler) writeDanglyConstraints(n *Node) {
 	dangly := n.Dangly
 	if dangly == nil || len(dangly.Constraints) == 0 {
 		return
 	}
+	expanded := c.expandedConstraints(dangly)
 	constraintsOff := int32(c.core.len())
 	c.core.patchU32(c.danglyConstraintsPtrPos, uint32(constraintsOff))
-	for _, v := range dangly.Constraints {
+	for _, v := range expanded {
 		c.core.f32le(v)
 	}
 }
