@@ -103,10 +103,15 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 	// for 2 or 3 files the streaming line-per-file form is calmer and avoids
 	// flashing cursor moves for an operation that completes in <1s.
 	// FORCE_COLOR alone is not enough — cursor control requires a real terminal.
+	// In verbose mode we stream a per-file detail block under each batch
+	// line. That's incompatible with the live-progress UI, which rewrites
+	// lines in place and caps the visible viewport at ~20 lines — verbose
+	// has to mean "show me everything", so we drop the in-place renderer
+	// and fall through to streaming output instead.
 	const liveProgressMinFiles = 4
 	useLive := total >= liveProgressMinFiles &&
 		isTerminal(int(os.Stdout.Fd())) &&
-		!o.jsonOut && !o.jsonLines && !o.quiet
+		!o.jsonOut && !o.jsonLines && !o.quiet && !o.verbose
 	var lp *liveProgress
 	if useLive {
 		lp = newLiveProgress(tw, total)
@@ -183,6 +188,9 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 				lp.render()
 			} else if !o.quiet {
 				tw.printBatchLine(seqIdx, total, baseName, res, parseErrs)
+				if o.verbose {
+					tw.printResultDetail(res, parseErrs, true)
+				}
 			}
 			mu.Unlock()
 		}

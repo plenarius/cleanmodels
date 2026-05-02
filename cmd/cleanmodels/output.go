@@ -103,7 +103,21 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 	}
 	fmt.Fprintf(tw.w, "%s  %s\n", tw.bold(baseName), strings.Join(parts, ", "))
 
-	// Detail lines
+	tw.printResultDetail(res, parseErrs, verbose)
+
+	if verbose && model != nil {
+		tw.printModelStats(model)
+	}
+}
+
+// printResultDetail prints the indented detail block (actions, repairs,
+// warnings, parse errors, checks) under a previously-printed header line.
+// Shared between single-file output and verbose batch output. Caller is
+// responsible for printing the header.
+//
+// SevInfo checks are filtered unless verbose is true so default output
+// stays signal-only.
+func (tw *termWriter) printResultDetail(res Result, parseErrs []mdl.ParseError, verbose bool) {
 	for _, a := range res.Actions {
 		fmt.Fprintf(tw.w, "  %s %s\n", tw.dim("[ACTION]"), a)
 	}
@@ -130,15 +144,11 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 		}
 		fmt.Fprintf(tw.w, "  [%s] %s (%s): %s%s\n", tw.severityTag(r.Severity), r.Check, node, r.Message, fixTag)
 	}
-
-	if verbose && model != nil {
-		tw.printModelStats(model)
-	}
 }
 
 // printBatchLine formats a single line of batch progress output.
 func (tw *termWriter) printBatchLine(idx, total int, baseName string, res Result, parseErrs []mdl.ParseError) {
-	fmt.Fprintln(tw.w, tw.formatBatchLine(idx, total, baseName, res))
+	fmt.Fprintln(tw.w, tw.formatBatchLine(idx, total, baseName, res, parseErrs))
 }
 
 // printBatchSummary formats the final summary line for batch processing.
@@ -198,7 +208,7 @@ func newLiveProgress(tw *termWriter, total int) *liveProgress {
 }
 
 func (lp *liveProgress) update(fileIdx int, baseName string, res Result, parseErrs []mdl.ParseError) {
-	lp.lines[fileIdx] = lp.tw.formatBatchLine(fileIdx+1, lp.total, baseName, res)
+	lp.lines[fileIdx] = lp.tw.formatBatchLine(fileIdx+1, lp.total, baseName, res, parseErrs)
 	fixes := countFixes(res)
 	w, e := tally(res, len(parseErrs))
 	lp.done++
@@ -264,11 +274,12 @@ func (lp *liveProgress) finish() {
 // trailing wrap that doubles every progress line on narrow terminals. When
 // cols is 0 (piped, unknown), the historical 50-char filename region is
 // preserved.
-func (tw *termWriter) formatBatchLine(idx, total int, baseName string, res Result) string {
+func (tw *termWriter) formatBatchLine(idx, total int, baseName string, res Result, parseErrs []mdl.ParseError) string {
 	width := len(fmt.Sprintf("%d", total))
 	prefix := fmt.Sprintf("[%*d/%d]", width, idx, total)
 
 	fixes := countFixes(res)
+	warns, errs := tally(res, len(parseErrs))
 
 	var statusPlain string
 	var statusColored string
@@ -276,13 +287,15 @@ func (tw *termWriter) formatBatchLine(idx, total int, baseName string, res Resul
 	case res.Error != "":
 		statusPlain = "ERROR: " + truncate(res.Error, 40)
 		statusColored = tw.red(statusPlain)
-	case countCheckErrors(res.Checks) > 0:
-		errCount := countCheckErrors(res.Checks)
-		statusPlain = fmt.Sprintf("%d %s", errCount, pluralize(errCount, "error", "errors"))
+	case errs > 0:
+		statusPlain = fmt.Sprintf("%d %s", errs, pluralize(errs, "error", "errors"))
 		statusColored = tw.red(statusPlain)
 	case fixes > 0:
 		statusPlain = fmt.Sprintf("%d %s", fixes, pluralize(fixes, "repair", "repairs"))
 		statusColored = tw.green(statusPlain)
+	case warns > 0:
+		statusPlain = fmt.Sprintf("%d %s", warns, pluralize(warns, "warning", "warnings"))
+		statusColored = tw.yellow(statusPlain)
 	case len(res.Actions) > 0:
 		statusPlain = "ok"
 		statusColored = tw.green(statusPlain)
