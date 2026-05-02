@@ -25,11 +25,13 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Performance.** Same workload, same disk, same flags, on a 330-file binary tile corpus (~21 MB, 2,030 repairs applied):
 
+
 | Tool      | Workers | Wall time | Per file | Memory |
 | --------- | ------- | --------- | -------- | ------ |
 | Prolog v3 | 1       | 129 s     | 391 ms   | 244 MB |
 | Go v4     | 1       | 5.0 s     | 15 ms    | 16 MB  |
 | Go v4     | 8       | **4.4 s** | 13 ms    | 16 MB  |
+
 
 ~26× single-threaded, ~29× with parallel workers, ~1/15th memory.
 
@@ -60,11 +62,11 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Report Issue** integrated — same upload/track flow as `cleanmodels report`, available under Help and on right-click for failed files.
 
-**Linux ships as an AppImage** (was: tarball that needed Qt5 installed). macOS arm64 and Windows amd64 also packaged.
+**Five-platform packaging matching the CLI** (Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64). Linux ships as an AppImage (was: tarball that needed Qt5 installed). The matching cleanmodels CLI is bundled inside each Qt download next to the GUI binary, so a single download is enough to use either tool.
 
 ## Migration notes
 
-The Qt GUI looks for `cleanmodels` (or the older `cleanmodels-cli` name) on `PATH` or alongside the GUI binary. **It will not run against the Prolog 3.x CLI** — you need v4.
+The Qt GUI looks for `cleanmodels` (or the older `cleanmodels-cli` name) on `PATH` or alongside the GUI binary, and now ships with the matching v4 CLI bundled in that second slot, so no separate install is needed. If you keep an older `cleanmodels` higher on `PATH`, **it will not work** — the GUI requires v4.
 
 Two behaviour changes worth knowing:
 
@@ -83,24 +85,12 @@ Two legacy steps not yet ported (UV-space TVert welding and tessellator midpoint
 
 ## Downloads
 
-**cleanmodels v4:**
+Per-platform builds and checksums live on the GitHub release pages:
 
-| Platform            | File                            |
-| ------------------- | ------------------------------- |
-| Linux x86_64        | `cleanmodels-linux-amd64.zip`   |
-| Linux ARM64         | `cleanmodels-linux-arm64.zip`   |
-| macOS Intel         | `cleanmodels-darwin-amd64.zip`  |
-| macOS Apple Silicon | `cleanmodels-darwin-arm64.zip`  |
-| Windows x86_64      | `cleanmodels-windows-amd64.zip` |
-| Browser (WASM)      | `cleanmodels-wasm.zip`          |
+- cleanmodels: [github.com/plenarius/cleanmodels/releases/latest](https://github.com/plenarius/cleanmodels/releases/latest) — Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64, and a browser WASM bundle.
+- cleanmodels-qt: [github.com/plenarius/cleanmodels-qt/releases/latest](https://github.com/plenarius/cleanmodels-qt/releases/latest) — Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64.
 
-**cleanmodels-qt v1.0:**
-
-| Platform              | File                                  |
-| --------------------- | ------------------------------------- |
-| Linux x86_64          | `cleanmodels-qt-linux-amd64.AppImage` |
-| macOS (Apple Silicon) | `cleanmodels-qt-macos-arm64.zip`      |
-| Windows x86_64        | `cleanmodels-qt-windows-amd64.zip`    |
+The Qt download bundles the matching cleanmodels CLI next to the GUI binary. If you only want the CLI (CI scripts, headless servers, the WASM build), grab it from the cleanmodels release page directly.
 
 The last Prolog releases stay published:
 
