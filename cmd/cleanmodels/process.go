@@ -631,12 +631,23 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			}
 			res.Actions = append(res.Actions, fmt.Sprintf("compiled to binary: %s", outPath))
 		case binMode || o.forceBin:
-			if outputPath != "" {
+			// Binary input. Stream ASCII output only when the user
+			// invoked `decompile` (decompileOnly) — otherwise `check`
+			// and `repair` on a single binary file would flood the
+			// terminal with the entire decompiled model before the
+			// summary, drowning out the actual check results.
+			//
+			// An explicit output path is honored for any mode that
+			// reaches here, since asking for an output target is a
+			// strong "yes, write the model" signal regardless of
+			// whether check/repair/decompile got us in the door.
+			switch {
+			case outputPath != "":
 				if err := mdl.WriteFile(model, outputPath); err != nil {
 					res.Error = err.Error()
 					return res, model, parseErrs, err
 				}
-			} else if !o.jsonOut {
+			case o.decompileOnly && !o.jsonOut:
 				if err := mdl.Write(model, os.Stdout); err != nil {
 					res.Error = err.Error()
 					return res, model, parseErrs, err
