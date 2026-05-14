@@ -32,14 +32,21 @@ type PivotOptions struct {
 	SplitFirst string // "convex", "concave"
 }
 
-// RepairPivots finds and sets valid pivot points for AABB (walkmesh) nodes.
-// A valid pivot must satisfy half-space constraints derived from tile boundaries
-// and face normals. For each AABB node, the function tries (in order):
+// RepairPivots finds and sets valid pivot points for AABB (walkmesh) nodes
+// whose authored position fails the geometric constraint check. A valid pivot
+// must satisfy half-space constraints derived from tile boundaries and face
+// normals. For each candidate node, the function tries (in order):
 //  1. Top-centre of the geometry (highest Z, centred in XY)
 //  2. Centroid of all face centroids
 //  3. Iterative bisection within the constraint bounding box
 //
-// Ref: fix_pivots.pl f_find_pivot/5
+// Nodes whose existing position already satisfies the constraints are left
+// alone — matching Prolog `attempt_to_fix_pivots/5`, which is only invoked
+// when a `bad_pivots` check has already flagged the node. Running the
+// search unconditionally shifted hand-authored pivots on 2-story tile
+// walkmeshes (issue #6: ttr01_a01_01 cm154 visibly displaced after repair).
+//
+// Ref: fix_pivots.pl f_find_pivot/5; make_checks.pl attempt_to_fix_pivots/5.
 func RepairPivots(model *Model, opts PivotOptions) []string {
 	if model == nil {
 		return nil
@@ -56,6 +63,20 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 		mesh := node.Mesh
 		allowBelow := opts.BelowZ0 == "allow" || opts.BelowZ0 == "slice"
 		cons := buildPivotConstraints(mesh, allowBelow)
+
+		// Gate: if the authored position already satisfies the
+		// half-spaces, treat the pivot as good and skip the search.
+		// The Prolog port reached this code path via a bad-pivot
+		// check; without that gate the search runs against the
+		// authored position's constraints, declares it "doesn't
+		// satisfy" (often because tile-edge faces produce constraints
+		// the current point happens not to satisfy from the wrong
+		// frame), and overwrites a valid position with the
+		// constraint-satisfying fallback. See issue #6.
+		if pivotSatisfies(node.Position, cons) {
+			continue
+		}
+
 		boxMin, boxMax := pivotSearchBox(mesh)
 		if allowBelow && boxMin.Z > 0 {
 			boxMin.Z = 0
@@ -87,12 +108,16 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 					node.Name, pivot.X, pivot.Y, pivot.Z, method, opts.MoveBad))
 				continue
 			} else {
-				pivot = clampToBox(top, boxMin, boxMax)
-				method = "fallback (clamped top-centre)"
+				// No valid pivot found and no move-bad strategy
+				// configured. Match Prolog's final clause: warn,
+				// but leave the authored position alone. Overwriting
+				// here was equivalent to silently picking the
+				// "clamped top-centre" candidate the constraint check
+				// just rejected, which guaranteed the model would
+				// shift in the viewer.
 				out = append(out, fmt.Sprintf(
-					"node %q: warning — no point satisfied all constraints; %s",
-					node.Name, method))
-				node.Position = pivot
+					"node %q: warning — pivot fails constraints and no move-bad strategy set; position left as-authored",
+					node.Name))
 				continue
 			}
 		}

@@ -475,3 +475,40 @@ func TestRepairPivots(t *testing.T) {
 		t.Fatalf("expected pivot Z >= 0, got %f", node.Position.Z)
 	}
 }
+
+// TestRepairPivots_AuthoredPivotPreserved is a regression test for issue #6.
+// A walkmesh whose authored position is geometrically valid must be left
+// alone; the previous behaviour rebuilt every pivot unconditionally and
+// shifted the model in viewers when round-tripped through `repair -a`.
+func TestRepairPivots_AuthoredPivotPreserved(t *testing.T) {
+	mesh := NewMeshData()
+	// Interior walkmesh well inside the tile slab and clear of the
+	// boundary band, so no face contributes a half-space the authored
+	// pivot could fail.
+	mesh.Verts = []Vec3{
+		{-2, -2, 0}, {2, -2, 0}, {2, 2, 0}, {-2, 2, 0},
+	}
+	mesh.Faces = []Face{
+		{Verts: [3]int32{0, 1, 2}},
+		{Verts: [3]int32{0, 2, 3}},
+	}
+	authored := Vec3{0.5, -0.25, 0}
+	node := &Node{
+		Name:     "cm_keep",
+		Parent:   "NULL",
+		Mesh:     mesh,
+		Aabb:     &AabbData{},
+		Position: authored,
+	}
+	model := testModel(node)
+
+	msgs := RepairPivots(model, PivotOptions{})
+	if node.Position != authored {
+		t.Fatalf("expected authored pivot %v to be preserved, got %v", authored, node.Position)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, node.Name) {
+			t.Fatalf("expected no repair messages for %q, got %q", node.Name, m)
+		}
+	}
+}
