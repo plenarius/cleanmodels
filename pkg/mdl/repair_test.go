@@ -476,6 +476,92 @@ func TestRepairPivots(t *testing.T) {
 	}
 }
 
+// TestRepairPivots_GeometryStaysInWorldSpace is a regression test for
+// issue #7. When the authored pivot fails the constraint check AND a
+// valid replacement is found, the node's local origin must move while
+// the world-space geometry stays put: verts and direct children must be
+// rebased by the same offset that gets added to the node's position.
+// Without this rebase, `repair -a` translates the walkmesh visibly
+// (ttr01_o07_01 cm088 shifted from (0,0,-5) to (-4.84,-4.84,4.99)).
+func TestRepairPivots_GeometryStaysInWorldSpace(t *testing.T) {
+	mesh := NewMeshData()
+	// Walkmesh interior to the tile slab, well clear of the boundary
+	// band so no per-face half-space narrows the feasible region. Top
+	// face at z=3 gives the search an obvious top-centre to pick.
+	mesh.Verts = []Vec3{
+		{-2, -2, 0}, {2, -2, 0}, {2, 2, 0}, {-2, 2, 0},
+		{0, 0, 3},
+	}
+	mesh.Faces = []Face{
+		{Verts: [3]int32{0, 1, 2}},
+		{Verts: [3]int32{0, 2, 3}},
+		{Verts: [3]int32{0, 1, 4}},
+		{Verts: [3]int32{1, 2, 4}},
+	}
+	// Authored position below the floor — fails the z>=0 half-space, so
+	// the gate falls through into the search.
+	startPos := Vec3{0, 0, -1}
+	aabbNode := &Node{
+		Name:     "cm_shift",
+		Parent:   "NULL",
+		Mesh:     mesh,
+		Aabb:     &AabbData{},
+		Position: startPos,
+	}
+	child := &Node{
+		Name:     "cm_shift_child",
+		Parent:   aabbNode.Name,
+		Position: Vec3{1, 1, 1},
+	}
+	model := testModel(aabbNode, child)
+
+	// Capture world-space vertex positions before the repair so we can
+	// assert the geometry survived the pivot move intact. Identity
+	// orientation here, so world = position + local.
+	worldBefore := make([]Vec3, len(mesh.Verts))
+	for i, v := range mesh.Verts {
+		worldBefore[i] = Vec3{startPos.X + v.X, startPos.Y + v.Y, startPos.Z + v.Z}
+	}
+	childWorldBefore := Vec3{
+		startPos.X + child.Position.X,
+		startPos.Y + child.Position.Y,
+		startPos.Z + child.Position.Z,
+	}
+
+	msgs := RepairPivots(model, PivotOptions{})
+	if len(msgs) == 0 {
+		t.Fatal("expected RepairPivots to act on the below-floor pivot")
+	}
+	if aabbNode.Position == startPos {
+		t.Fatal("expected node.Position to move when the pivot is rebuilt")
+	}
+
+	for i, v := range mesh.Verts {
+		got := Vec3{aabbNode.Position.X + v.X, aabbNode.Position.Y + v.Y, aabbNode.Position.Z + v.Z}
+		if !vecCloseEnough(got, worldBefore[i]) {
+			t.Fatalf("vert %d world position drifted: got %v, want %v", i, got, worldBefore[i])
+		}
+	}
+
+	childWorldAfter := Vec3{
+		aabbNode.Position.X + child.Position.X,
+		aabbNode.Position.Y + child.Position.Y,
+		aabbNode.Position.Z + child.Position.Z,
+	}
+	if !vecCloseEnough(childWorldAfter, childWorldBefore) {
+		t.Fatalf("child world position drifted: got %v, want %v", childWorldAfter, childWorldBefore)
+	}
+}
+
+// vecCloseEnough returns true when two Vec3s match within the same 1e-4
+// tolerance used by other repair tests (worth a hair more slack than
+// transformEps because the pivot search snaps its candidates to the 0.01
+// grid before the rebase math runs).
+func vecCloseEnough(a, b Vec3) bool {
+	const eps = float32(1e-4)
+	return absF32(a.X-b.X) < eps && absF32(a.Y-b.Y) < eps && absF32(a.Z-b.Z) < eps
+}
+
 // TestRepairPivots_AuthoredPivotPreserved is a regression test for issue #6.
 // A walkmesh whose authored position is geometrically valid must be left
 // alone; the previous behaviour rebuilt every pivot unconditionally and

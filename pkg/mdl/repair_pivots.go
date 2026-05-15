@@ -102,7 +102,7 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 				pivot, method = p, "constraint relaxation"
 			} else if opts.MoveBad != "" && opts.MoveBad != "no" {
 				pivot, method = pivotMoveBadFallback(mesh, opts.MoveBad)
-				node.Position = pivot
+				applyPivotShift(model, node, pivot)
 				out = append(out, fmt.Sprintf(
 					"node %q: pivot set to [%.4f, %.4f, %.4f] via %s (move-bad=%s)",
 					node.Name, pivot.X, pivot.Y, pivot.Z, method, opts.MoveBad))
@@ -122,12 +122,73 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 			}
 		}
 
-		node.Position = pivot
+		applyPivotShift(model, node, pivot)
 		out = append(out, fmt.Sprintf(
 			"node %q: pivot set to [%.4f, %.4f, %.4f] via %s",
 			node.Name, pivot.X, pivot.Y, pivot.Z, method))
 	}
 	return out
+}
+
+// applyPivotShift moves an AABB node's local origin to `pivot` (expressed
+// in the node's current mesh-local frame) and rebases everything else to
+// keep the model's world-space geometry exactly where it was. Mirrors
+// fix_pivots.pl f_repivot/5:
+//
+//   - subtract `pivot` from every vertex on this node's mesh, so the new
+//     mesh-local origin is at the chosen pivot point;
+//   - subtract `pivot` from every direct child's position, so children
+//     stay in the same world location after the parent origin moved
+//     (grandchildren are unaffected — their parent's local frame did not
+//     itself rotate or translate);
+//   - rotate `pivot` by this node's orientation into parent-frame and add
+//     it to `node.Position`, so the node's position in its parent's frame
+//     reflects the new origin.
+//
+// Without this rebase a "repair" that finds a different pivot just
+// translates the world-space geometry by the delta (issue #7:
+// ttr01_o07_01 cm088 visibly shifted from (0,0,-5) to (-4.84,-4.84,4.99)
+// after `repair -a`).
+//
+// Ref: fix_pivots.pl f_repivot/5 (line 348);
+// make_checks.pl apply_pivot_shift/5 (line 4809).
+func applyPivotShift(model *Model, node *Node, pivot Vec3) {
+	if model == nil || node == nil {
+		return
+	}
+	// Match Prolog's 1e-5 short-circuit (line 4810): a sub-microscale
+	// shift is a no-op, no vertex churn, no float drift.
+	const pivotShiftEps = float32(1e-5)
+	if absF32(pivot.X) < pivotShiftEps && absF32(pivot.Y) < pivotShiftEps && absF32(pivot.Z) < pivotShiftEps {
+		return
+	}
+
+	if node.Mesh != nil {
+		for i := range node.Mesh.Verts {
+			node.Mesh.Verts[i].X -= pivot.X
+			node.Mesh.Verts[i].Y -= pivot.Y
+			node.Mesh.Verts[i].Z -= pivot.Z
+		}
+	}
+
+	for _, child := range model.Nodes {
+		if child == nil || child == node {
+			continue
+		}
+		if child.Parent == node.Name {
+			child.Position.X -= pivot.X
+			child.Position.Y -= pivot.Y
+			child.Position.Z -= pivot.Z
+		}
+	}
+
+	// Identity-orientation case (the common one for walkmesh nodes) is
+	// just a translation; the rotate call collapses to a copy. We keep
+	// it so non-axis-aligned aabb nodes still produce the right result.
+	rotated := RotateVectorAxisAngle(pivot, node.Orientation)
+	node.Position.X += rotated.X
+	node.Position.Y += rotated.Y
+	node.Position.Z += rotated.Z
 }
 
 // buildPivotConstraints collects tile slab planes, z>=0, and inward half-spaces
