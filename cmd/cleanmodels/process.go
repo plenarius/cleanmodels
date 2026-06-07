@@ -630,37 +630,34 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 				return res, model, parseErrs, err
 			}
 			res.Actions = append(res.Actions, fmt.Sprintf("compiled to binary: %s", outPath))
-		case binMode || o.forceBin:
-			// Binary input. Stream ASCII output only when the user
-			// invoked `decompile` (decompileOnly) — otherwise `check`
-			// and `repair` on a single binary file would flood the
-			// terminal with the entire decompiled model before the
-			// summary, drowning out the actual check results.
-			//
-			// An explicit output path is honored for any mode that
-			// reaches here, since asking for an output target is a
-			// strong "yes, write the model" signal regardless of
-			// whether check/repair/decompile got us in the door.
-			switch {
-			case outputPath != "":
-				if err := mdl.WriteFile(model, outputPath); err != nil {
-					res.Error = err.Error()
-					return res, model, parseErrs, err
-				}
-			case o.decompileOnly && !o.jsonOut:
-				if err := mdl.Write(model, os.Stdout); err != nil {
-					res.Error = err.Error()
-					return res, model, parseErrs, err
-				}
+		case outputPath != "":
+			// Explicit output target: write the (re-serialized) ASCII
+			// model there. Honored for any mode that reaches here —
+			// binary input decompiled to a file, or ASCII input
+			// cleaned/repaired to a new file — since asking for an
+			// output target is a strong "yes, write the model" signal.
+			if err := mdl.WriteFile(model, outputPath); err != nil {
+				res.Error = err.Error()
+				return res, model, parseErrs, err
 			}
-		default:
-			if outputPath != "" {
-				if err := mdl.WriteFile(model, outputPath); err != nil {
-					res.Error = err.Error()
-					return res, model, parseErrs, err
-				}
+		case o.decompileOnly && !o.jsonOut:
+			// `decompile` with no output path: stream ASCII to stdout so
+			// the tool behaves as a filter in a pipe. This fires for
+			// ASCII input too (pass-through re-serialize), not just
+			// binary — previously ASCII input produced no stdout output
+			// at all, which silently broke `decompile a.mdl | ...`. The
+			// caller routes the human summary to stderr so it can never
+			// corrupt the model written here.
+			if err := mdl.Write(model, os.Stdout); err != nil {
+				res.Error = err.Error()
+				return res, model, parseErrs, err
 			}
 		}
+		// Any other single-file case (check/repair on a binary or ASCII
+		// model with no output target) intentionally writes nothing: the
+		// model stays put and only the report is emitted. Streaming the
+		// whole decompiled model to the terminal ahead of check results
+		// would bury them.
 	}
 
 	return res, model, parseErrs, nil
@@ -690,6 +687,16 @@ func runSingle(inputPath, outputPath string, o procOpts, tw, errTw *termWriter) 
 
 	fixes := countFixes(res)
 
+	// When `decompile` streams the model to stdout (no output path, not
+	// JSON), stdout is a pure data channel — every human-readable line
+	// must go to stderr so the piped model stays byte-clean. Same rule as
+	// --json mode, which keeps the JSON payload alone on stdout.
+	stdoutIsData := o.decompileOnly && !o.jsonOut && outputPath == ""
+	humanTw := tw
+	if stdoutIsData {
+		humanTw = errTw
+	}
+
 	if o.jsonLines {
 		if res.Error != "" {
 			emitEvent(Event{Type: "error", File: filepath.Base(inputPath), Message: res.Error})
@@ -704,7 +711,7 @@ func runSingle(inputPath, outputPath string, o procOpts, tw, errTw *termWriter) 
 			return exitErrors
 		}
 	} else {
-		tw.printSingleResult(inputPath, res, model, parseErrs, o.verbose, o.quiet)
+		humanTw.printSingleResult(inputPath, res, model, parseErrs, o.verbose, o.quiet)
 		if res.Error != "" && o.quiet {
 			fmt.Fprintf(os.Stderr, "cleanmodels: %s: %s\n", inputPath, res.Error)
 		}
@@ -713,8 +720,9 @@ func runSingle(inputPath, outputPath string, o procOpts, tw, errTw *termWriter) 
 	switch {
 	case o.quiet, o.jsonLines:
 		// Quiet emits nothing; json-lines already emitted a per-file event.
-	case o.jsonOut:
-		// Stdout carries the JSON object; route the human counts to stderr.
+	case o.jsonOut, stdoutIsData:
+		// Stdout carries machine/data output (JSON object or decompiled
+		// model); route the human counts to stderr to keep it clean.
 		w, e := tally(res, len(parseErrs))
 		fmt.Fprintf(errTw.w, "\n%d %s, %d %s, %d %s\n",
 			1, "file", w, pluralize(w, "warning", "warnings"), e, pluralize(e, "error", "errors"))
