@@ -244,11 +244,10 @@ func (c *compiler) writeEmitterHeader(n *Node) {
 	c.core.fixedStr(em.Render, 32)
 	c.core.fixedStr(em.Blend, 32)
 	c.core.fixedStr(em.Texture, 64)
-	chunk := em.ChunkName
-	if chunk == "" {
-		chunk = "CHUNK"
-	}
-	c.core.fixedStr(chunk, 16)
+	// Zero-fill when unset: Bioware's binaries store zeros here, and a
+	// placeholder makes the engine treat the emitter as chunk-spawning, so it
+	// renders no particles.
+	c.core.fixedStr(em.ChunkName, 16)
 	c.core.u32le(uint32(em.TwoSidedTex))
 	c.core.u32le(uint32(em.Loop))
 	c.core.u16le(uint16(em.RenderOrder))

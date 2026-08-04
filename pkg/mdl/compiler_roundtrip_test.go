@@ -486,3 +486,70 @@ func assertNear(t *testing.T, label string, got, want float64) {
 		t.Errorf("%s: got %g, want %g", label, got, want)
 	}
 }
+
+// emitterChunkSrc builds a minimal emitter model. chunkName is written only
+// when name is non-empty, so the same source serves both the absent and the
+// present case.
+func emitterChunkSrc(name string) string {
+	chunk := ""
+	if name != "" {
+		chunk = "    chunkName " + name + "\n"
+	}
+	return `newmodel chunktest
+setsupermodel chunktest NULL
+classification EFFECT
+setanimationscale 1.00
+beginmodelgeom chunktest
+  node dummy chunktest
+    parent NULL
+  endnode
+  node emitter myemitter
+    parent chunktest
+    update Fountain
+    render Normal
+    blend Normal
+    texture fxpa_flare
+    birthrate 10
+    lifeexp 5
+` + chunk + `  endnode
+endmodelgeom
+donemodel chunktest
+`
+}
+
+// chunkNameField returns the 16-byte chunkName field of the first emitter
+// header, which directly follows the 64-byte texture name.
+func chunkNameField(t *testing.T, bin []byte, texture string) []byte {
+	t.Helper()
+	i := bytes.Index(bin, append([]byte(texture), 0))
+	if i < 0 {
+		t.Fatalf("texture %q not found in compiled output", texture)
+	}
+	return bin[i+64 : i+80]
+}
+
+// An emitter with no chunkName must compile to a zero-filled field. Bioware's
+// own binaries store zeros here; writing a placeholder makes the engine treat
+// the emitter as chunk-spawning and it renders no particles.
+func TestRoundtripEmitterChunkNameAbsentStaysAbsent(t *testing.T) {
+	bin := mustCompile(t, mustParseASCII(t, emitterChunkSrc("")))
+
+	for _, b := range chunkNameField(t, bin, "fxpa_flare") {
+		if b != 0 {
+			t.Fatalf("chunkName field is not zero-filled: %x", chunkNameField(t, bin, "fxpa_flare"))
+		}
+	}
+	if got := mustDecompile(t, bin).FindNode("myemitter").Emitter.ChunkName; got != "" {
+		t.Errorf("ChunkName = %q after roundtrip, want empty", got)
+	}
+}
+
+// The converse: a chunkName that was present must survive, so the fix above
+// cannot be satisfied by dropping the field altogether.
+func TestRoundtripEmitterChunkNamePresentSurvives(t *testing.T) {
+	bin := mustCompile(t, mustParseASCII(t, emitterChunkSrc("mychunk")))
+
+	if got := mustDecompile(t, bin).FindNode("myemitter").Emitter.ChunkName; got != "mychunk" {
+		t.Errorf("ChunkName = %q after roundtrip, want %q", got, "mychunk")
+	}
+}
