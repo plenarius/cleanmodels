@@ -65,7 +65,7 @@ Examples:
 `)
 	}
 
-	if err := fs.Parse(args); err != nil {
+	if err := parseArgs(fs, args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
 		}

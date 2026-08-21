@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"runtime"
+	"strings"
 )
 
 type commonFlags struct {
@@ -56,4 +57,66 @@ func validateColorMode(mode string) error {
 		return nil
 	}
 	return fmt.Errorf("invalid --color value %q (want auto, always, or never)", mode)
+}
+
+// boolFlag matches the unexported interface the flag package itself uses
+// (via flag.Value) to recognize flags that don't consume a following
+// argument. Any *bool-backed flag.Value implements it.
+type boolFlag interface {
+	IsBoolFlag() bool
+}
+
+// parseArgs reorders args so that all flag tokens registered on fs precede
+// positional arguments, then parses them.
+//
+// flag.FlagSet.Parse stops parsing at the first non-flag argument, so
+// standard usage like "cleanmodels compile model.mdl --verbose" would
+// otherwise leave "--verbose" as a leftover positional argument — which
+// callers here treat as the output path, silently writing to a file named
+// "--verbose". Reordering lets flags appear before or after positionals,
+// matching how most CLI tools behave.
+func parseArgs(fs *flag.FlagSet, args []string) error {
+	return fs.Parse(reorderArgs(fs, args))
+}
+
+// reorderArgs moves every recognized flag token (and, where applicable, its
+// value) to the front of args, preserving relative order within each group.
+// A bare "--" and everything after it is passed through unchanged as
+// positional, per convention.
+func reorderArgs(fs *flag.FlagSet, args []string) []string {
+	var flags, positionals []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" {
+			positionals = append(positionals, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positionals = append(positionals, arg)
+			continue
+		}
+
+		flags = append(flags, arg)
+
+		name := strings.TrimLeft(arg, "-")
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			continue // value supplied inline, e.g. --workers=4
+		}
+
+		f := fs.Lookup(name)
+		if f == nil {
+			continue // unknown flag; let fs.Parse report it
+		}
+		if bf, ok := f.Value.(boolFlag); ok && bf.IsBoolFlag() {
+			continue // bool flags never consume a following token
+		}
+		if i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+
+	return append(flags, positionals...)
 }
