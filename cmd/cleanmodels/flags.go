@@ -85,12 +85,14 @@ func parseArgs(fs *flag.FlagSet, args []string) error {
 // positional, per convention.
 func reorderArgs(fs *flag.FlagSet, args []string) []string {
 	var flags, positionals []string
+	sawDoubleDash := false
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
 		if arg == "--" {
 			positionals = append(positionals, args[i+1:]...)
+			sawDoubleDash = true
 			break
 		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
@@ -118,5 +120,16 @@ func reorderArgs(fs *flag.FlagSet, args []string) []string {
 		}
 	}
 
-	return append(flags, positionals...)
+	// Re-emit the "--" terminator when it was present. Reordering puts all
+	// flags first and positionals last, so without an explicit separator
+	// fs.Parse would re-interpret a flag-looking positional (e.g. a file
+	// literally named "-weird.mdl") as an undefined flag — defeating the
+	// entire purpose of "--".
+	out := make([]string, 0, len(flags)+len(positionals)+1)
+	out = append(out, flags...)
+	if sawDoubleDash {
+		out = append(out, "--")
+	}
+	out = append(out, positionals...)
+	return out
 }
