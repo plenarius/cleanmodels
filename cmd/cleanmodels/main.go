@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/plenarius/cleanmodels/pkg/buildinfo"
 )
 
 var version = "dev"
@@ -47,7 +49,7 @@ func run(args []string) int {
 	}
 
 	if first == "version" || first == "--version" {
-		fmt.Println("cleanmodels " + version)
+		fmt.Println("cleanmodels " + buildinfo.Version(version))
 		return exitOK
 	}
 
