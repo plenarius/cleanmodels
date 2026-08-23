@@ -15,15 +15,14 @@ import (
 // we return the existing offset without re-writing, breaking any parent cycles
 // present in malformed ASCII source files.
 func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
-	nodeKey := strings.ToLower(n.Name)
-	if off, already := c.nodeOffsets[nodeKey]; already {
+	if off, already := c.nodeOffsets[n]; already {
 		return off
 	}
 	nodeOff := int32(c.core.len())
-	c.nodeOffsets[nodeKey] = nodeOff
+	c.nodeOffsets[n] = nodeOff
 	*count++
 
-	partNum := c.nodeIDs[strings.ToLower(n.Name)]
+	partNum := c.nodeIDs[n]
 
 	// ---- header_node (112 bytes) ----
 	// Ref: binary.go readNodeDepth lines 484-511
@@ -404,8 +403,13 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		if i >= 64 {
 			break
 		}
-		if id, ok := c.nodeIDs[strings.ToLower(name)]; ok {
-			bonePartNums[i] = int16(id)
+		// Skin bones are referenced by name in the format, so a duplicate name
+		// resolves to the first node with it — the same node this lookup has
+		// always returned.
+		if bone := c.geomNodeByName(name); bone != nil {
+			if id, ok := c.nodeIDs[bone]; ok {
+				bonePartNums[i] = int16(id)
+			}
 		}
 	}
 

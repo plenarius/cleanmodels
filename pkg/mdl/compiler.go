@@ -124,18 +124,29 @@ type compiler struct {
 
 	model *Model
 
-	// nodeIDs maps node name → sequential part number (for skin bone mapping)
-	nodeIDs map[string]int32
+	// nodeIDs maps a node instance → sequential part number. Keyed by identity,
+	// not name, because names are not unique (see compiler_tree.go).
+	nodeIDs map[*Node]int32
 	nextID  int32
 
-	// nodeOffsets maps node name → core offset (for parent pointer patching)
-	nodeOffsets map[string]int32
+	// nodeOffsets maps a node instance → core offset (for parent pointer patching)
+	nodeOffsets map[*Node]int32
 
-	// childrenIndex maps lowercased parent name → child nodes (built once in newCompiler)
-	childrenIndex map[string][]*Node
+	// childrenByNode maps a node instance → its children, resolved by tree
+	// position rather than by name (built once in newCompiler).
+	childrenByNode map[*Node][]*Node
 
-	// geomNodeIndex maps lowercased node name → *Node (built once in newCompiler)
+	// geomNodeIndex maps lowercased node name → first *Node with that name.
+	// Only for lookups that are inherently name-based (skin bone references).
 	geomNodeIndex map[string]*Node
+
+	// geomOccur groups geometry nodes by lowercased name in declaration order,
+	// used to pair animation nodes with the right duplicate.
+	geomOccur map[string][]*Node
+
+	// animGeomPair maps the animation nodes of the animation currently being
+	// written to their geometry counterparts. Reset per animation.
+	animGeomPair map[*AnimNode]*Node
 
 	// lastExpanded holds the expanded mesh from the most recent writeMeshHeaderInner call.
 	lastExpanded *expandedMesh
@@ -149,22 +160,28 @@ type compiler struct {
 }
 
 func newCompiler(m *Model) *compiler {
-	ci := make(map[string][]*Node, len(m.Nodes))
+	// First name wins, so a duplicate cannot shadow the node that name-based
+	// references (skin bones) have always resolved to.
 	gi := make(map[string]*Node, len(m.Nodes))
 	for _, n := range m.Nodes {
+		if n == nil {
+			continue
+		}
 		key := strings.ToLower(n.Name)
-		gi[key] = n
-		pkey := strings.ToLower(n.Parent)
-		ci[pkey] = append(ci[pkey], n)
+		if _, exists := gi[key]; !exists {
+			gi[key] = n
+		}
 	}
+	_, children := resolveGeomTree(m.Nodes)
 	return &compiler{
-		core:          &patchBuf{},
-		vol:           &patchBuf{},
-		model:         m,
-		nodeIDs:       make(map[string]int32),
-		nodeOffsets:   make(map[string]int32),
-		childrenIndex: ci,
-		geomNodeIndex: gi,
+		core:           &patchBuf{},
+		vol:            &patchBuf{},
+		model:          m,
+		nodeIDs:        make(map[*Node]int32),
+		nodeOffsets:    make(map[*Node]int32),
+		childrenByNode: children,
+		geomNodeIndex:  gi,
+		geomOccur:      nodeOccurrences(m.Nodes),
 	}
 }
 
@@ -212,22 +229,21 @@ func Compile(model *Model, w io.Writer) error {
 // assignNodeIDs walks the geometry node tree in iterative DFS order and assigns
 // sequential IDs. Uses a visited set to guard against cyclic parent references.
 func (c *compiler) assignNodeIDs(root *Node) {
-	visited := make(map[string]bool, len(c.model.Nodes))
+	visited := make(map[*Node]bool, len(c.model.Nodes))
 	stack := []*Node{root}
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		key := strings.ToLower(n.Name)
-		if visited[key] {
+		if n == nil || visited[n] {
 			continue
 		}
-		visited[key] = true
-		c.nodeIDs[key] = c.nextID
+		visited[n] = true
+		c.nodeIDs[n] = c.nextID
 		c.nextID++
 		children := c.childrenOf(n)
 		// push in reverse so left-to-right DFS order is preserved
 		for i := len(children) - 1; i >= 0; i-- {
-			if !visited[strings.ToLower(children[i].Name)] {
+			if !visited[children[i]] {
 				stack = append(stack, children[i])
 			}
 		}
@@ -235,15 +251,10 @@ func (c *compiler) assignNodeIDs(root *Node) {
 }
 
 // childrenOf returns all direct children of n in the geometry tree (O(1) lookup).
+// Resolved by tree position, so duplicate-named siblings each keep their own
+// children instead of both claiming every child of that name.
 func (c *compiler) childrenOf(n *Node) []*Node {
-	all := c.childrenIndex[strings.ToLower(n.Name)]
-	out := make([]*Node, 0, len(all))
-	for _, ch := range all {
-		if ch != n {
-			out = append(out, ch)
-		}
-	}
-	return out
+	return c.childrenByNode[n]
 }
 
 // geomNodeByName returns the geometry node matching name (case-insensitive).
@@ -366,20 +377,16 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 	}
 
 	// ---- animation node tree ----
-	// Build parent→children index for O(1) child lookup.
-	animChildIdx := make(map[string][]*AnimNode, len(anim.Nodes))
-	for i := range anim.Nodes {
-		an := &anim.Nodes[i]
-		pkey := strings.ToLower(an.Parent)
-		animChildIdx[pkey] = append(animChildIdx[pkey], an)
-	}
+	// Resolve parentage by tree position, not name, so duplicate-named
+	// animation nodes each keep their own subtree and controllers.
+	_, animChildIdx := resolveAnimTree(anim.Nodes)
+	c.animGeomPair = pairAnimNodesToGeom(anim.Nodes, c.geomOccur)
 
 	var animNodeCount int32
 	var rootAnimOff int32
 	var rootAnimNode *AnimNode
 	for i := range anim.Nodes {
-		p := anim.Nodes[i].Parent
-		if strings.EqualFold(p, "NULL") || p == "" {
+		if isRootParent(anim.Nodes[i].Parent) {
 			rootAnimNode = &anim.Nodes[i]
 			break
 		}
@@ -388,7 +395,7 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 		rootAnimNode = &anim.Nodes[0]
 	}
 	if rootAnimNode != nil {
-		visited := make(map[string]bool, len(anim.Nodes))
+		visited := make(map[*AnimNode]bool, len(anim.Nodes))
 		rootAnimOff = c.writeAnimNode(rootAnimNode, animChildIdx, 0, &animNodeCount, visited)
 	}
 
@@ -402,19 +409,21 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 // Mirrors the read order in readAnimNodeDepth.
 // Cycle safety: visited tracks already-written anim nodes to break cycles.
 // animChildren maps lowercased parent name → child AnimNodes (O(1) lookup).
-func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNode, parentOff int32, count *int32, visited map[string]bool) int32 {
-	key := strings.ToLower(an.Name)
-	if visited[key] {
+func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*AnimNode, parentOff int32, count *int32, visited map[*AnimNode]bool) int32 {
+	if visited[an] {
 		return 0
 	}
-	visited[key] = true
+	visited[an] = true
 	// Animation nodes use contentBits derived from the geometry node, but
 	// trimesh/skin/dangly/aabb bits are only set when the animation node
 	// carries actual mesh data (animmesh). The game writes contentBits=1
 	// (dummy) for trimesh animation nodes that only carry keyframes.
 	// Light and emitter bits ARE preserved because the decompiler needs
 	// them for controller ID dispatch.
-	geomNode := c.geomNodeByName(an.Name)
+	geomNode := c.animGeomPair[an]
+	if geomNode == nil {
+		geomNode = c.geomNodeByName(an.Name)
+	}
 	contentBits := uint32(1)
 	hasLight := false
 	hasEmitter := false
@@ -461,8 +470,10 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 	c.core.zeros(24)              // p_func1..p_func6
 	c.core.i32le(0)               // inheritColor
 	partNum := int32(0)
-	if id, ok := c.nodeIDs[strings.ToLower(an.Name)]; ok {
-		partNum = id
+	if geomNode != nil {
+		if id, ok := c.nodeIDs[geomNode]; ok {
+			partNum = id
+		}
 	}
 	c.core.i32le(partNum) // node_number / m_ID
 	c.core.fixedStr(an.Name, 32) // node_name
@@ -595,13 +606,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 		ctrlDataPtrPos, ctrlDataNumPos, ctrlDataAllocPos)
 
 	// ---- Children ----
-	allChildren := animChildren[strings.ToLower(an.Name)]
-	children := make([]*AnimNode, 0, len(allChildren))
-	for _, ch := range allChildren {
-		if ch != an {
-			children = append(children, ch)
-		}
-	}
+	children := animChildren[an]
 
 	childArrayOff := int32(c.core.len())
 	childOffsets := make([]int, len(children))
