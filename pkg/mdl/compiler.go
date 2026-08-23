@@ -424,6 +424,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 	hasAnimMesh := false
 	hasDangly := false
 	hasAABB := false
+	meshCtrlOnly := false
 	if geomNode != nil {
 		gf := geomNode.NodeTypeFlag()
 		if gf&0x02 != 0 { hasLight = true; contentBits |= 0x02 }
@@ -436,6 +437,20 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 			if gf&0x80 != 0 { hasAnimMesh = true; contentBits |= 0x80 }
 			if gf&0x100 != 0 { hasDangly = true; contentBits |= 0x100 }
 			if gf&0x200 != 0 { hasAABB = true; contentBits |= 0x200 }
+		} else if gf&0x20 != 0 && (len(an.AlphaKeys) > 0 || len(an.SelfIllumColorKeys) > 0) {
+			// A plain (non-animmesh) trimesh animation node that carries
+			// mesh controllers — alpha or self-illumination keys — must
+			// still set the mesh content bit. Controller type IDs 128
+			// (alpha) and 100 (selfillumcolor) are only resolved as mesh
+			// controllers when the node's mesh bit is set; without it the
+			// keys are silently dropped on compile (and unreadable on
+			// decompile). BioWare does exactly this: e.g. vdr_magearmor2's
+			// "shield" trimesh anim nodes are mesh-flagged and carry
+			// alphakey while storing no geometry. We match that — set the
+			// bit and emit an empty mesh header, but write no vert/face
+			// data. See issue #12.
+			contentBits |= 0x20
+			meshCtrlOnly = true
 		}
 	}
 
@@ -493,7 +508,11 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 	if hasMesh && geomNode != nil {
 		c.writeMeshHeaderForAnimNode(geomNode, an)
 		expanded = c.lastExpanded
-	} else if hasMesh {
+	} else if hasMesh || meshCtrlOnly {
+		// meshCtrlOnly: an empty 512-byte mesh header, no geometry. Just
+		// enough for the mesh content bit to be structurally valid so the
+		// alpha/selfillum controllers resolve; the actual geometry lives
+		// on the matching geometry node. Matches BioWare's layout.
 		c.core.zeros(meshHeaderSize)
 	}
 
@@ -567,7 +586,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[string][]*AnimNo
 		nodeFlag = 3
 	} else if hasEmitter {
 		nodeFlag = 5
-	} else if hasMesh {
+	} else if hasMesh || meshCtrlOnly {
 		nodeFlag = 33
 	}
 	ctrlKeys, timeArr, dataArr := c.encodeAnimNodeControllers(an, nodeFlag)

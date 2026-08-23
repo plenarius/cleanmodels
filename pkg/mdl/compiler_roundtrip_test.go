@@ -360,6 +360,98 @@ donemodel animctrl
 	}
 }
 
+// TestRoundtripTrimeshAlphaAnim is the regression guard for issue #12.
+// A plain trimesh animation node that carries an alphakey (mesh alpha
+// controller) used to lose it on compile: the compiler only set the mesh
+// content bit for animmesh nodes, so the type-128 controller was never
+// emitted, and the mesh — whose base alpha is 0 and whose visibility comes
+// entirely from the alpha animation — rendered invisible in-game.
+// vdr_magearmor's eight "shield" meshes are the canonical victims; BioWare's
+// own vdr_magearmor2 mesh-flags these anim nodes and stores alphakey.
+func TestRoundtripTrimeshAlphaAnim(t *testing.T) {
+	src := `newmodel shieldtest
+setsupermodel shieldtest NULL
+classification Effects
+setanimationscale 1.00
+beginmodelgeom shieldtest
+  node dummy shieldtest
+    parent NULL
+  endnode
+  node trimesh shield
+    parent shieldtest
+    bitmap fxpa_shield
+    render 1
+    alpha 0.0
+    verts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    faces 1
+      0 1 2 1 0 1 2 1
+    tverts 3
+      0 0 0
+      1 0 0
+      0 1 0
+  endnode
+endmodelgeom
+
+newanim duration shieldtest
+  animroot shieldtest
+  length 4.0
+  transtime 0.25
+  node dummy shieldtest
+    parent NULL
+  endnode
+  node trimesh shield
+    parent shieldtest
+    alphakey 5
+      0.0   1.0
+      0.8   0.6
+      1.8   1.0
+      2.8   0.6
+      4.0   1.0
+    endlist
+  endnode
+doneanim duration shieldtest
+
+donemodel shieldtest
+`
+	m := mustParseASCII(t, src)
+	if len(m.Animations) == 0 {
+		t.Skip("parser did not read animations")
+	}
+	m2 := mustDecompile(t, mustCompile(t, m))
+
+	var durAnim *Animation
+	for i := range m2.Animations {
+		if strings.EqualFold(m2.Animations[i].Name, "duration") {
+			durAnim = &m2.Animations[i]
+			break
+		}
+	}
+	if durAnim == nil {
+		t.Fatal("animation 'duration' not found after roundtrip")
+	}
+
+	var shieldAnim *AnimNode
+	for i := range durAnim.Nodes {
+		if strings.EqualFold(durAnim.Nodes[i].Name, "shield") {
+			shieldAnim = &durAnim.Nodes[i]
+			break
+		}
+	}
+	if shieldAnim == nil {
+		t.Fatal("anim node 'shield' not found after roundtrip")
+	}
+	if len(shieldAnim.AlphaKeys) != 5 {
+		t.Fatalf("alpha keys dropped on trimesh anim node: got %d keys, want 5", len(shieldAnim.AlphaKeys))
+	}
+	// Spot-check the first and last keyframes survived intact.
+	assertNear(t, "AlphaKeys[0].Value", float64(shieldAnim.AlphaKeys[0].Value), 1.0)
+	assertNear(t, "AlphaKeys[1].Value", float64(shieldAnim.AlphaKeys[1].Value), 0.6)
+	assertNear(t, "AlphaKeys[4].Time", float64(shieldAnim.AlphaKeys[4].Time), 4.0)
+}
+
 func TestRoundtripEmitterControllerOrder(t *testing.T) {
 	src := `newmodel emitdet
 setsupermodel emitdet NULL
