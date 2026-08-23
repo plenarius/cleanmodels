@@ -152,3 +152,23 @@ func pairAnimNodesToGeom(anim []AnimNode, geomOccur map[string][]*Node) map[*Ani
 func isRootParent(parent string) bool {
 	return parent == "" || strings.EqualFold(parent, "NULL")
 }
+
+// ResolveNodeParents returns each geometry node's parent instance, resolved by
+// tree position rather than by name. Nodes with no resolvable parent (the root,
+// or a dangling Parent reference) are absent from the result.
+//
+// Exported for the checks package: anything that renames one of several
+// same-named nodes first has to know which of them a given child actually
+// hangs off, or it will repoint the wrong subtree.
+func ResolveNodeParents(nodes []*Node) map[*Node]*Node {
+	parentOf, _ := resolveGeomTree(nodes)
+	return parentOf
+}
+
+// ResolveAnimNodeParents is ResolveNodeParents for an animation's node list.
+// Returned pointers alias elements of nodes, so the caller must not append to
+// the slice while the map is in use.
+func ResolveAnimNodeParents(nodes []AnimNode) map[*AnimNode]*AnimNode {
+	parentOf, _ := resolveAnimTree(nodes)
+	return parentOf
+}

@@ -21,17 +21,45 @@ func init() {
 	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
 }
 
-
+// checkDuplicateNodeNames gives every node a unique name by suffixing the
+// second and later users of a name. The first occurrence always keeps the
+// original name, so anything that resolves a name to its first match (skin
+// bone references) is unaffected.
+//
+// Renaming has to be occurrence-aware. A blanket "rename every reference to
+// this name" pass looks right but scrambles the model: renaming the second
+// "hand" would also rename the *first* hand's animation node, leaving the
+// first hand with no animation and the second with two. So parentage is
+// resolved by tree position up front, and each rename only touches the
+// subtree and the animation node that genuinely belong to that occurrence.
 func checkDuplicateNodeNames(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
 
-	allNames := make(map[string]bool)
+	allNames := make(map[string]bool, len(model.Nodes))
 	for _, n := range model.Nodes {
 		if n != nil {
 			allNames[strings.ToLower(n.Name)] = true
 		}
+	}
+
+	// Resolve parentage, and index animation nodes by name, before any rename
+	// lands — once a name changes, the name-based Parent fields no longer
+	// describe the original tree.
+	geomParent := mdl.ResolveNodeParents(model.Nodes)
+	animParent := make([]map[*mdl.AnimNode]*mdl.AnimNode, len(model.Animations))
+	animOccur := make([]map[string][]*mdl.AnimNode, len(model.Animations))
+	for ai := range model.Animations {
+		nodes := model.Animations[ai].Nodes
+		animParent[ai] = mdl.ResolveAnimNodeParents(nodes)
+		occ := make(map[string][]*mdl.AnimNode, len(nodes))
+		for i := range nodes {
+			an := &nodes[i]
+			key := strings.ToLower(an.Name)
+			occ[key] = append(occ[key], an)
+		}
+		animOccur[ai] = occ
 	}
 
 	seen := make(map[string]int)
@@ -40,13 +68,16 @@ func checkDuplicateNodeNames(model *mdl.Model, file string, fix bool) []mdl.Chec
 		if n == nil {
 			continue
 		}
+		// Every node still carries its original name here: renames below only
+		// ever touch the node currently being visited, plus Parent fields.
 		lowerName := strings.ToLower(n.Name)
 		seen[lowerName]++
-		if seen[lowerName] < 2 {
+		occurrence := seen[lowerName]
+		if occurrence < 2 {
 			continue
 		}
 
-		suffix := seen[lowerName]
+		suffix := occurrence
 		newName := suffixedName(n.Name, suffix)
 		for allNames[strings.ToLower(newName)] {
 			suffix++
@@ -57,10 +88,38 @@ func checkDuplicateNodeNames(model *mdl.Model, file string, fix bool) []mdl.Chec
 		if fix {
 			allNames[strings.ToLower(newName)] = true
 			n.Name = newName
-			renameNodeParentRefs(model, old, newName)
+
+			// Geometry children that actually hang off this occurrence.
+			for _, child := range model.Nodes {
+				if child != nil && child != n && geomParent[child] == n {
+					child.Parent = newName
+				}
+			}
+
+			// The matching animation node in each animation — the Nth anim node
+			// of this name drives the Nth geometry node of it — and that node's
+			// own children.
+			for ai := range model.Animations {
+				occ := animOccur[ai][lowerName]
+				if occurrence-1 >= len(occ) {
+					continue
+				}
+				an := occ[occurrence-1]
+				an.Name = newName
+				nodes := model.Animations[ai].Nodes
+				for i := range nodes {
+					child := &nodes[i]
+					if child != an && animParent[ai][child] == an {
+						child.Parent = newName
+					}
+				}
+			}
+			// Skin bone references are intentionally left alone: they resolve
+			// to the first node with the name, which never gets renamed.
 		}
 		out = append(out, mdl.CheckResult{
 			Check:    "duplicate_node_names",
+			Node:     old,
 			Severity: mdl.SevWarning,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
@@ -415,13 +474,6 @@ func suffixedName(name string, suffix int) string {
 // including node Name fields, Parent references, and skin bone references.
 func renameNodeEverywhere(model *mdl.Model, oldName, newName string) {
 	renameNodeRefs(model, oldName, newName, true)
-}
-
-// renameNodeParentRefs renames only Parent, skin bone, and animation references
-// (not geometry-node Name fields). Used when the caller has already renamed
-// the specific node's Name and only needs reference updates.
-func renameNodeParentRefs(model *mdl.Model, oldName, newName string) {
-	renameNodeRefs(model, oldName, newName, false)
 }
 
 func renameNodeRefs(model *mdl.Model, oldName, newName string, includeNodeName bool) {
