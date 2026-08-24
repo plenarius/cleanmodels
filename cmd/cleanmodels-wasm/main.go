@@ -5,7 +5,9 @@
 // JS surface (attached to the global `cleanmodels` object):
 //
 //	cleanmodels.version()
-//	  → string. Build version, "dev" for unreleased binaries.
+//	  → string. Build version, "dev" for unreleased binaries, augmented
+//	    with commit/time/dirty metadata when available, e.g.
+//	    "dev (commit 1a2b3c4d5e6f-dirty, 2026-08-20T10:04:11Z)".
 //
 //	cleanmodels.decompile(bytes: Uint8Array)
 //	  → { ok: true,  ascii: string }                — success
@@ -39,6 +41,7 @@ import (
 	"fmt"
 	"syscall/js"
 
+	"github.com/plenarius/cleanmodels/pkg/buildinfo"
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
@@ -62,7 +65,7 @@ func main() {
 }
 
 func jsVersion(this js.Value, args []js.Value) any {
-	return version
+	return buildinfo.Version(version)
 }
 
 // jsDecompile takes a Uint8Array of binary MDL bytes and returns the
