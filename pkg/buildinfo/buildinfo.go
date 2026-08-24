@@ -30,23 +30,31 @@ const shortRevisionLen = 7
 // checkout — e.g. not from an extracted module zip — and is omitted
 // entirely if absent.
 func Version(tag string) string {
-	info, ok := debug.ReadBuildInfo()
-
 	goVersion := runtime.Version()
-	var parts []string
+	var rev, commitTime string
+	var dirty bool
 
-	if ok {
+	if info, ok := debug.ReadBuildInfo(); ok {
 		if info.GoVersion != "" {
 			goVersion = info.GoVersion
 		}
-		if rev, t, dirty := revision(info); rev != "" {
-			parts = append(parts, "revision "+rev)
-			if dirty {
-				parts = append(parts, "dirty")
-			}
-			if t != "" {
-				parts = append(parts, t)
-			}
+		rev, commitTime, dirty = revision(info)
+	}
+	return format(tag, rev, commitTime, dirty, goVersion)
+}
+
+// format assembles the version string. Kept separate from Version so the
+// ordering and omission rules can be tested directly — Version itself depends
+// on how the calling binary happened to be built, which a test cannot control.
+func format(tag, rev, commitTime string, dirty bool, goVersion string) string {
+	var parts []string
+	if rev != "" {
+		parts = append(parts, "revision "+rev)
+		if dirty {
+			parts = append(parts, "dirty")
+		}
+		if commitTime != "" {
+			parts = append(parts, commitTime)
 		}
 	}
 	parts = append(parts, goVersion)
