@@ -38,7 +38,7 @@ func f32bits(f float32) uint32 { return math.Float32bits(f) }
 func (c *compiler) writeMeshHeaderFull(n *Node) *expandedMesh {
 	mesh := n.Mesh
 	if mesh == nil {
-		c.core.zeros(meshHeaderSize)
+		c.writeEmptyMeshHeader()
 		return nil
 	}
 	c.writeMeshHeaderInner(mesh, n)
@@ -59,7 +59,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	expanded, err := buildExpandedMesh(mesh)
 	if err != nil {
 		c.err = err
-		c.core.zeros(meshHeaderSize)
+		c.writeEmptyMeshHeader()
 		return -1, -1, 0, -1
 	}
 	c.lastExpanded = &expanded

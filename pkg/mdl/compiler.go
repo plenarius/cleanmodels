@@ -520,11 +520,11 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 		c.writeMeshHeaderForAnimNode(geomNode, an)
 		expanded = c.lastExpanded
 	} else if hasMesh || meshCtrlOnly {
-		// meshCtrlOnly: an empty 512-byte mesh header, no geometry. Just
-		// enough for the mesh content bit to be structurally valid so the
-		// alpha/selfillum controllers resolve; the actual geometry lives
-		// on the matching geometry node. Matches BioWare's layout.
-		c.core.zeros(meshHeaderSize)
+		// A geometry-free but well-formed mesh header: enough for the mesh
+		// content bit to be structurally valid so the alpha/selfillum
+		// controllers resolve, while the real geometry stays on the matching
+		// geometry node. Must not be zero-filled — see writeEmptyMeshHeader.
+		c.writeEmptyMeshHeader()
 	}
 
 	if hasSkin && geomNode != nil {
@@ -644,18 +644,104 @@ func (c *compiler) writeMeshHeaderForAnimNode(geomNode *Node, an *AnimNode) (int
 			mesh = an.Mesh
 		}
 		if mesh == nil {
-			c.core.zeros(meshHeaderSize)
+			c.writeEmptyMeshHeader()
 			return 0, -1, 0, -1
 		}
 		fp, mv, nv, mt := c.writeMeshHeaderInner(mesh, geomNode)
 		return fp, mv, int32(nv), mt
 	}
 
-	// Regular trimesh/skin/dangly/aabb anim nodes: write a zeroed header.
-	// All MDX pointers remain -1 so the decompiler skips vertex reads.
-	// The geometry section already has the authoritative mesh data.
-	c.core.zeros(meshHeaderSize)
+	// Regular trimesh/skin/dangly/aabb anim nodes carry no geometry of their
+	// own — the geometry section holds the authoritative mesh — but the mesh
+	// header still has to be structurally valid, not blank. See
+	// writeEmptyMeshHeader.
+	c.writeEmptyMeshHeader()
 	return 0, -1, 0, -1
+}
+
+// writeEmptyMeshHeader writes a geometry-free but well-formed 512-byte mesh
+// header, for animation nodes that set the mesh content bit only so their
+// mesh controllers (alpha, selfillumcolor) resolve.
+//
+// Zero-filling this header is NOT safe. The MDX pointer fields use -1 as their
+// "not present" sentinel, so a zeroed header claims every vertex stream lives
+// at MDX offset 0: the engine then reads the head of the MDX block as texture
+// coordinates, vertex colours, tangents and bitangents. In practice that
+// corrupts render state well beyond the model itself — a stray zero here cost
+// us missing VFX, a wrong GUI background colour, and a client crash.
+//
+// Values mirror what BioWare emits for these nodes (verified against
+// vdr_magearmor2.mdl): generic mesh defaults rather than a copy of the
+// geometry node's material, zero counts, and -1 in every optional MDX
+// pointer. p_mdx_vertex and the normals pointer are 0 as BioWare leaves them,
+// which is harmless because the vertex count is 0.
+func (c *compiler) writeEmptyMeshHeader() {
+	start := c.core.len()
+
+	c.core.zeros(8)         // p_func1, p_func2 — engine fills at load
+	c.core.proxyListEmpty() // faces array_definition
+	c.core.vec3(Vec3{})     // bmin
+	c.core.vec3(Vec3{})     // bmax
+	c.core.f32le(0)         // radius
+	c.core.vec3(Vec3{})     // vertex average / center
+
+	// Default material, matching BioWare's placeholder header.
+	c.core.vec3(Vec3{X: 0.8, Y: 0.8, Z: 0.8}) // diffuse
+	c.core.vec3(Vec3{X: 0.2, Y: 0.2, Z: 0.2}) // ambient
+	c.core.vec3(Vec3{})                       // specular
+	c.core.f32le(1)                           // shininess
+
+	c.core.i32le(1) // shadow
+	c.core.i32le(0) // beaming
+	c.core.i32le(1) // render
+	c.core.i32le(0) // transparencyhint
+	c.core.u32le(0) // renderhint
+
+	c.core.fixedStr("", 64) // texture0
+	c.core.fixedStr("", 64) // texture1
+	c.core.fixedStr("", 64) // texture2
+	c.core.fixedStr("", 64) // materialName
+
+	c.core.i32le(0) // tile_fade
+
+	c.core.proxyListEmpty() // vertex_indices (deprecated)
+	c.core.proxyListEmpty() // face_leftover (deprecated)
+	c.core.proxyListEmpty() // vertex_indices_count (deprecated)
+	c.core.proxyListEmpty() // vertex_indices_offset (deprecated)
+
+	c.core.i32le(-1) // p_mdx_unknown1 / m_nLeftOverFacesToken
+	c.core.u32le(0)  // unknown2 / m_nLeftOverFacesCount
+	c.core.u32le(0)  // mesh_type / m_nMode
+	c.core.i32le(0)  // p_start_mdx / m_pPostProcessInfo
+
+	c.core.i32le(0) // p_mdx_vertex — safe at 0 with a zero vertex count
+	c.core.u16le(0) // count_vertexes
+	c.core.u16le(0) // count_textures
+
+	c.core.i32le(-1) // p_mdx_texture0
+	c.core.i32le(-1) // p_mdx_texture1
+	c.core.i32le(-1) // p_mdx_texture2
+	c.core.i32le(-1) // p_mdx_texture3
+	c.core.i32le(0)  // p_mdx_vertex_normals — BioWare leaves this 0
+	c.core.i32le(-1) // p_mdx_vertex_colors
+	c.core.i32le(-1) // p_mdx_tex_anim0
+	c.core.i32le(-1) // p_mdx_tex_anim1
+	c.core.i32le(-1) // p_mdx_tex_anim2
+	c.core.i32le(-1) // p_mdx_tangent
+	c.core.i32le(-1) // p_mdx_tex_anim4
+	c.core.i32le(-1) // p_mdx_bitangent
+
+	c.core.u8(0)    // light_mapped
+	c.core.u8(0)    // rotate_texture
+	c.core.zeros(2) // padding
+	c.core.f32le(0) // vertex_normal_sum / m_nLocalSurfaceArea
+	c.core.u32le(0) // unknown3 / m_nRootedSurfaceArea
+
+	if got := c.core.len() - start; got != meshHeaderSize {
+		if c.err == nil {
+			c.err = fmt.Errorf("empty mesh header wrote %d bytes, want %d", got, meshHeaderSize)
+		}
+	}
 }
 
 // writeAnimMeshHeader writes a 56-byte header_anim sub-header.

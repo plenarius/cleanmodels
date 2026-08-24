@@ -1,9 +1,84 @@
 package mdl
 
 import (
+	"encoding/binary"
+	"math"
 	"strings"
 	"testing"
 )
+
+// TestEmptyMeshHeaderSentinels pins the MDX pointer sentinels in the
+// geometry-free mesh header written for animation nodes that only carry mesh
+// controllers.
+//
+// This header used to be zero-filled. Because -1 (not 0) is the format's
+// "stream not present" marker, a zeroed header told the engine that texture
+// coordinates, vertex colours, tangents and bitangents all live at MDX offset
+// 0 — so it read the head of the MDX block as those streams. The damage went
+// past the model: invisible VFX, a wrong GUI background colour, and a client
+// crash. Offsets are verified against BioWare's own vdr_magearmor2.mdl.
+func TestEmptyMeshHeaderSentinels(t *testing.T) {
+	c := &compiler{core: &patchBuf{}, vol: &patchBuf{}}
+	c.writeEmptyMeshHeader()
+	if c.err != nil {
+		t.Fatalf("writeEmptyMeshHeader: %v", c.err)
+	}
+	h := c.core.b
+	if len(h) != meshHeaderSize {
+		t.Fatalf("header is %d bytes, want %d", len(h), meshHeaderSize)
+	}
+
+	i32 := func(off int) int32 { return int32(binary.LittleEndian.Uint32(h[off:])) }
+	f32 := func(off int) float32 {
+		return math.Float32frombits(binary.LittleEndian.Uint32(h[off:]))
+	}
+
+	// Every optional MDX stream pointer must be the -1 sentinel.
+	for _, tc := range []struct {
+		name string
+		off  int
+	}{
+		{"p_mdx_unknown1", 428},
+		{"p_mdx_texture0", 452},
+		{"p_mdx_texture1", 456},
+		{"p_mdx_texture2", 460},
+		{"p_mdx_texture3", 464},
+		{"p_mdx_vertex_colors", 472},
+		{"p_mdx_tex_anim0", 476},
+		{"p_mdx_tex_anim1", 480},
+		{"p_mdx_tex_anim2", 484},
+		{"p_mdx_tangent", 488},
+		{"p_mdx_tex_anim4", 492},
+		{"p_mdx_bitangent", 496},
+	} {
+		if got := i32(tc.off); got != -1 {
+			t.Errorf("%s @%d = %d, want -1 (0 makes the engine read MDX offset 0 as real data)", tc.name, tc.off, got)
+		}
+	}
+
+	// No geometry: the vertex count must be zero, which is what makes a zero
+	// p_mdx_vertex harmless.
+	if got := binary.LittleEndian.Uint16(h[448:]); got != 0 {
+		t.Errorf("count_vertexes = %d, want 0", got)
+	}
+
+	// Default material, matching BioWare's placeholder header.
+	if got := f32(60); got != 0.8 {
+		t.Errorf("diffuse.x = %v, want 0.8", got)
+	}
+	if got := f32(72); got != 0.2 {
+		t.Errorf("ambient.x = %v, want 0.2", got)
+	}
+	if got := f32(96); got != 1 {
+		t.Errorf("shininess = %v, want 1", got)
+	}
+	if got := i32(100); got != 1 {
+		t.Errorf("shadow = %d, want 1", got)
+	}
+	if got := i32(108); got != 1 {
+		t.Errorf("render = %d, want 1", got)
+	}
+}
 
 // nodeNamed is a terse dummy-node constructor for tree-shape tests.
 func nodeNamed(name, parent string) *Node {
