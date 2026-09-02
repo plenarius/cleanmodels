@@ -226,24 +226,8 @@ func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
 			first = false
 			return
 		}
-		if p.X < bmin.X {
-			bmin.X = p.X
-		}
-		if p.Y < bmin.Y {
-			bmin.Y = p.Y
-		}
-		if p.Z < bmin.Z {
-			bmin.Z = p.Z
-		}
-		if p.X > bmax.X {
-			bmax.X = p.X
-		}
-		if p.Y > bmax.Y {
-			bmax.Y = p.Y
-		}
-		if p.Z > bmax.Z {
-			bmax.Z = p.Z
-		}
+		bmin = vecMin(bmin, p)
+		bmax = vecMax(bmax, p)
 	}
 	for _, n := range m.Nodes {
 		if n == nil {
