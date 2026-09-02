@@ -1,10 +1,19 @@
 // compiler_controllers.go — binControllerKey encoding for the binary MDL compiler.
 //
-// For geometry nodes: each active field becomes exactly one static controller
-// (one keyframe at t=0).  The time array and data array are packed contiguously.
-//
-// For animation nodes: multi-frame keyframe arrays are packed into shared time
-// and data arrays; each controller references its slice via TimeStart/DataStart.
+// Every controller's own time values are packed immediately followed by its
+// own data values, in one shared float array — DataStart == TimeStart +
+// ValueCount for every controller, always. This matches BioWare's own
+// compiler exactly (verified byte-for-byte against retail binaries, e.g.
+// vdr_magearmor2.mdl: every controller in every node satisfies this
+// adjacency, with zero exceptions). We previously packed all controllers'
+// times first and all controllers' data after (a global split rather than
+// per-controller), which kept TimeStart/DataStart self-consistent for our
+// own reader but broke this adjacency — the likely reason alpha-animated
+// trimesh nodes (e.g. vdr_magearmor.mdl's "shield"/"Cylinder02", issue #12)
+// silently failed to fade in: the engine appears to derive each controller's
+// data offset from TimeStart+ValueCount rather than trusting a
+// separately-stored DataStart, so our data lookups landed on unrelated
+// floats belonging to a different controller entirely.
 //
 // Ref: binary.go readControllers / readControllerKeys / readControllerRows
 package mdl
@@ -24,29 +33,32 @@ type binCtrlKey struct {
 	ColumnCount byte   // number of floats per row
 }
 
-// encodeGeomNodeControllers builds controller keys + time/data arrays for a geometry node.
-// Geometry nodes store only a single static value (1 keyframe at t=0) per controller.
+// encodeGeomNodeControllers builds controller keys + a shared data array for
+// a geometry node. Geometry nodes store only a single static value (1
+// keyframe at t=0) per controller.
 //
-// Returns: (keys, timeArray, dataArray).
-// The shared float array passed to the binary is: timeArray ++ dataArray.
-// TimeStart and DataStart are indices into the merged array where the decompiler reads.
+// Returns: (keys, nil, data). The single float array passed to the binary is
+// `data` (timeArr is always nil here — see the package doc comment for why
+// each controller's time is packed immediately before its own data, rather
+// than in a separate time array).
 //
 // Ref: binary.go readControllers → d.readControllerRows() for geometry nodes
 func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeArr, dataArr []float32) {
-	// Helper: add one static controller.
+	// Helper: add one static controller. Its time (1 value) is packed
+	// immediately followed by its data, so DataStart == TimeStart + 1 always.
 	add := func(typeID uint32, cols byte, vals []float32) {
 		if len(vals) == 0 {
 			return
 		}
-		if len(timeArr)+len(dataArr) >= 65535 {
+		if len(dataArr)+1 >= 65535 {
 			if c.err == nil {
 				c.err = fmt.Errorf("geometry controller data exceeds uint16 index limit")
 			}
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
+		dataArr = append(dataArr, 0.0) // static: one keyframe at t=0
 		dataStart := uint16(len(dataArr))
-		timeArr = append(timeArr, 0.0) // static: one keyframe at t=0
 		dataArr = append(dataArr, vals...)
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
@@ -58,21 +70,36 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeAr
 	}
 
 	// Universal controllers (all node types)
-	// position (ID=8, 3 cols)
-	pos := n.Position
-	if pos.X != 0 || pos.Y != 0 || pos.Z != 0 {
+	//
+	// position (ID=8, 3 cols) and orientation (ID=20, 4 cols) are written
+	// unconditionally for every non-root node, even when the value is the
+	// default (0,0,0 / identity) — matching BioWare's own compiler. Every
+	// stock model we've inspected (helm_010, plc_o04, vdr_magearmor2, ...)
+	// writes both controllers on every node except the model root, which
+	// alone has neither.
+	//
+	// The engine appears to rely on these controllers to initialize each
+	// node's runtime transform; a non-root node compiled with neither ends
+	// up with an uninitialized/degenerate transform. That transform then
+	// propagates to every descendant, so an entire subtree can silently fail
+	// to render with no crash and no warning — exactly the vdr_magearmor.mdl
+	// "shield"/"Cylinder02" case (issue #12): their parent, Dummy01, has
+	// position 0,0,0 and orientation axis 0,0,0 angle 0 — both exactly
+	// default — so the old "skip if default" logic emitted zero controllers
+	// for Dummy01, and its whole subtree vanished in-game despite the ASCII
+	// rendering fine when loaded directly.
+	//
+	// Skipping is still correct for the root node itself (Parent NULL):
+	// every stock file we checked omits both there too.
+	if !isRootParent(n.Parent) {
+		pos := n.Position
 		add(8, 3, []float32{pos.X, pos.Y, pos.Z})
-	}
-	// orientation (ID=20, 4 cols) — ASCII axis-angle → binary quaternion xyzw
-	// A zero-length axis (e.g. "0 0 0 1") is a degenerate axis-angle that
-	// represents identity rotation regardless of the angle value.
-	ori := n.Orientation
-	axisZero := ori.X == 0 && ori.Y == 0 && ori.Z == 0
-	if !axisZero && ori.W != 0 {
-		q := axisAngleToQuat(ori)
-		if q.X != 0 || q.Y != 0 || q.Z != 0 || q.W != 1 {
-			add(20, 4, []float32{q.X, q.Y, q.Z, q.W})
-		}
+
+		// ASCII axis-angle → binary quaternion xyzw. axisAngleToQuat handles
+		// a zero axis correctly: sin(angle/2) scales X/Y/Z to 0 regardless of
+		// axis when angle is also 0, yielding the identity quaternion (0,0,0,1).
+		q := axisAngleToQuat(n.Orientation)
+		add(20, 4, []float32{q.X, q.Y, q.Z, q.W})
 	}
 	// scale (ID=36, 1 col) — emit for any non-default value (default=1.0)
 	if n.Scale != 1 {
@@ -159,120 +186,125 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeAr
 		}
 	}
 
-	// DataStart values are relative to the data sub-array; writeCtrlBlock
-	// writes [timeArr..., dataArr...] so the reader indexes from the start
-	// of the combined array. Offset all DataStart by len(timeArr).
-	for i := range keys {
-		adjusted := int(keys[i].DataStart) + len(timeArr)
-		if adjusted > 65535 {
-			if c.err == nil {
-				c.err = fmt.Errorf("geometry controller data index overflow: offset %d exceeds uint16 limit", adjusted)
-			}
-			return nil, nil, nil
-		}
-		keys[i].DataStart = uint16(adjusted)
-	}
 	return
 }
 
-// encodeAnimNodeControllers builds controller keys + time/data arrays for an animation node.
-// Animation nodes can have multi-frame keyframe arrays.
+// encodeAnimNodeControllers builds controller keys + a shared data array for
+// an animation node. Animation nodes can have multi-frame keyframe arrays.
+//
+// Every controller packs its own time values immediately followed by its own
+// data values into the single shared `dataArr` (timeArr is always nil — see
+// the package doc comment).
 func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (keys []binCtrlKey, timeArr, dataArr []float32) {
-	checkOverflow := func() bool {
-		if len(timeArr) > 65535 || len(dataArr) > 65535 || len(timeArr)+len(dataArr) > 65535 {
+	checkOverflow := func(n int) bool {
+		if len(dataArr)+n > 65535 {
 			if c.err == nil {
-				c.err = fmt.Errorf("animation controller data exceeds uint16 index limit (%d time, %d data entries)", len(timeArr), len(dataArr))
+				c.err = fmt.Errorf("animation controller data exceeds uint16 index limit (%d entries)", len(dataArr)+n)
 			}
 			return true
 		}
 		return false
 	}
 	addFloat := func(typeID uint32, keyframes []FloatKey) {
-		if len(keyframes) == 0 || checkOverflow() {
+		n := len(keyframes)
+		if n == 0 || checkOverflow(2*n) {
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
+		for _, kf := range keyframes {
+			dataArr = append(dataArr, kf.Time)
+		}
 		dataStart := uint16(len(dataArr))
 		for _, kf := range keyframes {
-			timeArr = append(timeArr, kf.Time)
 			dataArr = append(dataArr, kf.Value)
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
-			ValueCount:  uint16(len(keyframes)),
+			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
 			ColumnCount: 1,
 		})
 	}
 	addColor := func(typeID uint32, keyframes []ColorKey) {
-		if len(keyframes) == 0 || checkOverflow() {
+		n := len(keyframes)
+		if n == 0 || checkOverflow(n+3*n) {
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
+		for _, kf := range keyframes {
+			dataArr = append(dataArr, kf.Time)
+		}
 		dataStart := uint16(len(dataArr))
 		for _, kf := range keyframes {
-			timeArr = append(timeArr, kf.Time)
 			dataArr = append(dataArr, kf.Value.X, kf.Value.Y, kf.Value.Z)
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
-			ValueCount:  uint16(len(keyframes)),
+			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
 			ColumnCount: 3,
 		})
 	}
 	addVec3 := func(typeID uint32, keyframes []PositionKey) {
-		if len(keyframes) == 0 || checkOverflow() {
+		n := len(keyframes)
+		if n == 0 || checkOverflow(n+3*n) {
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
+		for _, kf := range keyframes {
+			dataArr = append(dataArr, kf.Time)
+		}
 		dataStart := uint16(len(dataArr))
 		for _, kf := range keyframes {
-			timeArr = append(timeArr, kf.Time)
 			dataArr = append(dataArr, kf.Value.X, kf.Value.Y, kf.Value.Z)
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
-			ValueCount:  uint16(len(keyframes)),
+			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
 			ColumnCount: 3,
 		})
 	}
 	addOrientation := func(keyframes []OrientationKey) {
-		if len(keyframes) == 0 || checkOverflow() {
+		n := len(keyframes)
+		if n == 0 || checkOverflow(n+4*n) {
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
+		for _, kf := range keyframes {
+			dataArr = append(dataArr, kf.Time)
+		}
 		dataStart := uint16(len(dataArr))
 		for _, kf := range keyframes {
-			timeArr = append(timeArr, kf.Time)
 			// ASCII stores axis-angle; convert to quaternion for binary.
 			q := axisAngleToQuat(kf.Value)
 			dataArr = append(dataArr, q.X, q.Y, q.Z, q.W)
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        20,
-			ValueCount:  uint16(len(keyframes)),
+			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
 			ColumnCount: 4,
 		})
 	}
 	addDetonate := func(keyframes []FloatKey) {
-		if len(keyframes) == 0 || checkOverflow() {
+		n := len(keyframes)
+		if n == 0 || checkOverflow(n) {
 			return
 		}
-		timeStart := uint16(len(timeArr))
+		timeStart := uint16(len(dataArr))
 		for _, kf := range keyframes {
-			timeArr = append(timeArr, kf.Time)
+			dataArr = append(dataArr, kf.Time)
 		}
-		// detonate: ColumnCount=0, no data floats.
+		// detonate: ColumnCount=0, no data floats — DataStart == TimeStart+ValueCount,
+		// same adjacency convention as every other controller.
 		keys = append(keys, binCtrlKey{
 			Type:        228, // ID 228 from nodeControllers map
-			ValueCount:  uint16(len(keyframes)),
+			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   uint16(len(dataArr)),
 			ColumnCount: 0,
@@ -345,16 +377,6 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 		addFloat(200, an.YSizeKeys)
 	}
 
-	for i := range keys {
-		adjusted := int(keys[i].DataStart) + len(timeArr)
-		if adjusted > 65535 {
-			if c.err == nil {
-				c.err = fmt.Errorf("animation controller data index overflow: offset %d exceeds uint16 limit", adjusted)
-			}
-			return nil, nil, nil
-		}
-		keys[i].DataStart = uint16(adjusted)
-	}
 	return
 }
 
