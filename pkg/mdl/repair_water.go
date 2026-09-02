@@ -116,7 +116,7 @@ func ApplyWavyWater(model *Model, opts WavyWaterOptions) []string {
 // wavifyWaterNode applies the full wavy-water pipeline to a single node and
 // returns a human-readable summary. Returns ("", false) when the node has
 // nothing to wavify (no mesh, or empty after welding).
-func wavifyWaterNode(model *Model, idx map[string]*Node, n *Node, opts WavyWaterOptions) (string, bool) {
+func wavifyWaterNode(model *Model, idx map[*Node]*Node, n *Node, opts WavyWaterOptions) (string, bool) {
 	if n.Mesh == nil {
 		return "", false
 	}
@@ -261,7 +261,7 @@ func isModelChild(model *Model, n *Node) bool {
 // Normals are rotated by the orientation chain only (no translation, no
 // scale); without this the per-vertex lighting on the baked mesh would point
 // in the wrong direction once the node's own orientation is zeroed out.
-func bakeNodeTransformIntoMesh(model *Model, idx map[string]*Node, n *Node) {
+func bakeNodeTransformIntoMesh(model *Model, idx map[*Node]*Node, n *Node) {
 	if n == nil || n.Mesh == nil {
 		return
 	}

@@ -174,6 +174,201 @@ donemodel quad
 	}
 }
 
+// TestCompiledMeshPrimitiveMode pins the real root cause of issue #12: every
+// mesh cleanmodels ever compiled wrote m_nMode (AuroraPrimitiveTypes, the GPU
+// primitive type the vertex/index buffers should be drawn as) as a hardcoded
+// 0, which is not a valid primitive type. 3 (triangle list) is the value
+// every real binary carries — verified against the retail helm_010.mdl and
+// vdr_magearmor2.mdl, both of which have m_nMode=3 on every mesh node that
+// actually carries geometry.
+//
+// binary.go's decompiler skips this field outright (d.skip(4)) instead of
+// reading it into the Model struct, so there was never an ASCII
+// representation of it, a way to round-trip it, or a test that could catch
+// it being wrong — a self-consistent compile→decompile round trip looks
+// identical whether this field is 0 or 3, since neither side ever looks at
+// it. That's why this bug survived every other structural fix attempted for
+// issue #12 (transform controllers, controller data layout, classification,
+// model-level bounding box): none of them touch this field, and without a
+// valid primitive type the engine has no way to know how to draw the index
+// buffer at all, regardless of how correct everything else is.
+//
+// We check the compiled bytes directly rather than through Decompile, since
+// Decompile is exactly the blind spot that let this ship in the first place.
+func TestCompiledMeshPrimitiveMode(t *testing.T) {
+	src := `# NWN MDL
+filedependancy none
+newmodel quad
+setsupermodel quad NULL
+classification EFFECT
+setanimationscale 1.00
+beginmodelgeom quad
+  node dummy quad
+    parent NULL
+  endnode
+  node trimesh top
+    parent quad
+    position 0 0 0
+    orientation 0 0 1 0
+    bitmap blank
+    render 1
+    shadow 0
+    verts 4
+      -1 -1 0
+       1 -1 0
+       1  1 0
+      -1  1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2  1  0 1 2  0
+      0 2 3  1  0 2 3  0
+  endnode
+endmodelgeom
+donemodel quad
+`
+	model := mustParseASCII(t, src)
+	binData := mustCompile(t, model)
+
+	// texture0 is a 64-byte null-terminated field 120 bytes before m_nMode
+	// within the 512-byte mesh header (faces+bmin+bmax+radius+center+
+	// diffuse+ambient+specular+shininess+shadow+beaming+render+
+	// transparencyhint+renderhint = 120 bytes, then 4×64 texture/material
+	// strings, tilefade, and four 12-byte ProxyLists — vertex_indices,
+	// face_leftover, vertexindicescount, vertextokenindices — followed by
+	// 2 more uint32s = 316 bytes to m_nMode). "blank\x00" only appears once
+	// in this file, as the bitmap name.
+	marker := []byte("blank\x00")
+	idx := bytes.Index(binData, marker)
+	if idx < 0 {
+		t.Fatal("could not locate texture0 (\"blank\") in compiled output")
+	}
+	modeOff := idx + 316
+	if modeOff+4 > len(binData) {
+		t.Fatalf("computed m_nMode offset %d is past end of file (len %d)", modeOff, len(binData))
+	}
+	mode := uint32(binData[modeOff]) | uint32(binData[modeOff+1])<<8 | uint32(binData[modeOff+2])<<16 | uint32(binData[modeOff+3])<<24
+	const auroraPrimitiveTriangles = 3
+	if mode != auroraPrimitiveTriangles {
+		t.Errorf("m_nMode = %d, want %d (triangle list) — the engine cannot draw a mesh with an invalid primitive type", mode, auroraPrimitiveTriangles)
+	}
+}
+
+// TestCompiledMeshHasIndexBuffer pins the actual root cause of issue #12:
+// cleanmodels always wrote vertexindicescount and vertextokenindices
+// (m_listVertexTokenIndices) as empty ProxyLists, believing them deprecated.
+// They are not — verified against the retail helm_010.mdl and
+// vdr_magearmor2.mdl, m_listVertexTokenIndices is the actual GPU index
+// buffer the engine draws from, kept separate from the "faces" array (whose
+// embedded per-face indices are apparently only consulted by CPU-side
+// systems like mouse-hover picking — the mesh header, geometry, and every
+// controller could be perfectly correct and the mesh would still draw
+// nothing with a zero-length index buffer).
+//
+// binary.go's decompiler never read these fields into the Model struct
+// either, so this was invisible to every round-trip test: an empty list on
+// both the write and read side is self-consistent, just wrong relative to
+// what the engine actually needs.
+func TestCompiledMeshHasIndexBuffer(t *testing.T) {
+	src := `# NWN MDL
+filedependancy none
+newmodel quad
+setsupermodel quad NULL
+classification EFFECT
+setanimationscale 1.00
+beginmodelgeom quad
+  node dummy quad
+    parent NULL
+  endnode
+  node trimesh top
+    parent quad
+    position 0 0 0
+    orientation 0 0 1 0
+    bitmap blank
+    render 1
+    shadow 0
+    verts 4
+      -1 -1 0
+       1 -1 0
+       1  1 0
+      -1  1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2  1  0 1 2  0
+      0 2 3  1  0 2 3  0
+  endnode
+endmodelgeom
+donemodel quad
+`
+	model := mustParseASCII(t, src)
+	binData := mustCompile(t, model)
+
+	// Same offset derivation as TestCompiledMeshPrimitiveMode: from texture0
+	// ("blank\x00"), the four 64-byte texture/material strings (256) and
+	// tilefade (4) put us at idx+260, then the vertex_indices and
+	// face_leftover ProxyLists (12 bytes each, still genuinely deprecated/
+	// empty) land vertexindicescount's ProxyList at idx+284;
+	// vertextokenindices' immediately follows it. (m_nMode, checked in
+	// TestCompiledMeshPrimitiveMode, is 32 bytes further at idx+316 — those
+	// two tests' offsets are cross-checked against each other.)
+	marker := []byte("blank\x00")
+	idx := bytes.Index(binData, marker)
+	if idx < 0 {
+		t.Fatal("could not locate texture0 (\"blank\") in compiled output")
+	}
+	readU32 := func(off int) uint32 {
+		return uint32(binData[off]) | uint32(binData[off+1])<<8 | uint32(binData[off+2])<<16 | uint32(binData[off+3])<<24
+	}
+	countListOff := idx + 284
+	offsetListOff := countListOff + 12
+	countListNum := readU32(countListOff + 4)
+	offsetListNum := readU32(offsetListOff + 4)
+	if countListNum != 1 {
+		t.Fatalf("vertexindicescount.num = %d, want 1 (a mesh with faces must not leave this empty)", countListNum)
+	}
+	if offsetListNum != 1 {
+		t.Fatalf("vertextokenindices.num = %d, want 1", offsetListNum)
+	}
+
+	// core block starts at file offset 12; ProxyList offsets are core-relative.
+	countElemCoreOff := readU32(countListOff)
+	offsetElemCoreOff := readU32(offsetListOff)
+	idxCount := readU32(12 + int(countElemCoreOff))
+	mdxOff := readU32(12 + int(offsetElemCoreOff))
+
+	const wantIdxCount = 2 * 3 // 2 faces * 3 indices
+	if idxCount != wantIdxCount {
+		t.Errorf("index buffer count = %d, want %d", idxCount, wantIdxCount)
+	}
+
+	// The index buffer lives in the MDX block at mdxOff, as a flat uint16
+	// array. Read it back and check it matches the "faces" array's own
+	// vertex indices (0,1,2, 0,2,3 for this quad).
+	coreLen := readU32(4)
+	mdxBase := 12 + int(coreLen)
+	readU16 := func(off int) uint16 {
+		return uint16(binData[off]) | uint16(binData[off+1])<<8
+	}
+	got := make([]uint16, wantIdxCount)
+	for i := range got {
+		got[i] = readU16(mdxBase + int(mdxOff) + i*2)
+	}
+	want := []uint16{0, 1, 2, 0, 2, 3}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index buffer[%d] = %d, want %d (full: got=%v want=%v)", i, got[i], want[i], got, want)
+			break
+		}
+	}
+}
+
 // TestRoundtripAnimation checks that animation names and event counts survive roundtrip.
 func TestRoundtripAnimation(t *testing.T) {
 	src := `# NWN MDL

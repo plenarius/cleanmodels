@@ -87,7 +87,7 @@ func (p *patchBuf) proxyListEmpty() { p.proxyList(0, 0, 0) }
 
 // writeCtrlBlock writes binCtrlKey records + time/data arrays and patches the
 // corresponding ProxyList placeholders for controller_keys and controller_data.
-func (c *compiler) writeCtrlBlock(keys []binCtrlKey, timeArr, dataArr []float32,
+func (c *compiler) writeCtrlBlock(keys []binCtrlKey, dataArr []float32,
 	keysPtrPos, keysNumPos, keysAlcPos, dataPtrPos, dataNumPos, dataAlcPos int) {
 	if len(keys) == 0 {
 		return
@@ -102,13 +102,10 @@ func (c *compiler) writeCtrlBlock(keys []binCtrlKey, timeArr, dataArr []float32,
 		c.core.u8(0)
 	}
 	dataOff := c.core.len()
-	for _, t := range timeArr {
-		c.core.f32le(t)
-	}
 	for _, v := range dataArr {
 		c.core.f32le(v)
 	}
-	totalData := uint32(len(timeArr) + len(dataArr))
+	totalData := uint32(len(dataArr))
 	c.core.patchU32(keysPtrPos, uint32(keysOff))
 	c.core.patchU32(keysNumPos, uint32(len(keys)))
 	c.core.patchU32(keysAlcPos, uint32(len(keys)))
@@ -288,9 +285,11 @@ func (c *compiler) writeModel() error {
 	animListNumOff := c.core.placeholder()
 	animListAllocOff := c.core.placeholder()
 
-	c.core.zeros(4)  // p_supermodel
-	c.core.zeros(24) // bounds (bmin + bmax)
-	c.core.zeros(4)  // radius
+	c.core.zeros(4) // p_supermodel
+	bmin, bmax, radius := modelBounds(m)
+	c.core.vec3(bmin)
+	c.core.vec3(bmax)
+	c.core.f32le(radius)
 	c.core.f32le(m.AnimationScale)
 	super := m.SuperModel
 	if super == "" || strings.EqualFold(super, "NULL") {
@@ -600,8 +599,8 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	} else if hasMesh || meshCtrlOnly {
 		nodeFlag = 33
 	}
-	ctrlKeys, timeArr, dataArr := c.encodeAnimNodeControllers(an, nodeFlag)
-	c.writeCtrlBlock(ctrlKeys, timeArr, dataArr,
+	ctrlKeys, dataArr := c.encodeAnimNodeControllers(an, nodeFlag)
+	c.writeCtrlBlock(ctrlKeys, dataArr,
 		ctrlKeysPtrPos, ctrlKeysNumPos, ctrlKeysAllocPos,
 		ctrlDataPtrPos, ctrlDataNumPos, ctrlDataAllocPos)
 

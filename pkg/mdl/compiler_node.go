@@ -121,8 +121,8 @@ func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
 	}
 
 	// ---- Controllers ----
-	ctrlKeys, timeArr, dataArr := c.encodeGeomNodeControllers(n)
-	c.writeCtrlBlock(ctrlKeys, timeArr, dataArr,
+	ctrlKeys, dataArr := c.encodeGeomNodeControllers(n)
+	c.writeCtrlBlock(ctrlKeys, dataArr,
 		ctrlKeysPtrPos, ctrlKeysNumPos, ctrlKeysAlcPos,
 		ctrlDataPtrPos, ctrlDataNumPos, ctrlDataAlcPos)
 

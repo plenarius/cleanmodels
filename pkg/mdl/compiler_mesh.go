@@ -124,17 +124,63 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	c.core.proxyListEmpty()
 	// array_definition face_leftover (deprecated, always empty) (12)
 	c.core.proxyListEmpty()
-	// array_definition vertex_indices_count (deprecated, always empty) (12)
-	c.core.proxyListEmpty()
-	// array_definition vertex_indices_offset / m_listVertexTokenIndices (12)
-	c.core.proxyListEmpty()
+
+	// array_definition vertex_indices_count / vertextokenindices —
+	// m_listVertexTokenIndices. NOT deprecated: this is the actual GPU index
+	// buffer the engine draws from. The "faces" array's embedded per-face
+	// vertex indices are apparently only consulted by CPU-side systems
+	// (picking/mouse-hover highlighting) — the real render path needs a flat
+	// uint16 index buffer written into the MDX/volatile block, referenced by
+	// exactly one element each in these two lists: vertexindicescount's
+	// element holds the total index count (faceCount*3), and
+	// vertextokenindices' element holds the MDX-relative offset of that
+	// buffer. Verified against the retail helm_010.mdl: both point at
+	// single uint32 "arrays" holding 438 (=146 faces*3) and an MDX offset
+	// whose data matches the faces array's vertex indices exactly.
+	//
+	// The compiler always left these empty, so the GPU received a
+	// zero-length index buffer for every mesh it ever compiled — geometry,
+	// mesh header, and every controller could be perfectly correct and the
+	// mesh would still draw nothing, which is exactly what issue #12 saw.
+	// The actual element values aren't known until the index buffer itself
+	// is written (writeMeshFaceData, after all type-specific headers), so
+	// these two are placeholders patched there — mirroring how facesPtrPos
+	// is deferred already.
+	if len(mesh.Faces) > 0 {
+		expanded.indexCountListPtrPos = c.core.placeholder()
+		c.core.u32le(1) // count
+		c.core.u32le(1) // alloc
+		expanded.indexOffsetListPtrPos = c.core.placeholder()
+		c.core.u32le(1) // count
+		c.core.u32le(1) // alloc
+	} else {
+		expanded.indexCountListPtrPos = -1
+		expanded.indexOffsetListPtrPos = -1
+		c.core.proxyListEmpty()
+		c.core.proxyListEmpty()
+	}
 
 	// int32 p_mdx_unknown1 / m_nLeftOverFacesToken (4)
 	c.core.u32le(0xFFFFFFFF)
 	// uint32 unknown2 / m_nLeftOverFacesCount (4)
 	c.core.u32le(0)
-	// mesh_type type / m_nMode (4)
-	c.core.u32le(0)
+	// mesh_type / m_nMode (4) — AuroraPrimitiveTypes: the GPU primitive type
+	// the vertex/index buffers below should be drawn as. 3 = triangle list,
+	// the only kind cleanmodels ever emits (we never generate strips).
+	//
+	// binary.go's decompiler skips this field outright (d.skip(4)) instead of
+	// reading it into the Model struct, so there has never been an ASCII
+	// representation of it, a way to round-trip it, or a test that could
+	// catch it being wrong. The compiler wrote a hardcoded 0 here — not a
+	// valid AuroraPrimitiveTypes value — for every mesh it ever compiled.
+	// Every real binary we inspected (retail helm_010.mdl, vdr_magearmor2.mdl)
+	// has 3 here for every node that actually carries geometry. Without a
+	// valid primitive type the engine has no way to know how to interpret
+	// the index buffer for drawing at all, even though the vertex/face data
+	// itself, the mesh header, and every other field are otherwise correct
+	// — which is exactly why every mesh we compiled rendered invisibly
+	// regardless of alpha, animation, classification, or bounds (issue #12).
+	c.core.u32le(3)
 	// int32 p_start_mdx / m_pPostProcessInfo (4)
 	c.core.i32le(0)
 
@@ -341,6 +387,31 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 		c.core.u16le(exp.faceVerts[fi][1])
 		c.core.u16le(exp.faceVerts[fi][2])
 	}
+
+	// Write the actual GPU index buffer — a flat uint16 array of the same
+	// per-face vertex indices just written above, duplicated into the MDX
+	// (volatile) block — and point vertexindicescount/vertextokenindices at
+	// it. This is the real render-path index buffer (see the field's doc
+	// comment in writeMeshHeaderInner); without it the mesh has a
+	// zero-length index buffer and draws nothing, which is issue #12's
+	// actual root cause.
+	if exp.indexCountListPtrPos >= 0 {
+		idxBufOff := int32(c.vol.len())
+		for _, fv := range exp.faceVerts {
+			c.vol.u16le(fv[0])
+			c.vol.u16le(fv[1])
+			c.vol.u16le(fv[2])
+		}
+		idxCount := uint32(len(mesh.Faces) * 3)
+
+		countElemOff := c.core.len()
+		c.core.u32le(idxCount)
+		c.core.patchU32(exp.indexCountListPtrPos, uint32(countElemOff))
+
+		offsetElemOff := c.core.len()
+		c.core.u32le(uint32(idxBufOff))
+		c.core.patchU32(exp.indexOffsetListPtrPos, uint32(offsetElemOff))
+	}
 }
 
 func clampByte(f float32) byte {
@@ -368,6 +439,14 @@ type expandedMesh struct {
 	origVert   []int32     // GPU vertex → original mesh vertex index
 
 	facesPtrPos int // core buffer position of faces array pointer (for deferred patching)
+
+	// indexCountListPtrPos/indexOffsetListPtrPos are core buffer positions
+	// of the "offset" field in the vertexindicescount / vertextokenindices
+	// ProxyLists (each a list of exactly one uint32 element) — patched once
+	// writeMeshFaceData knows the index count and MDX offset. -1 if the mesh
+	// has no faces (both lists stay empty in that case).
+	indexCountListPtrPos  int
+	indexOffsetListPtrPos int
 }
 
 // buildExpandedMesh converts an ASCII indexed mesh into GPU vertex arrays,
