@@ -186,6 +186,78 @@ func WorldVertices(model *Model, n *Node) []Vec3 {
 	return WorldVerticesCached(nodeIndex(model), n)
 }
 
+// modelBounds computes the model-level bounding box (bmin, bmax) and
+// enclosing-sphere radius written into the ProxyModel header, by unioning
+// every geometry node's world-space extent — mesh nodes contribute their
+// full transformed vertex bounds, non-mesh nodes (dummy/emitter/light/...)
+// contribute at least their own world-space origin so a mesh-free VFX still
+// gets a non-degenerate box.
+//
+// The compiler previously wrote this as all zeros unconditionally. A
+// zero-size model bounding sphere makes the engine's visibility/culling test
+// against the whole attached model trivially fail, so every child node goes
+// unrendered — geometry, transforms, and per-node mesh headers can all be
+// individually correct and the model still never draws. Per-node picking
+// (e.g. the mouse-hover highlight) evidently uses each node's own mesh
+// bounds instead, which is why that still worked. See issue #12.
+//
+// This computes a tight box actually enclosing the geometry, which is
+// smaller than BioWare's own (their retail vdr_magearmor2.mdl carries a much
+// more generous radius, likely padded for how far attached particles can
+// travel) — but any real, non-zero bound fixes the "never rendered at all"
+// failure mode, which is what matters here.
+func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
+	if m == nil || len(m.Nodes) == 0 {
+		return Vec3{}, Vec3{}, 0
+	}
+	idx := nodeIndexFromSlice(m.Nodes)
+	first := true
+	extend := func(p Vec3) {
+		if first {
+			bmin, bmax = p, p
+			first = false
+			return
+		}
+		if p.X < bmin.X {
+			bmin.X = p.X
+		}
+		if p.Y < bmin.Y {
+			bmin.Y = p.Y
+		}
+		if p.Z < bmin.Z {
+			bmin.Z = p.Z
+		}
+		if p.X > bmax.X {
+			bmax.X = p.X
+		}
+		if p.Y > bmax.Y {
+			bmax.Y = p.Y
+		}
+		if p.Z > bmax.Z {
+			bmax.Z = p.Z
+		}
+	}
+	for _, n := range m.Nodes {
+		if n == nil {
+			continue
+		}
+		if n.Mesh != nil && len(n.Mesh.Verts) > 0 {
+			for _, wv := range WorldVerticesCached(idx, n) {
+				extend(wv)
+			}
+			continue
+		}
+		extend(LocalToWorld(idx, n, Vec3{}))
+	}
+	if first {
+		return Vec3{}, Vec3{}, 0
+	}
+	center := Vec3{X: (bmin.X + bmax.X) / 2, Y: (bmin.Y + bmax.Y) / 2, Z: (bmin.Z + bmax.Z) / 2}
+	corner := Vec3{X: bmax.X - center.X, Y: bmax.Y - center.Y, Z: bmax.Z - center.Z}
+	radius = float32(math.Sqrt(float64(corner.X*corner.X + corner.Y*corner.Y + corner.Z*corner.Z)))
+	return bmin, bmax, radius
+}
+
 // WorldVerticesCached is WorldVertices with a caller-supplied node index, so
 // loops over many mesh nodes don't rebuild the same lookup table per call.
 func WorldVerticesCached(idx map[string]*Node, n *Node) []Vec3 {

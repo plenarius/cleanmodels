@@ -288,9 +288,11 @@ func (c *compiler) writeModel() error {
 	animListNumOff := c.core.placeholder()
 	animListAllocOff := c.core.placeholder()
 
-	c.core.zeros(4)  // p_supermodel
-	c.core.zeros(24) // bounds (bmin + bmax)
-	c.core.zeros(4)  // radius
+	c.core.zeros(4) // p_supermodel
+	bmin, bmax, radius := modelBounds(m)
+	c.core.vec3(bmin)
+	c.core.vec3(bmax)
+	c.core.f32le(radius)
 	c.core.f32le(m.AnimationScale)
 	super := m.SuperModel
 	if super == "" || strings.EqualFold(super, "NULL") {
