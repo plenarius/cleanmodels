@@ -614,7 +614,18 @@ func ClassificationFromCode(code int) string {
 }
 
 // ClassificationToCode converts a classification string to its binary code.
+//
+// Accepts the plural forms ("Effects", "Tiles", ...) that NWMax and other
+// common exporters write, not just the singular canonical names — otherwise
+// they silently fall through to 0 ("OTHER") with no warning. That's exactly
+// what happened to vdr_magearmor.mdl (issue #12): its ASCII source declares
+// "classification Effects", which the parser uppercases to "EFFECTS" — one
+// letter away from the "EFFECT" this switch used to require — so the
+// compiled binary's m_nTypeMask silently ended up 0 instead of 1. Verified
+// against the retail vdr_magearmor2.mdl, whose compiled binary has
+// m_nTypeMask=1.
 func ClassificationToCode(class string) int {
+	class = strings.TrimSuffix(class, "S")
 	switch class {
 	case "EFFECT":
 		return 1
