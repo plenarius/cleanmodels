@@ -50,7 +50,11 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeAr
 		if len(vals) == 0 {
 			return
 		}
-		if len(dataArr)+1 >= 65535 {
+		// Guard the full growth this call makes (1 time value + len(vals)
+		// data values), not just the time slot — a call that only checked
+		// the time slot could pass here and still push dataArr past what a
+		// uint16 TimeStart/DataStart can address.
+		if len(dataArr)+1+len(vals) >= 65535 {
 			if c.err == nil {
 				c.err = fmt.Errorf("geometry controller data exceeds uint16 index limit")
 			}
