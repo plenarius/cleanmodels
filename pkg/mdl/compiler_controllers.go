@@ -37,13 +37,11 @@ type binCtrlKey struct {
 // a geometry node. Geometry nodes store only a single static value (1
 // keyframe at t=0) per controller.
 //
-// Returns: (keys, nil, data). The single float array passed to the binary is
-// `data` (timeArr is always nil here — see the package doc comment for why
-// each controller's time is packed immediately before its own data, rather
-// than in a separate time array).
+// Each controller's time is packed immediately before its own data, rather
+// than in a separate time array — see the package doc comment.
 //
 // Ref: binary.go readControllers → d.readControllerRows() for geometry nodes
-func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeArr, dataArr []float32) {
+func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataArr []float32) {
 	// Helper: add one static controller. Its time (1 value) is packed
 	// immediately followed by its data, so DataStart == TimeStart + 1 always.
 	add := func(typeID uint32, cols byte, vals []float32) {
@@ -197,9 +195,8 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, timeAr
 // an animation node. Animation nodes can have multi-frame keyframe arrays.
 //
 // Every controller packs its own time values immediately followed by its own
-// data values into the single shared `dataArr` (timeArr is always nil — see
-// the package doc comment).
-func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (keys []binCtrlKey, timeArr, dataArr []float32) {
+// data values into the single shared `dataArr` — see the package doc comment.
+func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (keys []binCtrlKey, dataArr []float32) {
 	checkOverflow := func(n int) bool {
 		if len(dataArr)+n > 65535 {
 			if c.err == nil {

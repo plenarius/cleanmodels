@@ -30,17 +30,14 @@ func TestEncodeGeomNodeControllersAlwaysWritesTransformForNonRoot(t *testing.T) 
 		Position:    Vec3{},
 		Orientation: Vec4{}, // axis 0,0,0, angle 0 — fully degenerate axis-angle
 	}
-	keys, timeArr, dataArr := c.encodeGeomNodeControllers(child)
-	// DataStart indexes into the combined [timeArr..., dataArr...] array
-	// writeCtrlBlock emits — see encodeGeomNodeControllers' offsetting pass.
-	combined := append(append([]float32{}, timeArr...), dataArr...)
+	keys, dataArr := c.encodeGeomNodeControllers(child)
 
 	var gotPos, gotOri bool
 	for _, k := range keys {
 		switch k.Type {
 		case 8:
 			gotPos = true
-			got := combined[k.DataStart : k.DataStart+3]
+			got := dataArr[k.DataStart : k.DataStart+3]
 			want := []float32{0, 0, 0}
 			for i := range want {
 				if got[i] != want[i] {
@@ -49,7 +46,7 @@ func TestEncodeGeomNodeControllersAlwaysWritesTransformForNonRoot(t *testing.T) 
 			}
 		case 20:
 			gotOri = true
-			got := combined[k.DataStart : k.DataStart+4]
+			got := dataArr[k.DataStart : k.DataStart+4]
 			// Identity quaternion, regardless of the degenerate source axis.
 			want := []float32{0, 0, 0, 1}
 			for i := range want {
@@ -75,7 +72,7 @@ func TestEncodeGeomNodeControllersAlwaysWritesTransformForNonRoot(t *testing.T) 
 		Position:    Vec3{},
 		Orientation: Vec4{},
 	}
-	rootKeys, _, _ := c.encodeGeomNodeControllers(root)
+	rootKeys, _ := c.encodeGeomNodeControllers(root)
 	for _, k := range rootKeys {
 		if k.Type == 8 || k.Type == 20 {
 			t.Errorf("root node got controller type %d; root must have neither position nor orientation", k.Type)
@@ -119,10 +116,7 @@ func TestControllerDataStartIsAdjacentToTimeStart(t *testing.T) {
 			{Time: 1, Value: 1},
 		},
 	}
-	keys, timeArr, dataArr := c.encodeAnimNodeControllers(an, 0x21) // mesh content bit set
-	if len(timeArr) != 0 {
-		t.Errorf("timeArr should be unused (nil/empty) under the interleaved layout, got %d entries", len(timeArr))
-	}
+	keys, dataArr := c.encodeAnimNodeControllers(an, 0x21) // mesh content bit set
 	if len(keys) == 0 {
 		t.Fatal("expected controllers for position and alpha, got none")
 	}
