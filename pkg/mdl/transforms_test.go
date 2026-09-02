@@ -73,3 +73,46 @@ func TestWorldToLocal_RoundTrip(t *testing.T) {
 		vec3Approx(t, back, v)
 	}
 }
+
+// TestParentChain_DuplicateNodeName pins the fix for a bug where nodeIndex
+// resolved a node's parent by a global "last node with this name wins" name
+// lookup, instead of the "nearest preceding node in declaration order" rule
+// resolveGeomTree uses to build the actual compiled tree (see
+// compiler_tree.go). MDL node names are not unique in real content (bilateral
+// rig dummies, mesh-plus-hook idioms, repeated emitters), so a child whose
+// Parent names an earlier duplicate must resolve to that nearer occurrence,
+// not to a later one declared further down the node list.
+func TestParentChain_DuplicateNodeName(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	dummyA1 := &Node{Name: "dummyA", Parent: "root", Position: Vec3{X: 0}}
+	child := &Node{Name: "child", Parent: "dummyA", Position: Vec3{X: 1}}
+	dummyA2 := &Node{Name: "dummyA", Parent: "root", Position: Vec3{X: 100}}
+	model := &Model{Name: "root", Nodes: []*Node{root, dummyA1, child, dummyA2}}
+	idx := nodeIndex(model)
+
+	// child must hang off the nearest preceding "dummyA" (dummyA1, X=0), not
+	// the later one (dummyA2, X=100) that a name-keyed map would find.
+	w := LocalToWorld(idx, child, Vec3{})
+	vec3Approx(t, w, Vec3{X: 1})
+}
+
+func TestModelBounds_DuplicateNodeName(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	dummyA1 := &Node{Name: "dummyA", Parent: "root", Position: Vec3{X: 0}}
+	child := &Node{
+		Name:   "child",
+		Parent: "dummyA",
+		Mesh:   &MeshData{Verts: []Vec3{{X: 1}}},
+	}
+	dummyA2 := &Node{Name: "dummyA", Parent: "root", Position: Vec3{X: 100}}
+	model := &Model{Name: "root", Nodes: []*Node{root, dummyA1, child, dummyA2}}
+
+	// Every node's own origin already extends the box out to X=100 (via
+	// dummyA2), so the only thing distinguishing correct from buggy
+	// resolution is where child's own vertex lands: X=1 relative to the
+	// nearest preceding "dummyA" (dummyA1), vs X=101 if it were wrongly
+	// resolved to the later dummyA2. A name-keyed "last wins" lookup gives
+	// the latter and pushes bmax.X to 101.
+	_, bmax, _ := modelBounds(model)
+	vec3Approx(t, bmax, Vec3{X: 100})
+}

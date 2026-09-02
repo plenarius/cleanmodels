@@ -43,7 +43,7 @@ func DeleteChamfers(model *Model) []string {
 	return msgs
 }
 
-func deleteChamferOnNode(idx map[string]*Node, n *Node) int {
+func deleteChamferOnNode(idx map[*Node]*Node, n *Node) int {
 	mesh := n.Mesh
 	world := WorldVerticesCached(idx, n)
 	if len(world) != len(mesh.Verts) {

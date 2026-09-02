@@ -154,7 +154,7 @@ func cloneNodeForTileFadeSplit(src *Node, newName string, mesh *MeshData, skin *
 // plane sliceZ. idx must be the model's node index (built once per model);
 // callers that pass nil get a fresh-built index per call, which is fine for
 // one-shot diagnostics but wasteful inside per-face loops.
-func meshCrossesTileFadeZ(idx map[string]*Node, n *Node, mesh *MeshData, sliceZ float32) bool {
+func meshCrossesTileFadeZ(idx map[*Node]*Node, n *Node, mesh *MeshData, sliceZ float32) bool {
 	for fi := range mesh.Faces {
 		f := &mesh.Faces[fi]
 		z0 := LocalToWorld(idx, n, meshVert(mesh, f.Verts[0])).Z
@@ -232,13 +232,13 @@ func readTileFadeVert(mesh *MeshData, skin *SkinData, vi, uvi int32) tileFadeVer
 }
 
 
-func worldZOf(idx map[string]*Node, n *Node, v tileFadeVert) float32 {
+func worldZOf(idx map[*Node]*Node, n *Node, v tileFadeVert) float32 {
 	return LocalToWorld(idx, n, v.Pos).Z
 }
 
 // edgeSlice builds a new vertex on the edge v0—v1 where world Z == sliceZ.
 // Ref: tilefade.pl — plane/edge intersection then attribute interpolation.
-func edgeSlice(idx map[string]*Node, n *Node, v0, v1 tileFadeVert, sliceZ float32) (tileFadeVert, bool) {
+func edgeSlice(idx map[*Node]*Node, n *Node, v0, v1 tileFadeVert, sliceZ float32) (tileFadeVert, bool) {
 	w0 := LocalToWorld(idx, n, v0.Pos)
 	w1 := LocalToWorld(idx, n, v1.Pos)
 	dz := w1.Z - w0.Z
@@ -439,7 +439,7 @@ func orientTriangleForPlaneCut(a0, a1, a2 bool, v0, v1, v2 tileFadeVert) (va, vb
 	}
 }
 
-func splitMeshAtWorldZ(idx map[string]*Node, n *Node, template *MeshData, sliceZ float32) (above, below *MeshData, skinAbove, skinBelow *SkinData, err error) {
+func splitMeshAtWorldZ(idx map[*Node]*Node, n *Node, template *MeshData, sliceZ float32) (above, below *MeshData, skinAbove, skinBelow *SkinData, err error) {
 	skin := n.Skin
 	ab := newMeshBuilderLike(template)
 	bl := newMeshBuilderLike(template)
@@ -527,7 +527,7 @@ func (b *meshBuilderWithSkin) emitFace(template *MeshData, src *Face, v0, v1, v2
 // The first mesh builder receives the small corner triangle; the second
 // receives the two fan triangles on the opposite side.
 // Ref: tilefade.pl — two-triangle fan + corner triangle at the slice.
-func splitOneAbove(idx map[string]*Node, n *Node, template *MeshData, sliceZ float32, triA, triB *meshBuilderWithSkin, src *Face, va, vb, vc tileFadeVert, useTI0, useTI1, useTI2, useTI3 bool, tex0, tex1, tex2, tex3 [3]int32) error {
+func splitOneAbove(idx map[*Node]*Node, n *Node, template *MeshData, sliceZ float32, triA, triB *meshBuilderWithSkin, src *Face, va, vb, vc tileFadeVert, useTI0, useTI1, useTI2, useTI3 bool, tex0, tex1, tex2, tex3 [3]int32) error {
 	iab, okAB := edgeSlice(idx, n, va, vb, sliceZ)
 	iac, okAC := edgeSlice(idx, n, va, vc, sliceZ)
 	if !okAB || !okAC {

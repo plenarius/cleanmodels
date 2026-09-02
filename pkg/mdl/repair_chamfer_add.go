@@ -27,7 +27,7 @@ func AddChamfers(model *Model) []string {
 	return msgs
 }
 
-func addChamferOnNode(idx map[string]*Node, n *Node) int {
+func addChamferOnNode(idx map[*Node]*Node, n *Node) int {
 	mesh := n.Mesh
 	worldVerts := WorldVerticesCached(idx, n)
 	if len(worldVerts) != len(mesh.Verts) {
@@ -147,7 +147,7 @@ func ensureChamferUVSeed(mesh *MeshData) {
 // always Z-0.03), translates it back to local space, and either reuses an
 // existing matching vertex or appends a new one. Returns the local vertex
 // index, or -1 if anything went wrong.
-func materialiseChamferVertex(idx map[string]*Node, n *Node, anchorWorld Vec3, worldOut *[]Vec3) int32 {
+func materialiseChamferVertex(idx map[*Node]*Node, n *Node, anchorWorld Vec3, worldOut *[]Vec3) int32 {
 	w := anchorWorld
 	if floatEqual(w.X, -5) {
 		w.X -= chamferOffset

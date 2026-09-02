@@ -2,7 +2,6 @@ package mdl
 
 import (
 	"math"
-	"strings"
 )
 
 // RotateVectorAxisAngle applies an axis-angle rotation to v using Rodrigues'
@@ -33,17 +32,32 @@ func RotateVectorAxisAngle(v Vec3, axis Vec4) Vec3 {
 	}
 }
 
-func nodeIndex(model *Model) map[string]*Node {
+// nodeIndex resolves each node's parent *by tree position*, not by name —
+// MDL node names are not unique (bilateral rig dummies, mesh-plus-hook
+// idioms, repeated emitters; see compiler_tree.go), so a name→*Node map
+// would silently attach a child to the wrong same-named node. This is the
+// same resolution ResolveNodeParents/resolveGeomTree uses to build the
+// compiled node tree, kept consistent here so the transform chain a node's
+// world-space position is computed from always matches the tree it was
+// actually compiled into.
+func nodeIndex(model *Model) map[*Node]*Node {
 	if model == nil {
 		return nil
 	}
 	return nodeIndexFromSlice(model.Nodes)
 }
 
-// nodeIndexFromSlice builds the same lowercase-name → *Node map as
-// nodeIndex but accepts a raw slice so test helpers and other callers that
-// already hold the slice don't need to wrap it in a *Model.
-func nodeIndexFromSlice(nodes []*Node) map[string]*Node {
+// nodeIndexFromSlice is nodeIndex for callers that already hold the node
+// slice.
+func nodeIndexFromSlice(nodes []*Node) map[*Node]*Node {
+	return ResolveNodeParents(nodes)
+}
+
+// nodeNameIndexFromSlice builds a lowercase-name → *Node map, for callers
+// that genuinely want to match nodes by name (e.g. diffing two independently
+// decompiled models in tests) rather than walk a parent chain. Do not use
+// this for parent resolution — see nodeIndex.
+func nodeNameIndexFromSlice(nodes []*Node) map[string]*Node {
 	idx := make(map[string]*Node, len(nodes))
 	for _, n := range nodes {
 		if n != nil && n.Name != "" {
@@ -65,13 +79,14 @@ func lowerName(s string) string {
 	return string(b)
 }
 
-// parentChain walks from n up through Parent links until it reaches the model
-// root (Parent="" or "NULL") or a cycle is detected. Returns the chain in
-// innermost-first order (n is chain[0]).
+// parentChain walks from n up through parentOf links until it reaches a node
+// with no resolved parent (the model root, or a dangling Parent reference) or
+// a cycle is detected. Returns the chain in innermost-first order (n is
+// chain[0]).
 //
 // Cycle detection uses a visited set keyed on *Node pointer identity, so a
 // chain like A→B→A breaks cleanly instead of looping forever.
-func parentChain(idx map[string]*Node, n *Node) []*Node {
+func parentChain(parentOf map[*Node]*Node, n *Node) []*Node {
 	chain := make([]*Node, 0, 4)
 	visited := make(map[*Node]bool)
 	cur := n
@@ -81,14 +96,7 @@ func parentChain(idx map[string]*Node, n *Node) []*Node {
 		}
 		visited[cur] = true
 		chain = append(chain, cur)
-		if cur.Parent == "" || strings.EqualFold(cur.Parent, "NULL") {
-			break
-		}
-		next := idx[lowerName(cur.Parent)]
-		if next == nil {
-			break
-		}
-		cur = next
+		cur = parentOf[cur]
 	}
 	return chain
 }
@@ -129,7 +137,7 @@ func inverseNodeTransform(n *Node, p Vec3) Vec3 {
 //
 // Mirrors the absolute-vertex unwinding done by tilefade.pl t_abs_verts/4
 // (line 46) and make_checks.pl vertex_to_local/6 (line 5724) inverted.
-func LocalToWorld(idx map[string]*Node, n *Node, local Vec3) Vec3 {
+func LocalToWorld(idx map[*Node]*Node, n *Node, local Vec3) Vec3 {
 	chain := parentChain(idx, n)
 	cur := local
 	for _, nd := range chain {
@@ -141,7 +149,7 @@ func LocalToWorld(idx map[string]*Node, n *Node, local Vec3) Vec3 {
 // WorldToLocal returns the world-space point expressed in n's local frame,
 // i.e. the inverse of LocalToWorld. Mirrors vertex_to_local/6 in
 // make_checks.pl line 5724.
-func WorldToLocal(idx map[string]*Node, n *Node, world Vec3) Vec3 {
+func WorldToLocal(idx map[*Node]*Node, n *Node, world Vec3) Vec3 {
 	chain := parentChain(idx, n)
 	v := world
 	for i := len(chain) - 1; i >= 0; i-- {
@@ -154,7 +162,7 @@ func WorldToLocal(idx map[string]*Node, n *Node, world Vec3) Vec3 {
 // using only the orientation chain (no translation, no scale). Caller is
 // responsible for re-normalising if downstream consumers require it; the
 // helper does normalise on its way out so common cases are correct.
-func LocalNormalToWorld(idx map[string]*Node, n *Node, normal Vec3) Vec3 {
+func LocalNormalToWorld(idx map[*Node]*Node, n *Node, normal Vec3) Vec3 {
 	chain := parentChain(idx, n)
 	cur := normal
 	for _, nd := range chain {
@@ -166,7 +174,7 @@ func LocalNormalToWorld(idx map[string]*Node, n *Node, normal Vec3) Vec3 {
 // WorldNormalToLocal is the inverse of LocalNormalToWorld: rotates a
 // world-space normal back into n's local frame using the orientation chain
 // only. Result is normalised.
-func WorldNormalToLocal(idx map[string]*Node, n *Node, normal Vec3) Vec3 {
+func WorldNormalToLocal(idx map[*Node]*Node, n *Node, normal Vec3) Vec3 {
 	chain := parentChain(idx, n)
 	cur := normal
 	for i := len(chain) - 1; i >= 0; i-- {
@@ -260,7 +268,7 @@ func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
 
 // WorldVerticesCached is WorldVertices with a caller-supplied node index, so
 // loops over many mesh nodes don't rebuild the same lookup table per call.
-func WorldVerticesCached(idx map[string]*Node, n *Node) []Vec3 {
+func WorldVerticesCached(idx map[*Node]*Node, n *Node) []Vec3 {
 	if n == nil || n.Mesh == nil {
 		return nil
 	}

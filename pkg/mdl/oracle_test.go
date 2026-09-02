@@ -177,8 +177,8 @@ func oracleDiff(ours, game *Model) []string {
 	}
 
 	// ── Node inventory ────────────────────────────────────────────────────────
-	ourNodes  := nodeIndexFromSlice(ours.Nodes)
-	gameNodes := nodeIndexFromSlice(game.Nodes)
+	ourNodes  := nodeNameIndexFromSlice(ours.Nodes)
+	gameNodes := nodeNameIndexFromSlice(game.Nodes)
 
 	for name, on := range ourNodes {
 		gn, ok := gameNodes[name]
@@ -520,7 +520,7 @@ func compareOracleTangents(t *testing.T, binaryName string) {
 		t.Fatalf("decompile our binary: %v", err)
 	}
 
-	gameNodes := nodeIndexFromSlice(gameModel.Nodes)
+	gameNodes := nodeNameIndexFromSlice(gameModel.Nodes)
 
 	type nodeStats struct {
 		matched, unmatched, badAlign int
@@ -846,7 +846,7 @@ func compareOracleVertParity(t *testing.T, binaryName string) {
 	}
 
 	expected := vertParityBaseline[binaryName]
-	gameNodes := nodeIndexFromSlice(gameModel.Nodes)
+	gameNodes := nodeNameIndexFromSlice(gameModel.Nodes)
 	seenExpected := map[string]bool{}
 
 	for _, on := range ourModel.Nodes {
