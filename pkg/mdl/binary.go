@@ -832,11 +832,12 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	pMdxColors, _ := d.readI32()
 
 	// int32 p_mdx_tex_anim0..5 (6 * 4 = 24)
-	// EE repurposes tex_anim3 as tangent, tex_anim5 as bitangent
-	d.skip(12) // anim0, anim1, anim2
-	pMdxTangent, _ := d.readI32()  // tex_anim3 -> tangent
-	d.skip(4)                       // anim4
-	pMdxBitangent, _ := d.readI32() // tex_anim5 -> bitangent
+	// EE repurposes the deprecated tangent-basis/half-angle tokens:
+	// tex_anim3 -> m_hTangentToken, tex_anim5 -> m_hHandednessToken.
+	d.skip(12) // anim0, anim1, anim2 (deprecated tangent basis rows)
+	pMdxTangent, _ := d.readI32()
+	d.skip(4) // anim4 (deprecated half-angle)
+	pMdxHandedness, _ := d.readI32()
 
 	// byte light_mapped, rotate_texture, uint16 padding
 	lightMapped, _ := d.readByte()
@@ -890,7 +891,7 @@ func (d *decompiler) readMeshHeader(node *Node) {
 
 	// Tangents / Bitangents (EE, MDX pointers)
 	if nVerts > 0 && pMdxTangent >= 0 {
-		d.readMDXTangents(mesh, pMdxTangent, pMdxBitangent, nVerts)
+		d.readMDXTangents(mesh, pMdxTangent, pMdxHandedness, nVerts)
 	}
 
 	// Faces (model pointer, not MDX)
@@ -1202,7 +1203,7 @@ func (d *decompiler) readMDXColors(out *[]Vec3, mdxPtr int32, count int) {
 	}
 }
 
-func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, bitangentPtr int32, count int) {
+func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr int32, count int) {
 	tangentAbs := d.goToMDXPointer(tangentPtr)
 	if tangentAbs < 0 || tangentAbs+int64(count)*12 > d.fileSize {
 		return
@@ -1211,15 +1212,18 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, bitangentPtr in
 		return
 	}
 
-	// Read bitangents for handedness
-	var bitangents []Vec3
-	if bitangentPtr >= 0 {
-		btAbs := d.goToMDXPointer(bitangentPtr)
-		if btAbs >= 0 && btAbs+int64(count)*12 <= d.fileSize && d.trackAlloc(int64(count)*12) {
-			if d.seek(btAbs) == nil {
-				bitangents = make([]Vec3, count)
+	// Read the handedness stream: m_hHandednessToken is one float per vertex
+	// (±1), not a bitangent vector. Reading it as Vec3 would consume three
+	// times the data that is actually there and spill into whatever stream
+	// follows.
+	var handedness []float32
+	if handednessPtr >= 0 {
+		hAbs := d.goToMDXPointer(handednessPtr)
+		if hAbs >= 0 && hAbs+int64(count)*4 <= d.fileSize && d.trackAlloc(int64(count)*4) {
+			if d.seek(hAbs) == nil {
+				handedness = make([]float32, count)
 				for i := 0; i < count; i++ {
-					bitangents[i] = d.readVec3()
+					handedness[i], _ = d.readF32()
 				}
 			}
 		}
@@ -1231,13 +1235,11 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, bitangentPtr in
 	mesh.Tangents = make([]Vec4, count)
 	for i := 0; i < count; i++ {
 		t := d.readVec3()
+		// Default to +1 when the model carries no handedness stream, which
+		// matches the un-mirrored basis cross(normal, tangent).
 		w := float32(1.0)
-		if i < len(bitangents) && i < len(mesh.Normals) {
-			cross := vecCross(mesh.Normals[i], t)
-			dot := vecDot(cross, bitangents[i])
-			if dot < 0 {
-				w = -1.0
-			}
+		if i < len(handedness) && handedness[i] < 0 {
+			w = -1.0
 		}
 		mesh.Tangents[i] = Vec4{X: t.X, Y: t.Y, Z: t.Z, W: w}
 	}

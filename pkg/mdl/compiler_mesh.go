@@ -259,11 +259,12 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	}
 	// int32 p_mdx_tex_anim4 (4, deprecated)
 	c.core.i32le(-1)
-	// int32 p_mdx_bitangent / tex_anim5 (4) — EE bitangent
-	mdxBitangentPtrPos := -1
-	if len(bitangentsOut) > 0 {
-		mdxBitangentPtrPos = c.core.len()
-		c.core.i32le(0) // placeholder, patched after MDX bitangent write
+	// int32 m_hHandednessToken (4) — NWN:EE. One float per vertex (±1), not a
+	// bitangent vector; see the handedness write below.
+	mdxHandednessPtrPos := -1
+	if len(tangentsOut) > 0 {
+		mdxHandednessPtrPos = c.core.len()
+		c.core.i32le(0) // placeholder, patched after the handedness write
 	} else {
 		c.core.i32le(-1)
 	}
@@ -339,13 +340,68 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 		c.core.patchU32(mdxColorPtrPos, uint32(colorStart))
 	}
 
-	// The decompiler reads both arrays back and reconstructs the per-vertex
-	// Vec4 W handedness from sign(dot(cross(normal, tangent), bitangent)) —
-	// see binary.go readMDXTangents.
+	// GPU index buffer. Written here, after the vertex attribute streams and
+	// crucially BEFORE the tangent streams: real binaries lay the volatile
+	// block out as vertices → UVs → normals → index buffer → tangents →
+	// handedness (verified on retail tdc01_g02_01, e.g. normals 78660 →
+	// index 78828 → tangent 78864 → handedness 79032). Only the volatile
+	// data goes here; the two core-side list elements that point at it are
+	// appended by writeMeshFaceData, since core must stay contiguous through
+	// the remaining fixed-size headers.
+	expanded.indexBufOff = -1
+	if expanded.indexCountListPtrPos >= 0 {
+		expanded.indexBufOff = int32(c.vol.len())
+		for _, fv := range expanded.faceVerts {
+			c.vol.u16le(fv[0])
+			c.vol.u16le(fv[1])
+			c.vol.u16le(fv[2])
+		}
+	}
+
 	writeVec3Stream(tangentsOut, mdxTangentPtrPos)
-	writeVec3Stream(bitangentsOut, mdxBitangentPtrPos)
+
+	// Handedness — ONE float per vertex, not a bitangent vector. The field at
+	// +496 is m_hHandednessToken: real binaries store exactly ±1.0 per vertex
+	// there (verified across the game-compiled tangent corpus, e.g. 40 floats
+	// all +1.0 on TIN01_D01_09's Plane334, a ±1.0 mix on its Object1376).
+	// We used to write the bitangent vectors themselves — three floats per
+	// vertex of unit-vector components — which is both 3x too much data and
+	// the wrong values. The bitangent is reconstructible at runtime as
+	// cross(normal, tangent) * w, so only the sign needs storing.
+	writeFloatStream := func(data []float32, ptrPos int) {
+		if len(data) == 0 || ptrPos < 0 {
+			return
+		}
+		start := int32(c.vol.len())
+		for _, v := range data {
+			c.vol.f32le(v)
+		}
+		c.core.patchU32(ptrPos, uint32(start))
+	}
+	writeFloatStream(handednessOf(expanded.normals, tangentsOut, bitangentsOut), mdxHandednessPtrPos)
 
 	return
+}
+
+// handednessOf reduces a tangent/bitangent basis to the per-vertex sign the
+// binary format stores: +1 when the bitangent matches cross(normal, tangent),
+// -1 when it is mirrored (a flipped UV chart). Returns nil when there is no
+// basis to describe, so the caller leaves the token unset.
+func handednessOf(normals, tangents, bitangents []Vec3) []float32 {
+	if len(tangents) == 0 {
+		return nil
+	}
+	out := make([]float32, len(tangents))
+	for i := range tangents {
+		w := float32(1)
+		if i < len(normals) && i < len(bitangents) {
+			if vecDot(vecCross(normals[i], tangents[i]), bitangents[i]) < 0 {
+				w = -1
+			}
+		}
+		out[i] = w
+	}
+	return out
 }
 
 // writeMeshFaceData writes the face array to core and patches the faces pointer.
@@ -388,28 +444,20 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 		c.core.u16le(exp.faceVerts[fi][2])
 	}
 
-	// Write the actual GPU index buffer — a flat uint16 array of the same
-	// per-face vertex indices just written above, duplicated into the MDX
-	// (volatile) block — and point vertexindicescount/vertextokenindices at
-	// it. This is the real render-path index buffer (see the field's doc
-	// comment in writeMeshHeaderInner); without it the mesh has a
-	// zero-length index buffer and draws nothing, which is issue #12's
-	// actual root cause.
-	if exp.indexCountListPtrPos >= 0 {
-		idxBufOff := int32(c.vol.len())
-		for _, fv := range exp.faceVerts {
-			c.vol.u16le(fv[0])
-			c.vol.u16le(fv[1])
-			c.vol.u16le(fv[2])
-		}
-		idxCount := uint32(len(mesh.Faces) * 3)
-
+	// Point vertexindicescount/vertextokenindices at the GPU index buffer.
+	// The buffer itself already went into the volatile block during
+	// writeMeshHeaderInner (it has to precede the tangent streams); all that
+	// is left is to append each list's single uint32 element to core, which
+	// can only happen now that the fixed-size headers are behind us.
+	// Without these lists the mesh has a zero-length index buffer and draws
+	// nothing — issue #12's actual root cause.
+	if exp.indexCountListPtrPos >= 0 && exp.indexBufOff >= 0 {
 		countElemOff := c.core.len()
-		c.core.u32le(idxCount)
+		c.core.u32le(uint32(len(mesh.Faces) * 3))
 		c.core.patchU32(exp.indexCountListPtrPos, uint32(countElemOff))
 
 		offsetElemOff := c.core.len()
-		c.core.u32le(uint32(idxBufOff))
+		c.core.u32le(uint32(exp.indexBufOff))
 		c.core.patchU32(exp.indexOffsetListPtrPos, uint32(offsetElemOff))
 	}
 }
@@ -443,10 +491,16 @@ type expandedMesh struct {
 	// indexCountListPtrPos/indexOffsetListPtrPos are core buffer positions
 	// of the "offset" field in the vertexindicescount / vertextokenindices
 	// ProxyLists (each a list of exactly one uint32 element) — patched once
-	// writeMeshFaceData knows the index count and MDX offset. -1 if the mesh
+	// writeMeshFaceData has appended those elements to core. -1 if the mesh
 	// has no faces (both lists stay empty in that case).
 	indexCountListPtrPos  int
 	indexOffsetListPtrPos int
+
+	// indexBufOff is the volatile-block offset of the GPU index buffer,
+	// written during writeMeshHeaderInner so it lands before the tangent
+	// streams (the order real binaries use). The core-side list elements
+	// that point at it are appended later, in writeMeshFaceData.
+	indexBufOff int32
 }
 
 // buildExpandedMesh converts an ASCII indexed mesh into GPU vertex arrays,
