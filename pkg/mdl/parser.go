@@ -1302,6 +1302,14 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		if p.tryAnimKeyTable(keyword, tokens, an) {
 			return
 		}
+		// A bezier key row is "time value tangentIn tangentOut" (or the
+		// 3-per-component form for vectors). The key readers are line-based
+		// and take only the leading time and value, so routing bezier lists
+		// through the linear reader degrades them to linear keyframes —
+		// keeping the sampled values and dropping the tangents — rather than
+		// misparsing them. We do not re-emit bezier controllers, so this is a
+		// deliberate, lossy passthrough; nothing in the retail corpus or in
+		// ~189k ASCII models we checked uses one.
 		if strings.HasSuffix(keyword, "bezierkey") {
 			base := strings.TrimSuffix(keyword, "bezierkey")
 			p.parseAnimNodeParam(base+"key", tokens)

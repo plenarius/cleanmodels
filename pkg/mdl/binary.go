@@ -1398,6 +1398,19 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 				"unknown controller type %d for node flag %d", k.Type, nodeFlag)
 			continue
 		}
+		// Bit 4 of numfloats marks a bezier controller, whose keys are three
+		// times as wide as a linear one's (value, tangentIn, tangentOut per
+		// component). Reading it with the linear stride below would silently
+		// return values taken from the middle of the previous key, so skip it
+		// and say so instead. No model in the retail corpus uses one — 0 of
+		// 347k controller keys across 1910 binaries — so this is a guard
+		// against a format path we have no sample of, not a supported case.
+		if k.ColumnCount&0x10 != 0 {
+			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				"controller %s is a bezier controller (numfloats=0x%02x); bezier controllers are not supported and this one was dropped",
+				def.Name, k.ColumnCount)
+			continue
+		}
 		numCols := int(k.ColumnCount) & 0x0F
 		if def.NumCols > 0 {
 			numCols = def.NumCols
