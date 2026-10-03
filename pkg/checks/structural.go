@@ -305,6 +305,7 @@ func mergeAnimNodes(dst, src *mdl.Animation) {
 func mergeAnimNodeKeys(dst, src *mdl.AnimNode) {
 	if len(dst.PositionKeys) == 0 {
 		dst.PositionKeys = src.PositionKeys
+		dst.PositionBezier = src.PositionBezier
 	}
 	if len(dst.OrientationKeys) == 0 {
 		dst.OrientationKeys = src.OrientationKeys

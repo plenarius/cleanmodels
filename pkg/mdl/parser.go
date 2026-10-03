@@ -1200,6 +1200,18 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		} else {
 			p.readPositionKeysUntilEnd(&an.PositionKeys)
 		}
+	case "positionbezierkey":
+		// Rows are "time x y z tanIn.xyz tanOut.xyz" (10 columns). Rows with
+		// fewer columns are kept as zero-tangent keys rather than dropped.
+		an.PositionBezier = true
+		if len(tokens) >= 2 {
+			count, err := parseInt(safeIndex(tokens, 1))
+			if err == nil {
+				p.readPositionBezierKeys(&an.PositionKeys, int(count))
+			}
+		} else {
+			p.readPositionBezierKeysUntilEnd(&an.PositionKeys)
+		}
 	case "orientationkey":
 		if len(tokens) >= 2 {
 			count, err := parseInt(safeIndex(tokens, 1))
@@ -1302,14 +1314,11 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		if p.tryAnimKeyTable(keyword, tokens, an) {
 			return
 		}
-		// A bezier key row is "time value tangentIn tangentOut" (or the
-		// 3-per-component form for vectors). The key readers are line-based
-		// and take only the leading time and value, so routing bezier lists
-		// through the linear reader degrades them to linear keyframes —
+		// Other bezier lists (scalar/colour) are not modelled. The key readers
+		// are line-based and take only the leading time and value, so routing
+		// them through the linear reader degrades them to linear keyframes —
 		// keeping the sampled values and dropping the tangents — rather than
-		// misparsing them. We do not re-emit bezier controllers, so this is a
-		// deliberate, lossy passthrough; nothing in the retail corpus or in
-		// ~189k ASCII models we checked uses one.
+		// misparsing them. positionbezierkey is handled explicitly above.
 		if strings.HasSuffix(keyword, "bezierkey") {
 			base := strings.TrimSuffix(keyword, "bezierkey")
 			p.parseAnimNodeParam(base+"key", tokens)
@@ -1583,6 +1592,42 @@ func (p *parser) readPositionKeys(out *[]PositionKey, count int) {
 			*out = append(*out, PositionKey{Time: t, Value: Vec3{X: x, Y: y, Z: z}})
 		}
 	}
+}
+
+// positionBezierKeyFromTokens parses "time x y z [tanIn.xyz tanOut.xyz]".
+func positionBezierKeyFromTokens(tokens []string) PositionKey {
+	var f [10]float32
+	for i := 0; i < len(f) && i < len(tokens); i++ {
+		f[i], _ = parseFloat(tokens[i])
+	}
+	return PositionKey{
+		Time:   f[0],
+		Value:  Vec3{X: f[1], Y: f[2], Z: f[3]},
+		TanIn:  Vec3{X: f[4], Y: f[5], Z: f[6]},
+		TanOut: Vec3{X: f[7], Y: f[8], Z: f[9]},
+	}
+}
+
+func (p *parser) readPositionBezierKeys(out *[]PositionKey, count int) {
+	if !p.trackAlloc(int64(count) * 40) {
+		p.errorf("allocation limit exceeded reading %d position bezier keys", count)
+		return
+	}
+	for i := 0; i < count; i++ {
+		line, ok := p.nextLine()
+		if !ok {
+			break
+		}
+		if tokens := tokenize(line); len(tokens) >= 4 {
+			*out = append(*out, positionBezierKeyFromTokens(tokens))
+		}
+	}
+}
+
+func (p *parser) readPositionBezierKeysUntilEnd(out *[]PositionKey) {
+	p.readKeysUntilEnd(4, 40, "position bezier keys", func(tokens []string) {
+		*out = append(*out, positionBezierKeyFromTokens(tokens))
+	})
 }
 
 func (p *parser) readOrientationKeys(out *[]OrientationKey, count int) {

@@ -61,10 +61,13 @@ func scaleModelCore(model *Model, sx, sy, sz float32) {
 		for ni := range model.Animations[ai].Nodes {
 			an := &model.Animations[ai].Nodes[ni]
 			for ki := range an.PositionKeys {
-				v := &an.PositionKeys[ki].Value
-				v.X *= sx
-				v.Y *= sy
-				v.Z *= sz
+				k := &an.PositionKeys[ki]
+				// Tangents are offset vectors from the key, so they scale too.
+				for _, v := range [3]*Vec3{&k.Value, &k.TanIn, &k.TanOut} {
+					v.X *= sx
+					v.Y *= sy
+					v.Z *= sz
+				}
 			}
 			if an.Mesh != nil {
 				for i := range an.Mesh.Verts {

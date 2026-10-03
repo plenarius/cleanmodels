@@ -1382,11 +1382,13 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 	def     ControllerDef
 	numCols int
 	key     binControllerKey
+	bezier  bool
 } {
 	var out []struct {
 		def     ControllerDef
 		numCols int
 		key     binControllerKey
+		bezier  bool
 	}
 	for _, k := range keys {
 		if nodeFlag == 5 {
@@ -1399,15 +1401,16 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 			continue
 		}
 		// Bit 4 of numfloats marks a bezier controller, whose keys are three
-		// times as wide as a linear one's (value, tangentIn, tangentOut per
-		// component). Reading it with the linear stride below would silently
-		// return values taken from the middle of the previous key, so skip it
-		// and say so instead. No model in the retail corpus uses one — 0 of
-		// 347k controller keys across 1910 binaries — so this is a guard
-		// against a format path we have no sample of, not a supported case.
-		if k.ColumnCount&0x10 != 0 {
+		// times as wide as a linear one's: value, tangentIn, tangentOut per
+		// component, in that order. Position is the only bezier controller we
+		// have an engine-compiled sample of (plc_a01 from issue #15, numfloats
+		// 0x13), so it is the only one decoded. Any other would be read with the
+		// linear stride and return values lifted from the middle of the
+		// previous key, so it is skipped with a warning instead.
+		bezier := k.ColumnCount&0x10 != 0
+		if bezier && def.Name != "position" {
 			d.warn(WarnUnknownController, int64(k.Type), nodeName,
-				"controller %s is a bezier controller (numfloats=0x%02x); bezier controllers are not supported and this one was dropped",
+				"controller %s is a bezier controller (numfloats=0x%02x); only position bezier controllers are supported and this one was dropped",
 				def.Name, k.ColumnCount)
 			continue
 		}
@@ -1415,11 +1418,15 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		if def.NumCols > 0 {
 			numCols = def.NumCols
 		}
+		if bezier {
+			numCols *= 3
+		}
 		out = append(out, struct {
 			def     ControllerDef
 			numCols int
 			key     binControllerKey
-		}{def, numCols, k})
+			bezier  bool
+		}{def, numCols, k, bezier})
 	}
 	return out
 }
@@ -1436,6 +1443,11 @@ func (d *decompiler) readControllers(node *Node, contentBits uint32, keysDef, da
 	}
 	nodeFlag := node.NodeTypeFlag()
 	for _, entry := range d.resolveControllerDefs(keys, nodeFlag, node.Name) {
+		if entry.bezier {
+			d.warn(WarnUnknownController, int64(entry.key.Type), node.Name,
+				"controller %s is a bezier controller on a geometry node; it was dropped", entry.def.Name)
+			continue
+		}
 		rows := d.readControllerRows(entry.def, dataDef.Ptr, int(entry.key.TimeStart), int(entry.key.DataStart), int(entry.key.ValueCount), entry.numCols)
 		if len(rows) == 0 {
 			continue
@@ -1762,6 +1774,21 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 	}
 	for _, entry := range d.resolveControllerDefs(keys, nodeFlag, animNode.Name) {
 		rows := d.readControllerRows(entry.def, dataDef.Ptr, int(entry.key.TimeStart), int(entry.key.DataStart), int(entry.key.ValueCount), entry.numCols)
+		if entry.bezier {
+			for _, r := range rows {
+				if len(r.Values) >= 9 {
+					v := r.Values
+					animNode.PositionKeys = append(animNode.PositionKeys, PositionKey{
+						Time:   r.Time,
+						Value:  Vec3{X: v[0], Y: v[1], Z: v[2]},
+						TanIn:  Vec3{X: v[3], Y: v[4], Z: v[5]},
+						TanOut: Vec3{X: v[6], Y: v[7], Z: v[8]},
+					})
+				}
+			}
+			animNode.PositionBezier = true
+			continue
+		}
 		for _, r := range rows {
 			d.addAnimKey(animNode, entry.def.Name, r.Time, r.Values)
 		}

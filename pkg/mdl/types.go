@@ -369,9 +369,15 @@ func (n *Node) NodeTypeFlag() uint32 {
 }
 
 // PositionKey is a time-keyed position controller value.
+//
+// TanIn and TanOut are only meaningful when the owning AnimNode has
+// PositionBezier set; they are the bezier tangent vectors from a
+// positionbezierkey row (value, tangent in, tangent out).
 type PositionKey struct {
-	Time  float32
-	Value Vec3
+	Time   float32
+	Value  Vec3
+	TanIn  Vec3
+	TanOut Vec3
 }
 
 // OrientationKey is a time-keyed orientation controller value.
@@ -401,6 +407,7 @@ type AnimNode struct {
 
 	// Base node controllers
 	PositionKeys    []PositionKey
+	PositionBezier  bool // PositionKeys came from (and are written as) positionbezierkey
 	OrientationKeys []OrientationKey
 	ScaleKeys       []FloatKey
 
