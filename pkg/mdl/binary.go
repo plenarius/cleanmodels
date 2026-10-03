@@ -385,7 +385,12 @@ func (d *decompiler) readModelHeader() error {
 	if err != nil {
 		return err
 	}
-	d.model.IgnoreFog = int32(fog)
+	// The header byte means "affected by fog"; ASCII's ignorefog is its
+	// negation (confirmed against the in-game compiler: ignorefog 0 -> 01,
+	// ignorefog 1 -> 00, absent -> 01).
+	if fog == 0 {
+		d.model.IgnoreFog = 1
+	}
 
 	d.skip(4) // count_child_model
 

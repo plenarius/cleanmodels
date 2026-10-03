@@ -277,7 +277,12 @@ func (c *compiler) writeModel() error {
 	// ---- header_model (120 bytes, offsets 112-231) ----
 	c.core.zeros(2)                        // unknown0, unknown1
 	c.core.u8(byte(ClassificationToCode(strings.ToUpper(m.Classification)))) // class code
-	c.core.u8(byte(m.IgnoreFog))           // fog
+	// fog byte is "affected by fog", the negation of ASCII ignorefog.
+	fog := byte(1)
+	if m.IgnoreFog != 0 {
+		fog = 0
+	}
+	c.core.u8(fog)                         // fog
 	c.core.zeros(4)                        // count_child_model
 
 	// animations ProxyList placeholder (offset 120)
