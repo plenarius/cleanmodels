@@ -48,7 +48,9 @@ func run(args []string) int {
 		return exitOK
 	}
 
-	if first == "version" || first == "--version" {
+	// "-v" is --verbose inside every subcommand, so it only means "version"
+	// as the sole argument; "-version" is accepted as the single-dash spelling.
+	if first == "version" || first == "--version" || first == "-version" || (first == "-v" && len(args) == 1) {
 		fmt.Println("cleanmodels " + buildinfo.Version(version))
 		return exitOK
 	}
@@ -73,6 +75,7 @@ Commands:
   report      Submit a bug report with model files
 
 Run 'cleanmodels <command> --help' for command-specific flags.
+Run 'cleanmodels --version' (or -v) for the version, commit, and build date.
 
 Common flags (all commands):
   --json          Output results as JSON
@@ -101,6 +104,7 @@ func runLegacy(args []string) int {
 	jsonOut := fs.Bool("json", false, "output results as JSON to stdout")
 	jsonLines := fs.Bool("json-lines", false, "stream NDJSON events to stdout")
 	verbose := fs.Bool("verbose", false, "show all warnings and info")
+	fs.BoolVar(verbose, "v", false, "alias for --verbose")
 	quiet := fs.Bool("quiet", false, "suppress all output except errors")
 	workers := fs.Int("workers", runtime.NumCPU(), "parallel workers for batch mode")
 	colorMode := fs.String("color", "auto", "ANSI color: auto, always, never")
