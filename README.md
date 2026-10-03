@@ -221,4 +221,4 @@ The MDL parser and compiler trace to these references:
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
