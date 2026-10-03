@@ -278,7 +278,7 @@ func (w *writer) writeNode(n *Node) {
 	if n.Orientation.X != 0 || n.Orientation.Y != 0 || n.Orientation.Z != 0 || (n.Orientation.W != 0 && n.Orientation.W != 1) {
 		w.indent(4, "orientation %s %s %s %s", fmtFloat(n.Orientation.X), fmtFloat(n.Orientation.Y), fmtFloat(n.Orientation.Z), fmtFloat(n.Orientation.W))
 	}
-	if n.Scale != 1.0 {
+	if n.Scale != 1.0 || n.isDeclared("scale") {
 		w.indent(4, "scale %s", fmtFloat(n.Scale))
 	}
 	if n.InheritColor != 0 {
@@ -290,7 +290,7 @@ func (w *writer) writeNode(n *Node) {
 
 	// Type-specific properties
 	if n.Mesh != nil {
-		w.writeMeshData(n.Mesh)
+		w.writeMeshData(n, n.Mesh)
 	}
 	if n.AnimMesh != nil {
 		w.writeAnimMeshData(n.AnimMesh)
@@ -305,10 +305,10 @@ func (w *writer) writeNode(n *Node) {
 		w.writeAabbData(n.Aabb)
 	}
 	if n.Light != nil {
-		w.writeLightData(n.Light)
+		w.writeLightData(n, n.Light)
 	}
 	if n.Emitter != nil {
-		w.writeEmitterData(n.Emitter)
+		w.writeEmitterData(n, n.Emitter)
 	}
 	if n.Reference != nil {
 		w.writeReferenceData(n.Reference)
@@ -317,7 +317,7 @@ func (w *writer) writeNode(n *Node) {
 	w.indent(2, "endnode")
 }
 
-func (w *writer) writeMeshData(m *MeshData) {
+func (w *writer) writeMeshData(n *Node, m *MeshData) {
 	// Material properties
 	w.indent(4, "ambient %s", fmtVec3(m.Ambient))
 	w.indent(4, "diffuse %s", fmtVec3(m.Diffuse))
@@ -349,10 +349,10 @@ func (w *writer) writeMeshData(m *MeshData) {
 	w.indent(4, "beaming %d", m.Beaming)
 	w.indent(4, "transparencyhint %d", m.TransparencyHint)
 
-	if m.Alpha != 1.0 {
+	if m.Alpha != 1.0 || n.isDeclared("alpha") {
 		w.indent(4, "alpha %s", fmtFloat(m.Alpha))
 	}
-	if m.SelfIllumColor.X != 0 || m.SelfIllumColor.Y != 0 || m.SelfIllumColor.Z != 0 {
+	if m.SelfIllumColor.X != 0 || m.SelfIllumColor.Y != 0 || m.SelfIllumColor.Z != 0 || n.isDeclared("selfillumcolor") {
 		w.indent(4, "selfillumcolor %s", fmtVec3(m.SelfIllumColor))
 	}
 	if m.TileFade != 0 {
@@ -470,15 +470,23 @@ func (w *writer) writeAabbData(a *AabbData) {
 	}
 }
 
-func (w *writer) writeLightData(l *LightData) {
-	if l.Color.X != 0 || l.Color.Y != 0 || l.Color.Z != 0 {
+func (w *writer) writeLightData(n *Node, l *LightData) {
+	// Declared properties are written even at their default value, so the
+	// compiler emits their controllers; see declared.go.
+	if l.Color.X != 0 || l.Color.Y != 0 || l.Color.Z != 0 || n.isDeclared("color") {
 		w.indent(4, "color %s", fmtVec3(l.Color))
 	}
-	if l.Radius != 0 {
+	if l.Radius != 0 || n.isDeclared("radius") {
 		w.indent(4, "radius %s", fmtFloat(l.Radius))
 	}
-	if l.Multiplier != 0 {
+	if l.Multiplier != 0 || n.isDeclared("multiplier") {
 		w.indent(4, "multiplier %s", fmtFloat(l.Multiplier))
+	}
+	if l.ShadowRadius != 0 || n.isDeclared("shadowradius") {
+		w.indent(4, "shadowradius %s", fmtFloat(l.ShadowRadius))
+	}
+	if l.VerticalDisplacement != 0 || n.isDeclared("verticaldisplacement") {
+		w.indent(4, "verticaldisplacement %s", fmtFloat(l.VerticalDisplacement))
 	}
 	w.indent(4, "ambientonly %d", l.AmbientOnly)
 	w.indent(4, "nDynamicType %d", l.NDynamicType)
@@ -531,7 +539,7 @@ func (w *writer) writeLightData(l *LightData) {
 	}
 }
 
-func (w *writer) writeEmitterData(e *EmitterData) {
+func (w *writer) writeEmitterData(n *Node, e *EmitterData) {
 	w.indent(4, "deadspace %s", fmtFloat(e.DeadSpace))
 	w.indent(4, "blastRadius %s", fmtFloat(e.BlastRadius))
 	w.indent(4, "blastLength %s", fmtFloat(e.BlastLength))
@@ -564,50 +572,64 @@ func (w *writer) writeEmitterData(e *EmitterData) {
 	w.indent(4, "splat %d", e.Splat)
 	w.indent(4, "inherit_part %d", e.InheritPart)
 
-	// Controller values
-	w.indent(4, "alphaStart %s", fmtFloat(e.AlphaStart))
-	w.indent(4, "alphaMid %s", fmtFloat(e.AlphaMid))
-	w.indent(4, "alphaEnd %s", fmtFloat(e.AlphaEnd))
-	w.indent(4, "colorStart %s", fmtVec3(e.ColorStart))
-	w.indent(4, "colorMid %s", fmtVec3(e.ColorMid))
-	w.indent(4, "colorEnd %s", fmtVec3(e.ColorEnd))
-	w.indent(4, "sizeStart %s", fmtFloat(e.SizeStart))
-	w.indent(4, "sizeMid %s", fmtFloat(e.SizeMid))
-	w.indent(4, "sizeEnd %s", fmtFloat(e.SizeEnd))
-	w.indent(4, "sizeStart_y %s", fmtFloat(e.SizeStartY))
-	w.indent(4, "sizeMid_y %s", fmtFloat(e.SizeMidY))
-	w.indent(4, "sizeEnd_y %s", fmtFloat(e.SizeEndY))
-	w.indent(4, "birthrate %s", fmtFloat(e.BirthRate))
-	w.indent(4, "lifeExp %s", fmtFloat(e.LifeExp))
-	w.indent(4, "mass %s", fmtFloat(e.Mass))
-	w.indent(4, "spread %s", fmtFloat(e.Spread))
-	w.indent(4, "particleRot %s", fmtFloat(e.ParticleRot))
-	w.indent(4, "velocity %s", fmtFloat(e.Velocity))
-	w.indent(4, "randvel %s", fmtFloat(e.RandVel))
-	w.indent(4, "bounce_co %s", fmtFloat(e.BounceCo))
-	w.indent(4, "blurlength %s", fmtFloat(e.BlurLength))
-	w.indent(4, "fps %s", fmtFloat(e.FPS))
-	w.indent(4, "frameStart %s", fmtFloat(e.FrameStart))
-	w.indent(4, "frameEnd %s", fmtFloat(e.FrameEnd))
-	w.indent(4, "grav %s", fmtFloat(e.Grav))
-	w.indent(4, "drag %s", fmtFloat(e.Drag))
-	w.indent(4, "threshold %s", fmtFloat(e.Threshold))
-	w.indent(4, "combinetime %s", fmtFloat(e.CombineTime))
-	w.indent(4, "percentStart %s", fmtFloat(e.PercentStart))
-	w.indent(4, "percentMid %s", fmtFloat(e.PercentMid))
-	w.indent(4, "percentEnd %s", fmtFloat(e.PercentEnd))
-	if e.LightningDelay != 0 || e.LightningRadius != 0 || e.LightningScale != 0 {
-		w.indent(4, "lightningDelay %s", fmtFloat(e.LightningDelay))
-		w.indent(4, "lightningRadius %s", fmtFloat(e.LightningRadius))
-		w.indent(4, "lightningScale %s", fmtFloat(e.LightningScale))
+	// Controller values. Properties the engine compiles to controllers are
+	// written only when non-zero or declared in the source (declared.go);
+	// the rest are always written.
+	cf := func(label string, v float32) {
+		key := strings.ToLower(label)
+		if emitterDeclaredNames[key] && v == 0 && !n.isDeclared(key) {
+			return
+		}
+		w.indent(4, "%s %s", label, fmtFloat(v))
 	}
+	cv := func(label string, v Vec3) {
+		key := strings.ToLower(label)
+		if emitterDeclaredNames[key] && v == (Vec3{}) && !n.isDeclared(key) {
+			return
+		}
+		w.indent(4, "%s %s", label, fmtVec3(v))
+	}
+	cf("alphaStart", e.AlphaStart)
+	cf("alphaMid", e.AlphaMid)
+	cf("alphaEnd", e.AlphaEnd)
+	cv("colorStart", e.ColorStart)
+	cv("colorMid", e.ColorMid)
+	cv("colorEnd", e.ColorEnd)
+	cf("sizeStart", e.SizeStart)
+	cf("sizeMid", e.SizeMid)
+	cf("sizeEnd", e.SizeEnd)
+	cf("sizeStart_y", e.SizeStartY)
+	cf("sizeMid_y", e.SizeMidY)
+	cf("sizeEnd_y", e.SizeEndY)
+	cf("birthrate", e.BirthRate)
+	cf("lifeExp", e.LifeExp)
+	cf("mass", e.Mass)
+	cf("spread", e.Spread)
+	cf("particleRot", e.ParticleRot)
+	cf("velocity", e.Velocity)
+	cf("randvel", e.RandVel)
+	cf("bounce_co", e.BounceCo)
+	cf("blurlength", e.BlurLength)
+	cf("fps", e.FPS)
+	cf("frameStart", e.FrameStart)
+	cf("frameEnd", e.FrameEnd)
+	cf("grav", e.Grav)
+	cf("drag", e.Drag)
+	cf("threshold", e.Threshold)
+	cf("combinetime", e.CombineTime)
+	cf("percentStart", e.PercentStart)
+	cf("percentMid", e.PercentMid)
+	cf("percentEnd", e.PercentEnd)
+	cf("lightningDelay", e.LightningDelay)
+	cf("lightningRadius", e.LightningRadius)
+	cf("lightningScale", e.LightningScale)
 	if e.LightningSubDiv != 0 {
-		w.indent(4, "lightningSubDiv %s", fmtFloat(e.LightningSubDiv))
+		cf("lightningSubDiv", e.LightningSubDiv)
 	}
-	w.indent(4, "p2p_bezier2 %s", fmtFloat(e.P2PBezier2))
-	w.indent(4, "p2p_bezier3 %s", fmtFloat(e.P2PBezier3))
-	w.indent(4, "xsize %s", fmtFloat(e.XSize))
-	w.indent(4, "ysize %s", fmtFloat(e.YSize))
+	cf("p2p_bezier2", e.P2PBezier2)
+	cf("p2p_bezier3", e.P2PBezier3)
+	cf("xsize", e.XSize)
+	cf("ysize", e.YSize)
 }
 
 func (w *writer) writeReferenceData(r *ReferenceData) {
