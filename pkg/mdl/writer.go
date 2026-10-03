@@ -673,7 +673,7 @@ func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
 		w.writeVec3ListAt(6, "animtverts", am.AnimTVerts)
 	}
 
-	w.writePositionKeys(an.PositionKeys)
+	w.writePositionKeys(an.PositionKeys, an.PositionBezier)
 	w.writeOrientationKeys(an.OrientationKeys)
 	for _, e := range animControllerFloatList {
 		if e.Name == "detonate" {
@@ -689,8 +689,24 @@ func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
 	w.indent(4, "endnode")
 }
 
-func (w *writer) writePositionKeys(keys []PositionKey) {
+func (w *writer) writePositionKeys(keys []PositionKey, bezier bool) {
 	if len(keys) == 0 {
+		return
+	}
+	if bezier {
+		w.indent(6, "positionbezierkey %d", len(keys))
+		for _, k := range keys {
+			b := appendIndent(w.scratch[:0], 3)
+			b = appendFloat(b, k.Time)
+			for _, v := range [3]Vec3{k.Value, k.TanIn, k.TanOut} {
+				b = append(b, ' ')
+				b = appendVec3(b, v)
+			}
+			b = append(b, '\n')
+			w.scratch = b
+			w.emit()
+		}
+		w.indent(6, "endlist")
 		return
 	}
 	w.indent(6, "positionkey %d", len(keys))

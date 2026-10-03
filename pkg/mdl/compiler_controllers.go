@@ -248,9 +248,13 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 			ColumnCount: 3,
 		})
 	}
-	addVec3 := func(typeID uint32, keyframes []PositionKey) {
+	addVec3 := func(typeID uint32, keyframes []PositionKey, bezier bool) {
 		n := len(keyframes)
-		if n == 0 || checkOverflow(n+3*n) {
+		width := 3
+		if bezier {
+			width = 9
+		}
+		if n == 0 || checkOverflow(n+width*n) {
 			return
 		}
 		timeStart := uint16(len(dataArr))
@@ -258,15 +262,22 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 			dataArr = append(dataArr, kf.Time)
 		}
 		dataStart := uint16(len(dataArr))
+		columnCount := uint8(3)
 		for _, kf := range keyframes {
 			dataArr = append(dataArr, kf.Value.X, kf.Value.Y, kf.Value.Z)
+			if bezier {
+				dataArr = append(dataArr, kf.TanIn.X, kf.TanIn.Y, kf.TanIn.Z, kf.TanOut.X, kf.TanOut.Y, kf.TanOut.Z)
+			}
+		}
+		if bezier {
+			columnCount |= 0x10
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
 			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
-			ColumnCount: 3,
+			ColumnCount: columnCount,
 		})
 	}
 	addOrientation := func(keyframes []OrientationKey) {
@@ -313,7 +324,7 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 	}
 
 	// Universal
-	addVec3(8, an.PositionKeys)
+	addVec3(8, an.PositionKeys, an.PositionBezier)
 	addOrientation(an.OrientationKeys)
 	addFloat(36, an.ScaleKeys)
 
