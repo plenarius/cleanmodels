@@ -14,9 +14,9 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Rewritten in Go.** Single static binary, no SWI-Prolog install. Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64.
 
-**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output diffed against the engine's own compiler over **32,707 stock and 49,111 community models** (see "Known divergences" below for where output isn't byte-identical).
+**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output was compared against the engine's own compiler over **32,707 stock and 49,111 community models** in a corpus run on the maintainer's machine; the repo's test suite checks the engine-compiled subset under `tests/fixtures/oracle`. See "Known divergences" below for where output isn't byte-identical.
 
-**Tangents baked at compile time.** Normal-mapped models get tangent and bitangent vectors written into the binary via [mikktspace](http://mikktspace.com/) instead of being derived by the engine on load.
+**Tangents baked at compile time.** Normal-mapped models get tangent vectors and a per-vertex handedness sign written into the binary via [mikktspace](http://mikktspace.com/) instead of being derived by the engine on load.
 
 **Compiler correctness fixes** that 3.7 + `nwnmdlcomp` (and the engine's own compiler) get wrong:
 
@@ -35,7 +35,7 @@ Two coordinated releases of the NWN MDL toolchain.
 
 ~26× single-threaded, ~29× with parallel workers, ~1/15th memory.
 
-**Subcommand CLI.** `cleanmodels check | repair | compile | decompile | report`. The legacy flag form (`cleanmodels --check --fix-pivots in/ out/`) still works for existing scripts.
+**Subcommand CLI.** `cleanmodels check | repair | compile | decompile | report`, plus `cleanmodels --version` (or `-v`) for the version, commit, and build date. The legacy flag form (`cleanmodels --check --fix-pivots in/ out/`) still works for existing scripts.
 
 **New repairs.** Chamfer add/delete, dynamic water (flat/wavy/untouched), additional tilefade slicing/undo work, plus two EE-cleanup flags: `--standardize-texture0` (emit `texture0` instead of `bitmap`) and `--strip-ee-extras` (drop `wirecolor`/`specular`/`shininess` on output).
 
@@ -44,6 +44,8 @@ Two coordinated releases of the NWN MDL toolchain.
 **`cleanmodels report`.** Uploads the file plus log and opens a tracked GitHub issue without requiring the user to have an account. Available in the GUI too.
 
 **WASM build.** `cleanmodels-wasm.zip` runs the same pipeline in a browser page. Two static files, small JS API; useful if you maintain a model viewer or wiki tool that wants to accept binary `.mdl` drops.
+
+**Bezier position keys.** `positionbezierkey` animations (as exported by NWmax) are preserved through ASCII and compiled to binary, tangents included. Other bezier controllers are skipped with a warning.
 
 **JSON-lines output.** `--json` for single results, NDJSON streaming for batches. Stable schema; this is what the Qt GUI consumes.
 
@@ -66,7 +68,7 @@ Two coordinated releases of the NWN MDL toolchain.
 
 ## Migration notes
 
-The Qt GUI looks for `cleanmodels` (or the older `cleanmodels-cli` name) on `PATH` or alongside the GUI binary, and now ships with the matching v4 CLI bundled in that second slot, so no separate install is needed. If you keep an older `cleanmodels` higher on `PATH`, **it will not work** — the GUI requires v4.
+The Qt GUI looks for `cleanmodels` (`cleanmodels.exe` on Windows) on `PATH` or alongside the GUI binary, and now ships with the matching v4 CLI bundled in that second slot, so no separate install is needed. If you keep an older `cleanmodels` higher on `PATH`, **it will not work** — the GUI requires v4.
 
 Two behaviour changes worth knowing:
 
@@ -80,6 +82,7 @@ Binary output is **not** byte-identical to the engine's own compiler in a few ca
 - Vertex deduplication on character body parts produces fewer GPU verts than the game does. Identical render output, smaller MDX block.
 - AABB tree split axis can differ. Pathing and collision are unaffected; the same faces end up in the same leaves.
 - Tangent values match within tolerance (mean alignment ≥ 0.96, bad-corner ratio ≤ 5%), not bit-for-bit.
+- Animation nodes that are mesh nodes: the engine writes a full 512-byte mesh header for them, filled with uninitialised memory. We write none, so the binary is smaller. Controllers, keys, and tangents on those nodes match.
 
 Two legacy steps not yet ported (UV-space TVert welding and tessellator midpoint-TVert dedup). Both are documented in `CLEAN.md` — same render output, marginally larger MDX block on heavily tessellated water meshes.
 
@@ -99,8 +102,12 @@ The last Prolog releases stay published:
 
 ## Thanks
 
-To OldManBeard for designing the original CleanModels.
+To OldMansBeard for designing the original [CleanModels3](https://neverwintervault.org/project/nwn1/other/cleanmodels3).
 
 Format documentation and reference implementations: [nwn.wiki](https://nwn.wiki/display/NWN1/MDL), [xoreos-docs](https://github.com/xoreos/xoreos-docs), [neverwinter.nim](https://github.com/niv/neverwinter.nim), [nwnmdlcomp](https://github.com/nwneetools/nwnmdlcomp), [varenx/borealis_nwn_model_viewer](https://github.com/varenx/borealis_nwn_model_viewer) (Qt animation player + skinmesh rendering reference), and [dunahan/nwn_mdl_webviewer](https://github.com/dunahan/nwn_mdl_webviewer) (WebGL renderer cross-reference).
 
 Morten S. Mikkelsen for [mikktspace](http://mikktspace.com/).
+
+## License
+
+MIT. See [LICENSE](https://github.com/plenarius/cleanmodels/blob/main/LICENSE).

@@ -204,7 +204,7 @@ cleanmodels --decompile-only model.mdl output.mdl
 
 cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edition, including all nine geometry node types (dummy, trimesh, danglymesh, skin, animmesh, emitter, light, reference, aabb) and their complete parameter sets.
 
-**Validation** — 100+ checks across structural integrity, geometry correctness, parameter bounds, animation consistency, emitter configuration, and tile-specific rules.
+**Validation** — 48 checks across structural integrity, geometry correctness, parameter bounds, animation consistency, emitter configuration, and tile-specific rules.
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
 
