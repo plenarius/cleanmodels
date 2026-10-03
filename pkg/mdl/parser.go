@@ -392,6 +392,9 @@ func (p *parser) parseParameter(tokens []string) {
 
 	// Route to appropriate handler based on node capabilities
 	node := p.currentNode
+	if name, ok := node.declaredName(keyword); ok {
+		node.declare(name)
+	}
 
 	switch keyword {
 	case "parent":

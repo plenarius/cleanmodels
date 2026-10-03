@@ -300,6 +300,10 @@ type Node struct {
 	Aabb      *AabbData
 	AnimMesh  *AnimMeshData
 	Camera    bool
+
+	// Declared records which controller-backed properties were present in the
+	// source; see declared.go.
+	Declared map[string]bool
 }
 
 // NodeType returns the MDL ASCII node type keyword for this node.

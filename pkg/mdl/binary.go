@@ -1492,6 +1492,7 @@ func quaternionToAngleAxis(q []float32) []float32 {
 }
 
 func (d *decompiler) setStaticController(node *Node, name string, vals []float32) {
+	node.declare(name)
 	switch name {
 	case "position":
 		if len(vals) >= 3 {

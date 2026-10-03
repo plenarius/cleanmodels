@@ -103,8 +103,8 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 		q := axisAngleToQuat(n.Orientation)
 		add(20, 4, []float32{q.X, q.Y, q.Z, q.W})
 	}
-	// scale (ID=36, 1 col) — emit for any non-default value (default=1.0)
-	if n.Scale != 1 {
+	// scale (ID=36, 1 col) — emit when declared or non-default (default=1.0)
+	if n.Scale != 1 || n.isDeclared("scale") {
 		add(36, 1, []float32{n.Scale})
 	}
 
@@ -112,11 +112,11 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 	if n.Mesh != nil {
 		// selfillumcolor (ID=100, 3 cols)
 		sic := n.Mesh.SelfIllumColor
-		if sic.X != 0 || sic.Y != 0 || sic.Z != 0 {
+		if sic.X != 0 || sic.Y != 0 || sic.Z != 0 || n.isDeclared("selfillumcolor") {
 			add(100, 3, []float32{sic.X, sic.Y, sic.Z})
 		}
-		// alpha (ID=128, 1 col) — only skip the default value (1.0)
-		if n.Mesh.Alpha != 1 {
+		// alpha (ID=128, 1 col) — skip only if undeclared and default (1.0)
+		if n.Mesh.Alpha != 1 || n.isDeclared("alpha") {
 			add(128, 1, []float32{n.Mesh.Alpha})
 		}
 	}
@@ -125,23 +125,23 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 	if n.Light != nil {
 		// color (ID=76 for nodeFlag=3, 3 cols)
 		col := n.Light.Color
-		if col.X != 0 || col.Y != 0 || col.Z != 0 {
+		if col.X != 0 || col.Y != 0 || col.Z != 0 || n.isDeclared("color") {
 			add(76, 3, []float32{col.X, col.Y, col.Z})
 		}
 		// radius (ID=88, 1 col)
-		if n.Light.Radius != 0 {
+		if n.Light.Radius != 0 || n.isDeclared("radius") {
 			add(88, 1, []float32{n.Light.Radius})
 		}
 		// multiplier (ID=140, 1 col)
-		if n.Light.Multiplier != 0 {
+		if n.Light.Multiplier != 0 || n.isDeclared("multiplier") {
 			add(140, 1, []float32{n.Light.Multiplier})
 		}
 		// shadowradius (ID=96, 1 col)
-		if n.Light.ShadowRadius != 0 {
+		if n.Light.ShadowRadius != 0 || n.isDeclared("shadowradius") {
 			add(96, 1, []float32{n.Light.ShadowRadius})
 		}
 		// verticaldisplacement (ID=100 for nodeFlag=3, 1 col)
-		if n.Light.VerticalDisplacement != 0 {
+		if n.Light.VerticalDisplacement != 0 || n.isDeclared("verticaldisplacement") {
 			add(100, 1, []float32{n.Light.VerticalDisplacement})
 		}
 	}
@@ -151,7 +151,7 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 		em := n.Emitter
 		// Use BioWare controller IDs from controllers.go
 		addEmitterFloatCtrl := func(name string, val float32) {
-			if val == 0 {
+			if val == 0 && !n.isDeclared(name) {
 				return
 			}
 			typeID := emitterCtrlID(name)
@@ -161,7 +161,7 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 			add(typeID, 1, []float32{val})
 		}
 		addEmitterColorCtrl := func(name string, v Vec3) {
-			if v.X == 0 && v.Y == 0 && v.Z == 0 {
+			if v.X == 0 && v.Y == 0 && v.Z == 0 && !n.isDeclared(name) {
 				return
 			}
 			typeID := emitterCtrlID(name)
