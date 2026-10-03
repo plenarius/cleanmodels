@@ -14,7 +14,7 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Rewritten in Go.** Single static binary, no SWI-Prolog install. Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64.
 
-**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output diffed against the engine's own compiler over **32,707 stock and 49,111 community models** (see "Known divergences" below for where output isn't byte-identical).
+**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output was compared against the engine's own compiler over **32,707 stock and 49,111 community models** in a corpus run on the maintainer's machine; the repo's test suite checks the engine-compiled subset under `tests/fixtures/oracle`. See "Known divergences" below for where output isn't byte-identical.
 
 **Tangents baked at compile time.** Normal-mapped models get tangent vectors and a per-vertex handedness sign written into the binary via [mikktspace](http://mikktspace.com/) instead of being derived by the engine on load.
 
