@@ -199,6 +199,18 @@ func (p *parser) parseNewModel(tokens []string) {
 	p.model.FileType = "ascii"
 }
 
+// newShadowedMeshData is a mesh as the game compiler defaults it when the source
+// has no "shadow" line: it casts shadows. Compiled against the engine's output
+// for 180 such meshes (159 trimesh, 8 skin, 13 danglymesh), it wrote shadow 1
+// every time; we wrote 0, so a model compiled from a source without the line
+// cast no shadow in game. Walkmeshes (aabb) default to 0 and animmesh is
+// unverified, so both keep the zero default.
+func newShadowedMeshData() *MeshData {
+	m := NewMeshData()
+	m.Shadow = 1
+	return m
+}
+
 func (p *parser) parseSuperModel(tokens []string) {
 	if len(tokens) >= 3 {
 		p.model.SuperModel = tokens[2]
@@ -251,15 +263,15 @@ func (p *parser) parseNodeStart(tokens []string) {
 
 	switch nodeType {
 	case "trimesh":
-		node.Mesh = NewMeshData()
+		node.Mesh = newShadowedMeshData()
 	case "skin":
-		node.Mesh = NewMeshData()
+		node.Mesh = newShadowedMeshData()
 		node.Skin = &SkinData{}
 	case "animmesh":
 		node.Mesh = NewMeshData()
 		node.AnimMesh = &AnimMeshData{}
 	case "danglymesh":
-		node.Mesh = NewMeshData()
+		node.Mesh = newShadowedMeshData()
 		node.Dangly = &DanglyData{}
 	case "aabb":
 		node.Mesh = NewMeshData()
