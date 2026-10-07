@@ -29,8 +29,9 @@ const (
 
 // resourceRef is a resource found in a location.
 type resourceRef struct {
-	id   string // unique, for caches and messages
-	read func() ([]byte, error)
+	id    string // unique, for caches and messages
+	stamp string // changes when the underlying file does ("" for archives)
+	read  func() ([]byte, error)
 }
 
 // archive is an indexed ERF or game install.
@@ -245,7 +246,11 @@ func findModelResource(name string, locs []string) *resourceRef {
 		for _, e := range entries {
 			if !e.IsDir() && strings.ToLower(e.Name()) == name+".mdl" {
 				p := filepath.Join(loc, e.Name())
-				return &resourceRef{id: p, read: func() ([]byte, error) { return os.ReadFile(p) }}
+				stamp := ""
+				if info, err := e.Info(); err == nil {
+					stamp = fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
+				}
+				return &resourceRef{id: p, stamp: stamp, read: func() ([]byte, error) { return os.ReadFile(p) }}
 			}
 		}
 	}
