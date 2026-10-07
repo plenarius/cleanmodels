@@ -56,7 +56,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// explicit color data. We match the game's behavior.
 
 	// Build expanded vertex data (one GPU vertex per face-vertex reference).
-	expanded, err := buildExpandedMesh(mesh)
+	expanded, err := buildExpandedMeshOpts(mesh, n.Skin == nil)
 	if err != nil {
 		c.err = err
 		c.writeEmptyMeshHeader()
@@ -508,6 +508,17 @@ type expandedMesh struct {
 // Deduplication uses exact bit-level float comparison (no epsilon) so that
 // vertices authored as identical in ASCII always merge.
 func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
+	return buildExpandedMeshOpts(mesh, true)
+}
+
+// buildExpandedMeshOpts is buildExpandedMesh with control over whether the
+// face's material index is part of the dedup key. The game compiler splits
+// plain meshes at material boundaries but not skin meshes: compiling the
+// centaur skin HorseBody from the Neverwinter Vault's taur_pheno hak, the
+// engine produced 215 vertices where keying on material gave 224 (9 identical
+// duplicates kept apart); ignoring material reproduces the engine's count
+// exactly.
+func buildExpandedMeshOpts(mesh *MeshData, splitByMaterial bool) (expandedMesh, error) {
 	hasUV      := len(mesh.TVerts) > 0
 	hasTexIdx0 := len(mesh.TexIndices0) > 0
 	hasUV1     := len(mesh.TVerts1) > 0
@@ -575,6 +586,9 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 				cr: f32bits(col.X), cg: f32bits(col.Y), cb: f32bits(col.Z),
 				mat: face.Material,
 				sg:  face.SmoothGroup,
+			}
+			if !splitByMaterial {
+				key.mat = 0
 			}
 
 			gpuIdx, ok := cache[key]
