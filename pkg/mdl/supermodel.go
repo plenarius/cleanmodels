@@ -61,11 +61,12 @@ func findSupermodelFile(name string, dirs []string) string {
 //
 // A binary supermodel carries the numbers and count_nodes the engine compiled
 // into it. An ASCII supermodel has none, so it is numbered the way the engine
-// numbers a model with no supermodel of its own — root 0, then tree order — and
-// its count is its node count. That is what the engine produced for the
-// taur_pheno centaurs, whose ASCII supermodel chain it did not number
-// recursively.
-func loadSupermodel(path string) (*supermodelInfo, error) {
+// would number it: against its own supermodel if that can be found in dirs, and
+// otherwise as a model with none — root 0, then tree order, count_nodes equal to
+// its node count. Following the chain recursively reproduces the engine's
+// count_nodes for the wemic body pmw0 (44 + 1 + 179 = 224 down a four-level
+// chain of 44-node ASCII supermodels). seen guards against cycles.
+func loadSupermodel(path string, dirs []string, seen map[string]bool) (*supermodelInfo, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -101,12 +102,22 @@ func loadSupermodel(path string) (*supermodelInfo, error) {
 		return nil, fmt.Errorf("%s: supermodel has no root node", path)
 	}
 	c := newCompiler(model)
-	c.assignNodeIDs(root)
+	if parent := findSupermodelFor(model, dirs, seen); parent != "" {
+		if sm, err := loadSupermodel(parent, dirs, seen); err == nil {
+			c.assignNodeIDsFromSupermodel(root, sm)
+		}
+	}
+	if len(c.nodeIDs) == 0 {
+		c.assignNodeIDs(root)
+	}
 	for n, id := range c.nodeIDs {
 		info.nodes[strings.ToLower(n.Name)] = superNode{number: id, parent: strings.ToLower(n.Parent)}
 	}
 	info.root = strings.ToLower(root.Name)
 	info.count = int32(len(c.nodeIDs))
+	if c.nodeCountOverride > 0 {
+		info.count = c.nodeCountOverride
+	}
 	return info, nil
 }
 
@@ -161,6 +172,7 @@ func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 				c.nodeIDs[n] = base + index
 			}
 		}
+		c.treeIndex[n] = index
 		index++
 
 		children := c.childrenOf(n)
@@ -171,6 +183,17 @@ func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 		}
 	}
 	c.nodeCountOverride = base + index
+}
+
+// findSupermodelFor returns the path of model's supermodel file in dirs, or ""
+// if it has none, names itself, was already visited, or cannot be found.
+func findSupermodelFor(model *Model, dirs []string, seen map[string]bool) string {
+	name := strings.ToLower(strings.TrimSpace(model.SuperModel))
+	if name == "" || name == "null" || name == strings.ToLower(model.Name) || seen[name] {
+		return ""
+	}
+	seen[name] = true
+	return findSupermodelFile(name, dirs)
 }
 
 // resolveSupermodel finds and loads the model's supermodel from opts, or
@@ -195,7 +218,7 @@ func (c *compiler) resolveSupermodel(opts CompileOptions) *supermodelInfo {
 			name, strings.Join(opts.SupermodelDirs, ", "))
 		return nil
 	}
-	sm, err := loadSupermodel(path)
+	sm, err := loadSupermodel(path, opts.SupermodelDirs, map[string]bool{strings.ToLower(c.model.Name): true, strings.ToLower(name): true})
 	if err != nil {
 		warn("supermodel %q could not be read (%v); node numbers assume no supermodel", name, err)
 		return nil

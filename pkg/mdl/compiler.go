@@ -126,6 +126,12 @@ type compiler struct {
 	nodeIDs map[*Node]int32
 	nextID  int32
 
+	// treeIndex maps a node instance → its position in tree order (root 0).
+	// Skin bones are addressed by this position, not by nodeIDs: the engine's
+	// indexmapping for the wemic body pmw0 is the tree positions of its bones
+	// even though their m_IDs follow the supermodel.
+	treeIndex map[*Node]int32
+
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
 	nodeCountOverride int32
@@ -179,6 +185,7 @@ func newCompiler(m *Model) *compiler {
 		vol:            &patchBuf{},
 		model:          m,
 		nodeIDs:        make(map[*Node]int32),
+		treeIndex:      make(map[*Node]int32),
 		nodeOffsets:    make(map[*Node]int32),
 		childrenByNode: children,
 		geomNodeIndex:  gi,
@@ -256,6 +263,7 @@ func (c *compiler) assignNodeIDs(root *Node) {
 		}
 		visited[n] = true
 		c.nodeIDs[n] = c.nextID
+		c.treeIndex[n] = c.nextID
 		c.nextID++
 		children := c.childrenOf(n)
 		// push in reverse so left-to-right DFS order is preserved

@@ -407,7 +407,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		// resolves to the first node with it — the same node this lookup has
 		// always returned.
 		if bone := c.geomNodeByName(name); bone != nil {
-			if id, ok := c.nodeIDs[bone]; ok {
+			if id, ok := c.treeIndex[bone]; ok {
 				bonePartNums[i] = int16(id)
 			}
 		}
