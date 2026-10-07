@@ -110,6 +110,8 @@ func runLegacy(args []string) int {
 	colorMode := fs.String("color", "auto", "ANSI color: auto, always, never")
 	superDirs := new(dirList)
 	fs.Var(superDirs, "supermodel-dir", supermodelDirUsage)
+	resDirs := new(dirList)
+	fs.Var(resDirs, "resource-dir", resourceDirUsage)
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run")
 	recursive := fs.Bool("recursive", false, "process directories recursively")
@@ -228,6 +230,7 @@ func runLegacy(args []string) int {
 		compile:        *compileFlag,
 		colorMode:      *colorMode,
 		supermodelDirs: *superDirs,
+		resourceDirs:   *resDirs,
 		repairOpts: repairOpts{
 			fixPivots:        *fixPivots || *fixAll,
 			fixAABB:          *fixAABB || *fixAll,

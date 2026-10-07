@@ -19,6 +19,11 @@ type CompileOptions struct {
 	// supermodel.
 	SupermodelDirs []string
 
+	// ResourceDirs are searched, recursively, for the materials (.mtr) that
+	// decide whether a mesh is normal-mapped and so gets tangents baked in; see
+	// materials.go. With none, only a mesh's own renderhint line counts.
+	ResourceDirs []string
+
 	// Warn, if set, receives non-fatal notes such as a supermodel that could
 	// not be found.
 	Warn func(msg string)

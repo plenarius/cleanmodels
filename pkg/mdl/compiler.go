@@ -141,6 +141,8 @@ type compiler struct {
 	worldPos map[*Node][3]float64
 	worldRot map[*Node][4]float64
 
+	// resourceDirs is where materials are looked up; see CompileOptions.
+	resourceDirs []string
 	// warn receives non-fatal notes (CompileOptions.Warn); nil discards them.
 	warn func(string)
 
@@ -227,6 +229,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 		return fmt.Errorf("compile: nil model")
 	}
 	c := newCompiler(model)
+	c.resourceDirs = opts.ResourceDirs
 	c.warn = opts.Warn
 
 	// Pre-pass: assign part numbers to every geometry node.
