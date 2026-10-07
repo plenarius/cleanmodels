@@ -96,6 +96,7 @@ type procOpts struct {
 	colorMode                                                      string // "auto", "always", "never"
 	supermodelDirs                                                 []string
 	resourceDirs                                                   []string
+	gameDir                                                        string
 
 	repairOpts
 	tileOpts
@@ -627,9 +628,17 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			if outPath == "" {
 				outPath = path
 			}
+			superDirs := append(append([]string{filepath.Dir(path)}, o.supermodelDirs...), o.resourceDirs...)
+			resDirs := append([]string{filepath.Dir(path)}, o.resourceDirs...)
+			if game := o.gameDir; game != "" || os.Getenv("NWN_ROOT") != "" {
+				if game == "" {
+					game = os.Getenv("NWN_ROOT")
+				}
+				superDirs, resDirs = append(superDirs, game), append(resDirs, game)
+			}
 			copts := mdl.CompileOptions{
-				SupermodelDirs: append(append([]string{filepath.Dir(path)}, o.supermodelDirs...), o.resourceDirs...),
-				ResourceDirs:   append([]string{filepath.Dir(path)}, o.resourceDirs...),
+				SupermodelDirs: superDirs,
+				ResourceDirs:   resDirs,
 				Warn: func(msg string) {
 					res.Warnings = append(res.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: msg})
 				},

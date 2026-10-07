@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -44,24 +42,6 @@ type supermodelInfo struct {
 	count int32
 }
 
-// findSupermodelFile returns the path of <name>.mdl in the first directory that
-// has it, comparing file names case-insensitively, or "" if there is none.
-func findSupermodelFile(name string, dirs []string) string {
-	want := strings.ToLower(name) + ".mdl"
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.ToLower(e.Name()) == want {
-				return filepath.Join(dir, e.Name())
-			}
-		}
-	}
-	return ""
-}
-
 // loadSupermodel reads a supermodel and returns its node numbering.
 //
 // A binary supermodel carries the numbers and count_nodes the engine compiled
@@ -71,8 +51,9 @@ func findSupermodelFile(name string, dirs []string) string {
 // its node count. Following the chain recursively reproduces the engine's
 // count_nodes for the wemic body pmw0 (44 + 1 + 179 = 224 down a four-level
 // chain of 44-node ASCII supermodels). seen guards against cycles.
-func loadSupermodel(path string, dirs []string, seen map[string]bool) (*supermodelInfo, error) {
-	data, err := os.ReadFile(path)
+func loadSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*supermodelInfo, error) {
+	path := ref.id
+	data, err := ref.read()
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +88,7 @@ func loadSupermodel(path string, dirs []string, seen map[string]bool) (*supermod
 		return nil, fmt.Errorf("%s: supermodel has no root node", path)
 	}
 	c := newCompiler(model)
-	if parent := findSupermodelFor(model, dirs, seen); parent != "" {
+	if parent := findSupermodelFor(model, dirs, seen); parent != nil {
 		if sm, err := loadSupermodel(parent, dirs, seen); err == nil {
 			c.assignNodeIDsFromSupermodel(root, sm)
 		}
@@ -190,15 +171,15 @@ func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 	c.nodeCountOverride = base + index
 }
 
-// findSupermodelFor returns the path of model's supermodel file in dirs, or ""
+// findSupermodelFor returns model's supermodel in dirs, or nil
 // if it has none, names itself, was already visited, or cannot be found.
-func findSupermodelFor(model *Model, dirs []string, seen map[string]bool) string {
+func findSupermodelFor(model *Model, dirs []string, seen map[string]bool) *resourceRef {
 	name := strings.ToLower(strings.TrimSpace(model.SuperModel))
 	if name == "" || name == "null" || name == strings.ToLower(model.Name) || seen[name] {
-		return ""
+		return nil
 	}
 	seen[name] = true
-	return findSupermodelFile(name, dirs)
+	return findModelResource(name, dirs)
 }
 
 // resolveSupermodel finds and loads the model's supermodel from opts, or
@@ -217,13 +198,13 @@ func (c *compiler) resolveSupermodel(opts CompileOptions) *supermodelInfo {
 			opts.Warn(fmt.Sprintf(format, args...))
 		}
 	}
-	path := findSupermodelFile(name, opts.SupermodelDirs)
-	if path == "" {
+	ref := findModelResource(name, opts.SupermodelDirs)
+	if ref == nil {
 		warn("supermodel %q not found in %s; node numbers assume no supermodel and may not match its animations",
 			name, strings.Join(opts.SupermodelDirs, ", "))
 		return nil
 	}
-	sm, err := loadSupermodel(path, opts.SupermodelDirs, map[string]bool{strings.ToLower(c.model.Name): true, strings.ToLower(name): true})
+	sm, err := loadSupermodel(ref, opts.SupermodelDirs, map[string]bool{strings.ToLower(c.model.Name): true, strings.ToLower(name): true})
 	if err != nil {
 		warn("supermodel %q could not be read (%v); node numbers assume no supermodel", name, err)
 		return nil
