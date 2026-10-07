@@ -126,6 +126,10 @@ type compiler struct {
 	nodeIDs map[*Node]int32
 	nextID  int32
 
+	// nodeCountOverride, when non-zero, replaces the geometry header's
+	// count_nodes. Set when nodes are numbered against a supermodel.
+	nodeCountOverride int32
+
 	// nodeOffsets maps a node instance → core offset (for parent pointer patching)
 	nodeOffsets map[*Node]int32
 
@@ -184,20 +188,36 @@ func newCompiler(m *Model) *compiler {
 
 // CompileFile writes a binary MDL to the given path.
 func CompileFile(model *Model, path string) error {
-	return atomicWriteFile(path, func(w io.Writer) error { return Compile(model, w) })
+	return CompileFileWithOptions(model, path, CompileOptions{})
+}
+
+// CompileFileWithOptions is CompileFile with options.
+func CompileFileWithOptions(model *Model, path string, opts CompileOptions) error {
+	return atomicWriteFile(path, func(w io.Writer) error { return CompileWithOptions(model, w, opts) })
 }
 
 // Compile writes a binary MDL to w.
 func Compile(model *Model, w io.Writer) error {
+	return CompileWithOptions(model, w, CompileOptions{})
+}
+
+// CompileWithOptions writes a binary MDL to w, numbering the nodes against the
+// model's supermodel when opts finds it.
+func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 	if model == nil {
 		return fmt.Errorf("compile: nil model")
 	}
 	c := newCompiler(model)
 
-	// Pre-pass: assign sequential part numbers to every geometry node.
+	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()
 	if root != nil {
-		c.assignNodeIDs(root)
+		sm := c.resolveSupermodel(opts)
+		if sm != nil {
+			c.assignNodeIDsFromSupermodel(root, sm)
+		} else {
+			c.assignNodeIDs(root)
+		}
 	}
 
 	if err := c.writeModel(); err != nil {
@@ -327,6 +347,9 @@ func (c *compiler) writeModel() error {
 	if root != nil {
 		rootOff = c.writeNode(root, 0, &nodeCount)
 		c.core.patchU32(rootPtrOff, uint32(rootOff))
+	}
+	if c.nodeCountOverride > 0 {
+		nodeCount = c.nodeCountOverride
 	}
 	c.core.patchU32(countNodesOff, uint32(nodeCount))
 
