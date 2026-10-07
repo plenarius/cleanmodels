@@ -49,7 +49,13 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Skinned models.** Skin meshes are compiled with the bind-pose data the engine reads when it draws them. Release candidates up to rc17 left it out, and a skinned model compiled by them could crash the client with an access violation. Recompile any skinned models built with an earlier candidate.
 
-**Supermodels.** A model's node numbers now follow its supermodel, as the engine's compiler assigns them. Keep supermodels in the same folder as the models you compile, or point at them with `--supermodel-dir`. If a supermodel can't be found, the compile still succeeds and a warning says so.
+**Supermodels.** A model's node numbers now follow its supermodel, as the engine's compiler assigns them. Keep supermodels in the same folder as the models you compile, or point at them with `--supermodel-dir`. Most body-part models use a stock supermodel (`pmh0`, `pfh0`, `a_da`, ...) that lives inside the game's data files: `--game-dir <NWN install>` (or the `NWN_ROOT` environment variable) reads those straight from the install's BIF files, and `--resource-dir` accepts `.hak` files as well as folders. If a supermodel can't be found, the compile still succeeds and a warning says so.
+
+**Tangents follow the material.** The engine bakes tangents for a mesh whose render hint is `NormalAndSpecMapped`, set on the mesh or in its `.mtr` material (named by `materialname`, else `texture0`). v4 now makes the same decision, so PBR tile content gets its tangents. Point `--resource-dir` at the folders or `.hak` files that hold your materials (patch haks such as `ts_bioforest_pbr.hak` included), or `--game-dir` for stock ones; without them only a mesh's own `renderhint` counts.
+
+**Shadow default.** A trimesh, skin or danglymesh with no `shadow` line now casts shadows, as in the engine; walkmeshes still default to off.
+
+**Dropped nodes are reported.** Nodes the binary leaves out (a parent that doesn't exist, a second root) now produce a warning naming the node and the reason, instead of vanishing silently.
 
 **JSON-lines output.** `--json` for single results, NDJSON streaming for batches. Stable schema; this is what the Qt GUI consumes.
 
@@ -86,6 +92,7 @@ Binary output is **not** byte-identical to the engine's own compiler in a few ca
 - Vertex deduplication differs from the game's. On character body parts we produce fewer GPU verts. On skin meshes the count can be higher or lower: the engine's rule follows smoothing groups and is only partly reproduced. No visible difference has been seen in game.
 - AABB tree split axis can differ. Pathing and collision are unaffected; the same faces end up in the same leaves.
 - Tangent values match within tolerance (mean alignment ≥ 0.96, bad-corner ratio ≤ 5%), not bit-for-bit.
+- Mesh bounds (centre, radius, bounding box) and surface area are computed from the expanded vertex list rather than the source one, and surface area is written as 0, so they can differ slightly from the engine's.
 - Animation nodes with no matching geometry node get a different node number from the one the engine gives them.
 - Animation nodes that are mesh nodes: the engine writes a full 512-byte mesh header for them, filled with uninitialised memory. We write none, so the binary is smaller. Controllers, keys, and tangents on those nodes match.
 
