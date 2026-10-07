@@ -18,6 +18,7 @@ type commonFlags struct {
 	recursive *bool
 	colorMode *string
 	superDirs *dirList
+	resDirs   *dirList
 }
 
 // dirList is a repeatable string flag: each use adds a directory.
@@ -33,6 +34,8 @@ func (d *dirList) Set(v string) error {
 	return nil
 }
 
+const resourceDirUsage = "extra directory to search for supermodels and for materials (.mtr, searched recursively) when compiling (repeatable); the input file's own directory is always searched. Materials decide which normal-mapped meshes get tangents baked in"
+
 const supermodelDirUsage = "extra directory to search for the model's supermodel when compiling (repeatable); the input file's own directory is always searched"
 
 func (cf *commonFlags) register(fs *flag.FlagSet) {
@@ -45,6 +48,8 @@ func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.colorMode = fs.String("color", "auto", "ANSI color: auto, always, never")
 	cf.superDirs = new(dirList)
 	fs.Var(cf.superDirs, "supermodel-dir", supermodelDirUsage)
+	cf.resDirs = new(dirList)
+	fs.Var(cf.resDirs, "resource-dir", resourceDirUsage)
 
 	fs.BoolVar(cf.jsonOut, "j", false, "alias for --json")
 	fs.BoolVar(cf.verbose, "v", false, "alias for --verbose")
@@ -68,6 +73,7 @@ func (cf *commonFlags) apply(o *procOpts) {
 	o.recursive = *cf.recursive
 	o.colorMode = *cf.colorMode
 	o.supermodelDirs = *cf.superDirs
+	o.resourceDirs = *cf.resDirs
 }
 
 // validateColorMode rejects values outside the documented set.

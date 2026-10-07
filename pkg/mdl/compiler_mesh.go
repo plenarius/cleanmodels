@@ -68,7 +68,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// real MDX pointer or leave -1 ("not present"). Generation needs the
 	// expanded mesh's positions, normals, and UV0 — meshes without UVs
 	// (e.g. AABB walkmesh) keep both pointers at -1.
-	tangentsOut, bitangentsOut := resolveTangents(mesh, &expanded)
+	tangentsOut, bitangentsOut := resolveTangents(mesh, &expanded, isNormalMapped(mesh, c.resourceDirs))
 
 	// uint32 p_func1, p_func2 (8 bytes) — engine fills at load
 	c.core.zeros(8)

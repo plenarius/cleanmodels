@@ -141,6 +141,9 @@ type compiler struct {
 	worldPos map[*Node][3]float64
 	worldRot map[*Node][4]float64
 
+	// resourceDirs is where materials are looked up; see CompileOptions.
+	resourceDirs []string
+
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
 	nodeCountOverride int32
@@ -224,6 +227,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 		return fmt.Errorf("compile: nil model")
 	}
 	c := newCompiler(model)
+	c.resourceDirs = opts.ResourceDirs
 
 	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()
