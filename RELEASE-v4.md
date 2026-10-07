@@ -14,7 +14,7 @@ Two coordinated releases of the NWN MDL toolchain.
 
 **Rewritten in Go.** Single static binary, no SWI-Prolog install. Linux x86_64/ARM64, macOS Intel/Apple Silicon, Windows x86_64.
 
-**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output was compared against the engine's own compiler over **32,707 stock and 49,111 community models** in a corpus run on the maintainer's machine; the repo's test suite checks the engine-compiled subset under `tests/fixtures/oracle`. See "Known divergences" below for where output isn't byte-identical.
+**Binary compiler folded in.** v3 stopped at ASCII output and handed the binary compile to `nwnmdlcomp`. v4 does both. Output is checked against the engine's own compiler on the engine-compiled models in the test suite (`tests/fixtures/oracle`); see "Known divergences" below for where it isn't byte-identical. A larger run over 32,707 stock and 49,111 community models was done during development on another machine. It is not reproducible from the repository, so treat the test suite as the reference.
 
 **Tangents baked at compile time.** Normal-mapped models get tangent vectors and a per-vertex handedness sign written into the binary via [mikktspace](http://mikktspace.com/) instead of being derived by the engine on load.
 
@@ -46,6 +46,10 @@ Two coordinated releases of the NWN MDL toolchain.
 **WASM build.** `cleanmodels-wasm.zip` runs the same pipeline in a browser page. Two static files, small JS API; useful if you maintain a model viewer or wiki tool that wants to accept binary `.mdl` drops.
 
 **Bezier position keys.** `positionbezierkey` animations (as exported by NWmax) are preserved through ASCII and compiled to binary, tangents included. Other bezier controllers are skipped with a warning.
+
+**Skinned models.** Skin meshes are compiled with the bind-pose data the engine reads when it draws them. Release candidates up to rc17 left it out, and a skinned model compiled by them could crash the client with an access violation. Recompile any skinned models built with an earlier candidate.
+
+**Supermodels.** A model's node numbers now follow its supermodel, as the engine's compiler assigns them. Keep supermodels in the same folder as the models you compile, or point at them with `--supermodel-dir`. If a supermodel can't be found, the compile still succeeds and a warning says so.
 
 **JSON-lines output.** `--json` for single results, NDJSON streaming for batches. Stable schema; this is what the Qt GUI consumes.
 
@@ -79,9 +83,10 @@ Two behaviour changes worth knowing:
 
 Binary output is **not** byte-identical to the engine's own compiler in a few cases. All documented and tested:
 
-- Vertex deduplication on character body parts produces fewer GPU verts than the game does. Identical render output, smaller MDX block.
+- Vertex deduplication differs from the game's. On character body parts we produce fewer GPU verts. On skin meshes the count can be higher or lower: the engine's rule follows smoothing groups and is only partly reproduced. No visible difference has been seen in game.
 - AABB tree split axis can differ. Pathing and collision are unaffected; the same faces end up in the same leaves.
 - Tangent values match within tolerance (mean alignment ≥ 0.96, bad-corner ratio ≤ 5%), not bit-for-bit.
+- Animation nodes with no matching geometry node get a different node number from the one the engine gives them.
 - Animation nodes that are mesh nodes: the engine writes a full 512-byte mesh header for them, filled with uninitialised memory. We write none, so the binary is smaller. Controllers, keys, and tangents on those nodes match.
 
 Two legacy steps not yet ported (UV-space TVert welding and tessellator midpoint-TVert dedup). Both are documented in `CLEAN.md` — same render output, marginally larger MDX block on heavily tessellated water meshes.
