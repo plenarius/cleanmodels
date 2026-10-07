@@ -208,7 +208,7 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
 
-**Compile/Decompile** — Convert between ASCII and binary MDL formats. The binary compiler has been validated against the NWN:EE game compiler across 32,707 stock models and 49,111 community models.
+**Compile/Decompile** — Convert between ASCII and binary MDL formats. The binary compiler is checked against the NWN:EE game compiler on the engine-compiled models in the test suite; known differences are listed in `RELEASE-v4.md`.
 
 ## Specifications
 
