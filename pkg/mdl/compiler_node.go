@@ -99,6 +99,9 @@ func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
 	if hasMesh {
 		c.writeMeshFaceData(n.Mesh, expanded)
 	}
+	if hasSkin {
+		c.writeSkinBindData(n)
+	}
 	if hasDangly {
 		c.writeDanglyConstraints(n)
 	}
@@ -407,7 +410,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		// resolves to the first node with it — the same node this lookup has
 		// always returned.
 		if bone := c.geomNodeByName(name); bone != nil {
-			if id, ok := c.nodeIDs[bone]; ok {
+			if id, ok := c.treeIndex[bone]; ok {
 				bonePartNums[i] = int16(id)
 			}
 		}
@@ -426,11 +429,16 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 	c.core.proxyListEmpty() // weights ProxyList (legacy)
 	c.core.i32le(wgtMdxOff)
 	c.core.i32le(boneRefMdxOff)
-	c.core.i32le(0) // boneindexarray
-	c.core.i32le(0) // boneindexarraysize
-	c.core.proxyListEmpty() // qbone_ref_inv
-	c.core.proxyListEmpty() // tbone_ref_inv
-	c.core.proxyListEmpty() // boneconstantindices
+	// boneindexarray, qbone_ref_inv, tbone_ref_inv and boneconstantindices are
+	// filled in by writeSkinBindData once the fixed-size headers are done.
+	c.skinBind = skinBindPatch{
+		boneIndexPtr:  c.core.placeholder(),
+		boneIndexSize: c.core.placeholder(),
+	}
+	for i := range c.skinBind.lists {
+		c.skinBind.lists[i] = [3]int{c.core.placeholder(), c.core.placeholder(), c.core.placeholder()}
+	}
+	c.skinBind.boneTree = append([]int16(nil), bonePartNums[:len(boneNames)]...)
 	for i := 0; i < 64; i++ {
 		c.core.u16le(uint16(bonePartNums[i]))
 	}

@@ -108,6 +108,8 @@ func runLegacy(args []string) int {
 	quiet := fs.Bool("quiet", false, "suppress all output except errors")
 	workers := fs.Int("workers", runtime.NumCPU(), "parallel workers for batch mode")
 	colorMode := fs.String("color", "auto", "ANSI color: auto, always, never")
+	superDirs := new(dirList)
+	fs.Var(superDirs, "supermodel-dir", supermodelDirUsage)
 	excludeStr := fs.String("exclude-checks", "", "comma-separated check names to skip")
 	includeStr := fs.String("include-checks", "", "comma-separated check names to run")
 	recursive := fs.Bool("recursive", false, "process directories recursively")
@@ -211,20 +213,21 @@ func runLegacy(args []string) int {
 	}
 
 	opts := procOpts{
-		check:         *checkFlag,
-		decompileOnly: *decompileOnly,
-		forceBin:      *decompileFlag,
-		jsonOut:       *jsonOut,
-		jsonLines:     *jsonLines,
-		verbose:       *verbose,
-		quiet:         *quiet,
-		include:       parseNameSet(*includeStr),
-		exclude:       parseNameSet(*excludeStr),
-		workers:       *workers,
-		recursive:     *recursive,
-		dryRun:        *dryRun,
-		compile:       *compileFlag,
-		colorMode:     *colorMode,
+		check:          *checkFlag,
+		decompileOnly:  *decompileOnly,
+		forceBin:       *decompileFlag,
+		jsonOut:        *jsonOut,
+		jsonLines:      *jsonLines,
+		verbose:        *verbose,
+		quiet:          *quiet,
+		include:        parseNameSet(*includeStr),
+		exclude:        parseNameSet(*excludeStr),
+		workers:        *workers,
+		recursive:      *recursive,
+		dryRun:         *dryRun,
+		compile:        *compileFlag,
+		colorMode:      *colorMode,
+		supermodelDirs: *superDirs,
 		repairOpts: repairOpts{
 			fixPivots:        *fixPivots || *fixAll,
 			fixAABB:          *fixAABB || *fixAll,

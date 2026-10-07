@@ -126,6 +126,25 @@ type compiler struct {
 	nodeIDs map[*Node]int32
 	nextID  int32
 
+	// treeIndex maps a node instance → its position in tree order (root 0).
+	// Skin bones are addressed by this position, not by nodeIDs: the engine's
+	// indexmapping for the wemic body pmw0 is the tree positions of its bones
+	// even though their m_IDs follow the supermodel.
+	treeIndex map[*Node]int32
+
+	// skinBind holds the header positions writeSkinHeader left for
+	// writeSkinBindData to fill.
+	skinBind skinBindPatch
+
+	// worldPos and worldRot are each geometry node's accumulated position and
+	// orientation (x, y, z, w), computed once on first use.
+	worldPos map[*Node][3]float64
+	worldRot map[*Node][4]float64
+
+	// nodeCountOverride, when non-zero, replaces the geometry header's
+	// count_nodes. Set when nodes are numbered against a supermodel.
+	nodeCountOverride int32
+
 	// nodeOffsets maps a node instance → core offset (for parent pointer patching)
 	nodeOffsets map[*Node]int32
 
@@ -175,6 +194,7 @@ func newCompiler(m *Model) *compiler {
 		vol:            &patchBuf{},
 		model:          m,
 		nodeIDs:        make(map[*Node]int32),
+		treeIndex:      make(map[*Node]int32),
 		nodeOffsets:    make(map[*Node]int32),
 		childrenByNode: children,
 		geomNodeIndex:  gi,
@@ -184,20 +204,36 @@ func newCompiler(m *Model) *compiler {
 
 // CompileFile writes a binary MDL to the given path.
 func CompileFile(model *Model, path string) error {
-	return atomicWriteFile(path, func(w io.Writer) error { return Compile(model, w) })
+	return CompileFileWithOptions(model, path, CompileOptions{})
+}
+
+// CompileFileWithOptions is CompileFile with options.
+func CompileFileWithOptions(model *Model, path string, opts CompileOptions) error {
+	return atomicWriteFile(path, func(w io.Writer) error { return CompileWithOptions(model, w, opts) })
 }
 
 // Compile writes a binary MDL to w.
 func Compile(model *Model, w io.Writer) error {
+	return CompileWithOptions(model, w, CompileOptions{})
+}
+
+// CompileWithOptions writes a binary MDL to w, numbering the nodes against the
+// model's supermodel when opts finds it.
+func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 	if model == nil {
 		return fmt.Errorf("compile: nil model")
 	}
 	c := newCompiler(model)
 
-	// Pre-pass: assign sequential part numbers to every geometry node.
+	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()
 	if root != nil {
-		c.assignNodeIDs(root)
+		sm := c.resolveSupermodel(opts)
+		if sm != nil {
+			c.assignNodeIDsFromSupermodel(root, sm)
+		} else {
+			c.assignNodeIDs(root)
+		}
 	}
 
 	if err := c.writeModel(); err != nil {
@@ -236,6 +272,7 @@ func (c *compiler) assignNodeIDs(root *Node) {
 		}
 		visited[n] = true
 		c.nodeIDs[n] = c.nextID
+		c.treeIndex[n] = c.nextID
 		c.nextID++
 		children := c.childrenOf(n)
 		// push in reverse so left-to-right DFS order is preserved
@@ -327,6 +364,9 @@ func (c *compiler) writeModel() error {
 	if root != nil {
 		rootOff = c.writeNode(root, 0, &nodeCount)
 		c.core.patchU32(rootPtrOff, uint32(rootOff))
+	}
+	if c.nodeCountOverride > 0 {
+		nodeCount = c.nodeCountOverride
 	}
 	c.core.patchU32(countNodesOff, uint32(nodeCount))
 

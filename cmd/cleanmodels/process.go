@@ -94,6 +94,7 @@ type procOpts struct {
 	workers                                                        int
 	include, exclude                                               map[string]bool
 	colorMode                                                      string // "auto", "always", "never"
+	supermodelDirs                                                 []string
 
 	repairOpts
 	tileOpts
@@ -625,7 +626,13 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			if outPath == "" {
 				outPath = path
 			}
-			if err := mdl.CompileFile(model, outPath); err != nil {
+			copts := mdl.CompileOptions{
+				SupermodelDirs: append([]string{filepath.Dir(path)}, o.supermodelDirs...),
+				Warn: func(msg string) {
+					res.Warnings = append(res.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: msg})
+				},
+			}
+			if err := mdl.CompileFileWithOptions(model, outPath, copts); err != nil {
 				res.Error = err.Error()
 				return res, model, parseErrs, err
 			}

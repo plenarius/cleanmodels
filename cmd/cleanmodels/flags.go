@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -15,7 +17,23 @@ type commonFlags struct {
 	workers   *int
 	recursive *bool
 	colorMode *string
+	superDirs *dirList
 }
+
+// dirList is a repeatable string flag: each use adds a directory.
+type dirList []string
+
+func (d *dirList) String() string { return strings.Join(*d, string(os.PathListSeparator)) }
+func (d *dirList) Set(v string) error {
+	for _, p := range filepath.SplitList(v) {
+		if p != "" {
+			*d = append(*d, p)
+		}
+	}
+	return nil
+}
+
+const supermodelDirUsage = "extra directory to search for the model's supermodel when compiling (repeatable); the input file's own directory is always searched"
 
 func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.jsonOut = fs.Bool("json", false, "output results as JSON")
@@ -25,6 +43,8 @@ func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.workers = fs.Int("workers", runtime.NumCPU(), "parallel workers for batch mode")
 	cf.recursive = fs.Bool("recursive", false, "process directories recursively")
 	cf.colorMode = fs.String("color", "auto", "ANSI color: auto, always, never")
+	cf.superDirs = new(dirList)
+	fs.Var(cf.superDirs, "supermodel-dir", supermodelDirUsage)
 
 	fs.BoolVar(cf.jsonOut, "j", false, "alias for --json")
 	fs.BoolVar(cf.verbose, "v", false, "alias for --verbose")
@@ -47,6 +67,7 @@ func (cf *commonFlags) apply(o *procOpts) {
 	o.workers = *cf.workers
 	o.recursive = *cf.recursive
 	o.colorMode = *cf.colorMode
+	o.supermodelDirs = *cf.superDirs
 }
 
 // validateColorMode rejects values outside the documented set.
