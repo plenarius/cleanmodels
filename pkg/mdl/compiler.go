@@ -141,6 +141,9 @@ type compiler struct {
 	worldPos map[*Node][3]float64
 	worldRot map[*Node][4]float64
 
+	// warn receives non-fatal notes (CompileOptions.Warn); nil discards them.
+	warn func(string)
+
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
 	nodeCountOverride int32
@@ -224,6 +227,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 		return fmt.Errorf("compile: nil model")
 	}
 	c := newCompiler(model)
+	c.warn = opts.Warn
 
 	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()
@@ -234,6 +238,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 		} else {
 			c.assignNodeIDs(root)
 		}
+		c.warnDroppedGeometry()
 	}
 
 	if err := c.writeModel(); err != nil {
@@ -441,6 +446,7 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 	if rootAnimNode != nil {
 		visited := make(map[*AnimNode]bool, len(anim.Nodes))
 		rootAnimOff = c.writeAnimNode(rootAnimNode, animChildIdx, 0, &animNodeCount, visited)
+		c.warnDroppedAnim(anim, visited)
 	}
 
 	c.core.patchU32(rootPtrOff, uint32(rootAnimOff))
