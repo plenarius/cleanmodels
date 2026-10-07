@@ -132,6 +132,15 @@ type compiler struct {
 	// even though their m_IDs follow the supermodel.
 	treeIndex map[*Node]int32
 
+	// skinBind holds the header positions writeSkinHeader left for
+	// writeSkinBindData to fill.
+	skinBind skinBindPatch
+
+	// worldPos and worldRot are each geometry node's accumulated position and
+	// orientation (x, y, z, w), computed once on first use.
+	worldPos map[*Node][3]float64
+	worldRot map[*Node][4]float64
+
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
 	nodeCountOverride int32
