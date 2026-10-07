@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func binaryNodeNumbers(t *testing.T, data []byte) map[string]int32 {
@@ -175,5 +176,42 @@ func TestSupermodelNotFoundWarns(t *testing.T) {
 	}
 	if c := headerCountNodes(buf.Bytes()); c != 6 {
 		t.Errorf("fallback count_nodes = %d, want 6 (sequential, no supermodel)", c)
+	}
+}
+
+// A supermodel is parsed once per process and search path, and again if its
+// file changes.
+func TestSupermodelIsCached(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cachesuper.mdl")
+	write := func(extra string) {
+		src := "newmodel cachesuper\nsetsupermodel cachesuper NULL\nclassification character\nbeginmodelgeom cachesuper\nnode dummy cachesuper\n  parent NULL\nendnode\n" + extra + "endmodelgeom cachesuper\ndonemodel cachesuper\n"
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	load := func() *supermodelInfo {
+		ref := findModelResource("cachesuper", []string{dir})
+		if ref == nil {
+			t.Fatal("supermodel not found")
+		}
+		sm, err := loadSupermodel(ref, []string{dir}, map[string]bool{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sm
+	}
+
+	write("")
+	first := load()
+	if load() != first {
+		t.Fatal("second load of an unchanged supermodel was not served from the cache")
+	}
+	write("node dummy extra\n  parent cachesuper\nendnode\n")
+	if err := os.Chtimes(path, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if again := load(); again == first || len(again.nodes) != 2 {
+		t.Fatalf("changed supermodel was not reloaded: %d nodes", len(again.nodes))
 	}
 }

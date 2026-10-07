@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // CompileOptions tunes a compile. The zero value reproduces Compile.
@@ -52,6 +53,25 @@ type supermodelInfo struct {
 // count_nodes for the wemic body pmw0 (44 + 1 + 179 = 224 down a four-level
 // chain of 44-node ASCII supermodels). seen guards against cycles.
 func loadSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*supermodelInfo, error) {
+	key := ref.id + "\x00" + ref.stamp + "\x00" + strings.Join(dirs, "\x00")
+	if v, ok := supermodelCache.Load(key); ok {
+		return v.(*supermodelInfo), nil
+	}
+	info, err := readSupermodel(ref, dirs, seen)
+	if err == nil {
+		supermodelCache.Store(key, info)
+	}
+	return info, err
+}
+
+// supermodelCache holds loaded supermodels for the life of the process, keyed
+// by the resource, its file's size and modification time, and the search path
+// its own chain was resolved against. A batch of models that share a skeleton
+// then parses it, and the skeleton's own supermodels, once rather than per
+// model. Entries are read-only once stored.
+var supermodelCache sync.Map
+
+func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*supermodelInfo, error) {
 	path := ref.id
 	data, err := ref.read()
 	if err != nil {
