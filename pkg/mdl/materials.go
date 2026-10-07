@@ -49,34 +49,41 @@ func (m *materialIndex) load() map[string]string {
 	return m.byName
 }
 
-// findMaterial returns the path of <name>.mtr in the first directory that has
-// it, or "". Directories are indexed recursively once and cached for the life
-// of the process, so a batch compile does not rescan them per model.
-func findMaterial(name string, dirs []string) string {
+// findMaterial returns <name>.mtr from the first location that has it, or nil.
+// Directories are indexed recursively once and cached for the life of the
+// process, so a batch compile does not rescan them per model; archives and game
+// installs are indexed by resources.go.
+func findMaterial(name string, locs []string) *resourceRef {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" || name == "null" {
-		return ""
+		return nil
 	}
-	for _, dir := range dirs {
-		v, _ := materialIndexes.LoadOrStore(dir, &materialIndex{dir: dir})
+	for _, loc := range locs {
+		if a := openArchive(loc); a != nil {
+			if read, ok := a.entries[archiveKey{name, resTypeMTR}]; ok {
+				return &resourceRef{id: loc + "#" + name + ".mtr", read: read}
+			}
+			continue
+		}
+		v, _ := materialIndexes.LoadOrStore(loc, &materialIndex{dir: loc})
 		if p, ok := v.(*materialIndex).load()[name]; ok {
-			return p
+			return &resourceRef{id: p, read: func() ([]byte, error) { return os.ReadFile(p) }}
 		}
 	}
-	return ""
+	return nil
 }
 
-func materialRenderHint(path string) string {
-	if v, ok := materialHints.Load(path); ok {
+func materialRenderHint(ref *resourceRef) string {
+	if v, ok := materialHints.Load(ref.id); ok {
 		return v.(string)
 	}
 	hint := ""
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := ref.read(); err == nil {
 		if m := mtrHintRe.FindSubmatch(data); m != nil {
 			hint = strings.ToLower(string(m[1]))
 		}
 	}
-	materialHints.Store(path, hint)
+	materialHints.Store(ref.id, hint)
 	return hint
 }
 
@@ -93,8 +100,8 @@ func isNormalMapped(mesh *MeshData, dirs []string) bool {
 		return false
 	}
 	for _, name := range []string{mesh.MaterialName, mesh.Bitmap} {
-		if p := findMaterial(name, dirs); p != "" {
-			return materialRenderHint(p) == "normalandspecmapped"
+		if ref := findMaterial(name, dirs); ref != nil {
+			return materialRenderHint(ref) == "normalandspecmapped"
 		}
 	}
 	return false
