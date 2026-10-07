@@ -143,6 +143,8 @@ type compiler struct {
 
 	// resourceDirs is where materials are looked up; see CompileOptions.
 	resourceDirs []string
+	// warn receives non-fatal notes (CompileOptions.Warn); nil discards them.
+	warn func(string)
 
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
@@ -228,6 +230,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 	}
 	c := newCompiler(model)
 	c.resourceDirs = opts.ResourceDirs
+	c.warn = opts.Warn
 
 	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()
@@ -238,6 +241,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 		} else {
 			c.assignNodeIDs(root)
 		}
+		c.warnDroppedGeometry()
 	}
 
 	if err := c.writeModel(); err != nil {
@@ -445,6 +449,7 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 	if rootAnimNode != nil {
 		visited := make(map[*AnimNode]bool, len(anim.Nodes))
 		rootAnimOff = c.writeAnimNode(rootAnimNode, animChildIdx, 0, &animNodeCount, visited)
+		c.warnDroppedAnim(anim, visited)
 	}
 
 	c.core.patchU32(rootPtrOff, uint32(rootAnimOff))
