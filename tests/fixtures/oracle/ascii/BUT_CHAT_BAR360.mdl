@@ -1,0 +1,105 @@
+#MAXMODEL ASCII
+# model: BUT_CHAT_BAR360
+filedependancy BUT_CHAT_BAR360.max
+newmodel BUT_CHAT_BAR360
+setsupermodel BUT_CHAT_BAR360 NULL
+setanimationscale 1
+#MAXGEOM  ASCII
+beginmodelgeom BUT_CHAT_BAR360
+node dummy BUT_CHAT_BAR360
+  parent NULL
+  #part-number 0
+endnode
+node trimesh Plane185
+  parent BUT_CHAT_BAR360
+  #part-number 1
+  ambient 0.100000001 0.100000001 0.100000001
+  diffuse 1 1 1
+  specular 0.0450000018 0.0450000018 0.0450000018
+  shininess 26
+  bitmap gui_boxes_ingame
+  verts 3
+    -0.0549999997 0.0274999999 0
+    -0.0549999997 -0.0274999999 0
+    0.0549999997 0.0274999999 0
+  tverts 3
+    0.0407156013 0.339026988 0
+    0.0434623994 0.174691007 0
+    0.0434545986 0.998242021 0
+  faces 1
+    0 1 2 1 0 1 2 1
+  position 0.0555997007 0.0928957015 0.5
+  orientation 0 0 0 0
+endnode
+node trimesh Plane186
+  parent Plane185
+  #part-number 2
+  ambient 0.100000001 0.100000001 0.100000001
+  diffuse 1 1 1
+  specular 0.0450000018 0.0450000018 0.0450000018
+  shininess 26
+  bitmap gui_boxes_ingame
+  verts 3
+    0.0549999997 -0.0274999999 0
+    0.0549999997 0.0274999999 0
+    -0.0549999997 0.0274999999 0
+  tverts 3
+    0.0434623994 0.174691007 0
+    0.0407156013 0.339026988 0
+    0.0434545986 0.998242021 0
+  faces 1
+    0 1 2 1 0 1 2 1
+  position 3.49000001 0 0
+  orientation 0 0 0 0
+endnode
+node trimesh Plane187
+  parent Plane186
+  #part-number 3
+  ambient 0.100000001 0.100000001 0.100000001
+  diffuse 1 1 1
+  specular 0.0450000018 0.0450000018 0.0450000018
+  shininess 26
+  bitmap gui_boxes_ingame
+  verts 4
+    -0.0599999987 1.79999995 0
+    -0.0599999987 -1.79999995 0
+    0.0599999987 1.79999995 0
+    0.0599999987 -1.79999995 0
+  tverts 4
+    0.0187500007 0.940119028 0
+    0.0187500007 -0.00261837011 0
+    0.0281249993 0.940119028 0
+    0.0281249993 -0.00261837011 0
+  faces 2
+    0 1 2 1 0 1 2 1
+    3 2 1 1 3 2 1 1
+  position -1.74559999 -0.0328956991 -0.100000001
+  orientation 0 0 -1 -1.57079995
+endnode
+node trimesh Plane188
+  parent Plane187
+  #part-number 4
+  ambient 0.100000001 0.100000001 0.100000001
+  diffuse 1 1 1
+  specular 0.0450000018 0.0450000018 0.0450000018
+  shininess 26
+  bitmap gui_spl_btn_up
+  verts 4
+    -0.0549999997 0.0350000001 0
+    -0.0549999997 -0.0350000001 0
+    0.0549999997 0.0350000001 0
+    0.0549999997 -0.0350000001 0
+  tverts 4
+    0.1875 0.75 0
+    0.1875 0.3125 0
+    0.875 0.75 0
+    0.875 0.3125 0
+  faces 2
+    0 1 2 1 0 1 2 1
+    3 2 1 1 3 2 1 1
+  position -0.00499999989 -0.00499999989 0.100000001
+  orientation 0 0 1 -1.57079995
+endnode
+endmodelgeom BUT_CHAT_BAR360
+
+donemodel BUT_CHAT_BAR360

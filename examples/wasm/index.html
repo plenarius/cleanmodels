@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>cleanmodels-wasm demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --border: #30363d;
+      --fg: #c9d1d9;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --ok: #3fb950;
+      --err: #f85149;
+      --warn: #d29922;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+            Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    header .meta {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      padding: 12px 20px;
+      min-height: 0;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .panel header {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .drop {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      text-align: center;
+      padding: 24px;
+      color: var(--muted);
+      transition: background 0.1s, border-color 0.1s;
+      border: 2px dashed transparent;
+      margin: 12px;
+      border-radius: 6px;
+    }
+    .drop.over {
+      background: rgba(88, 166, 255, 0.08);
+      border-color: var(--accent);
+      color: var(--fg);
+    }
+    .drop p { margin: 4px 0; }
+    .drop input[type=file] { display: none; }
+    pre.output {
+      flex: 1;
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      color: var(--fg);
+      white-space: pre;
+      tab-size: 2;
+    }
+    pre.output.placeholder {
+      color: var(--muted);
+      font-style: italic;
+      white-space: pre-wrap;
+    }
+    footer {
+      padding: 8px 20px;
+      border-top: 1px solid var(--border);
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .status .ok   { color: var(--ok); }
+    .status .err  { color: var(--err); }
+    .status .warn { color: var(--warn); }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar button {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .toolbar button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .toolbar button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>cleanmodels-wasm demo</h1>
+    <span class="meta" id="version">loading…</span>
+    <span class="meta" style="margin-left: auto;">
+      <a href="https://github.com/plenarius/cleanmodels">github.com/plenarius/cleanmodels</a>
+    </span>
+  </header>
+
+  <main>
+    <section class="panel" aria-label="Input">
+      <header>Input — drop a binary or ASCII <code>.mdl</code></header>
+      <label class="drop" id="dropzone">
+        <div>
+          <p><strong>Drop an .mdl here</strong></p>
+          <p>or click to choose a file</p>
+          <p style="font-size: 11px; opacity: 0.7;">
+            Binary MDL → decompiled ASCII<br>
+            ASCII MDL → linted (warnings only)
+          </p>
+        </div>
+        <input type="file" id="picker" accept=".mdl,application/octet-stream" />
+      </label>
+    </section>
+
+    <section class="panel" aria-label="Output">
+      <header>Output</header>
+      <div class="toolbar">
+        <button id="copyBtn" disabled>Copy</button>
+        <button id="downloadBtn" disabled>Download</button>
+      </div>
+      <pre class="output placeholder" id="output">No file loaded yet.</pre>
+    </section>
+  </main>
+
+  <footer>
+    <span class="status" id="status">Initializing WebAssembly runtime…</span>
+    <span class="meta" id="timing"></span>
+  </footer>
+
+  <script src="wasm_exec.js"></script>
+  <script>
+    "use strict";
+
+    const els = {
+      dropzone: document.getElementById("dropzone"),
+      picker:   document.getElementById("picker"),
+      output:   document.getElementById("output"),
+      status:   document.getElementById("status"),
+      timing:   document.getElementById("timing"),
+      version:  document.getElementById("version"),
+      copyBtn:  document.getElementById("copyBtn"),
+      downloadBtn: document.getElementById("downloadBtn"),
+    };
+
+    let lastOutputName = null;
+    let lastOutputText = null;
+
+    function setStatus(text, kind) {
+      els.status.innerHTML = `<span class="${kind || ""}">${text}</span>`;
+    }
+    function setOutput(text, isPlaceholder) {
+      els.output.textContent = text;
+      els.output.classList.toggle("placeholder", !!isPlaceholder);
+      const hasText = !isPlaceholder && text;
+      els.copyBtn.disabled = !hasText;
+      els.downloadBtn.disabled = !hasText;
+      lastOutputText = hasText ? text : null;
+    }
+
+    // Heuristic: NWN binary MDLs start with a 4-byte zero word
+    // (the "file type" field is always 0 for binary MDL).
+    function looksBinaryMdl(bytes) {
+      return bytes.length >= 4 &&
+             bytes[0] === 0 && bytes[1] === 0 &&
+             bytes[2] === 0 && bytes[3] === 0;
+    }
+
+    async function loadWasm() {
+      const go = new Go();
+      const t0 = performance.now();
+      const result = await WebAssembly.instantiateStreaming(
+        fetch("cleanmodels.wasm"),
+        go.importObject,
+      );
+      go.run(result.instance);
+      // js.FuncOf bindings are installed synchronously by main(),
+      // so by the time go.run returns, `cleanmodels` exists.
+      const dt = (performance.now() - t0).toFixed(0);
+      els.version.textContent = `version ${cleanmodels.version()} · loaded in ${dt} ms`;
+      setStatus("Ready. Drop a binary or ASCII .mdl file.", "ok");
+    }
+
+    async function handleFile(file) {
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        const t0 = performance.now();
+
+        if (looksBinaryMdl(bytes)) {
+          const r = cleanmodels.decompile(bytes);
+          const dt = (performance.now() - t0).toFixed(1);
+          if (!r.ok) {
+            setStatus(`decompile failed: ${r.error}`, "err");
+            setOutput(r.error, true);
+            return;
+          }
+          setStatus(
+            `Decompiled ${file.name} (${bytes.length.toLocaleString()} bytes) in ${dt} ms`,
+            "ok"
+          );
+          els.timing.textContent = `${r.ascii.length.toLocaleString()} chars out`;
+          setOutput(r.ascii);
+          lastOutputName = file.name.replace(/\.mdl$/i, "") + "_ascii.mdl";
+        } else {
+          // Treat as ASCII; just lint it.
+          const text = new TextDecoder().decode(bytes);
+          const r = cleanmodels.parse(text);
+          const dt = (performance.now() - t0).toFixed(1);
+          if (!r.ok) {
+            setStatus(`parse failed: ${r.error}`, "err");
+            setOutput(r.error, true);
+            return;
+          }
+          const w = r.warnings || [];
+          if (w.length === 0) {
+            setStatus(`Parsed ${file.name} cleanly in ${dt} ms`, "ok");
+            setOutput("// no parse diagnostics\n\n" + text);
+          } else {
+            setStatus(`Parsed in ${dt} ms · ${w.length} warning(s)`, "warn");
+            const lines = w.map(e => `line ${e.line}: ${e.message}`).join("\n");
+            setOutput(lines + "\n\n---\n\n" + text);
+          }
+          lastOutputName = file.name;
+        }
+      } catch (err) {
+        setStatus(`error: ${err.message || err}`, "err");
+        setOutput(String(err), true);
+      }
+    }
+
+    function wireDropzone() {
+      els.dropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        els.dropzone.classList.add("over");
+      });
+      els.dropzone.addEventListener("dragleave", () => {
+        els.dropzone.classList.remove("over");
+      });
+      els.dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        els.dropzone.classList.remove("over");
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+      });
+      els.picker.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) handleFile(file);
+        e.target.value = ""; // allow re-picking same file
+      });
+    }
+
+    function wireButtons() {
+      els.copyBtn.addEventListener("click", async () => {
+        if (!lastOutputText) return;
+        await navigator.clipboard.writeText(lastOutputText);
+        const orig = els.copyBtn.textContent;
+        els.copyBtn.textContent = "Copied";
+        setTimeout(() => { els.copyBtn.textContent = orig; }, 1000);
+      });
+      els.downloadBtn.addEventListener("click", () => {
+        if (!lastOutputText) return;
+        const blob = new Blob([lastOutputText], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = lastOutputName || "output.mdl";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    wireDropzone();
+    wireButtons();
+    loadWasm().catch((err) => {
+      setStatus(`failed to load wasm: ${err.message || err}`, "err");
+    });
+  </script>
+</body>
+</html>

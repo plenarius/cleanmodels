@@ -1,0 +1,21 @@
+# Binaries
+/cleanmodels
+/cleanmodels.exe
+dist/
+
+# Test output
+*.test
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependency
+vendor/
