@@ -35,6 +35,8 @@ Two coordinated releases of the NWN MDL toolchain.
 
 ~26× single-threaded, ~29× with parallel workers, ~1/15th memory.
 
+Compiling models that share a skeleton is faster too: each supermodel is parsed once per run instead of once per model. A batch of 5,015 human body-part models with `--game-dir` went from 1m48s to 18s with byte-identical output.
+
 **Subcommand CLI.** `cleanmodels check | repair | compile | decompile | report`, plus `cleanmodels --version` (or `-v`) for the version, commit, and build date. The legacy flag form (`cleanmodels --check --fix-pivots in/ out/`) still works for existing scripts.
 
 **New repairs.** Chamfer add/delete, dynamic water (flat/wavy/untouched), additional tilefade slicing/undo work, plus two EE-cleanup flags: `--standardize-texture0` (emit `texture0` instead of `bitmap`) and `--strip-ee-extras` (drop `wirecolor`/`specular`/`shininess` on output).
@@ -71,6 +73,8 @@ Two coordinated releases of the NWN MDL toolchain.
 - **Skinned meshes render against their skeleton.** Animals, dragons, and any other skin-weighted geometry display correctly bound to the bone hierarchy.
 - **Animations play back live.** The viewport picks an idle on load and exposes the model's full animation list for stepping through.
 - Reference-model overlay (compare two models side by side, with a preferred-pose hint applied to the reference).
+
+**Game Resources** section in the sidebar: a game install folder (passed as `--game-dir`) and extra folders or `.hak` files (`--resource-dir`), remembered between sessions. Compiled models then get engine node numbering against stock supermodels and tangents from PBR materials, with nothing extracted by hand.
 
 **Report Issue** integrated — same upload/track flow as `cleanmodels report`, available under Help and on right-click for failed files.
 
