@@ -560,17 +560,16 @@ func compareOracleTangents(t *testing.T, binaryName string) {
 	}
 	mean := totals.dotSum / float64(totals.matched)
 
-	// Per-fixture mean alignment must exceed this threshold. Empirical
-	// floor as of materials/SG vertKey fix is 0.969 (tin01_a16_02), with
-	// most fixtures at 0.98-1.00. We pick 0.96 as the regression bar so
-	// any drop in tangent quality across the full fixture set fails the
-	// test loudly. Tighten this once dedup parity work closes the
-	// remaining 1-3% bad-corner gap.
-	const meanAlignFloor = 0.96
+	// Per-fixture mean alignment must exceed this threshold. Tangent
+	// generation is a port of the game's own algorithm, so the core-game
+	// fixtures match to 1.0000 and the worst fixture (a hak tile whose
+	// ASCII is a different revision of the binary) sits at 0.9966. The bar
+	// leaves room for that drift but fails on any real regression.
+	const meanAlignFloor = 0.99
 	// Per-corner bad-alignment ratio must stay below this. A "bad" corner
 	// is one where |dot(ours.xyz, game.xyz)| < 0.5 (effectively pointing
-	// in different directions). The current floor is 3.2% (tin01_a16_02).
-	const badRatioCeiling = 0.05
+	// in different directions). The worst fixture is 0.3%.
+	const badRatioCeiling = 0.01
 
 	badRatio := float64(totals.badAlign) / float64(totals.matched)
 	t.Logf("✓ %s  nodes=%d  corners matched=%d unmatched=%d badAlign=%d (%.1f%%)  mean|dot|=%.4f",
@@ -697,94 +696,24 @@ func TestOracleCompileAll(t *testing.T) {
 // is **exactly zero** — adding a fixture or regressing dedup will fail
 // the test with a clear delta.
 //
-// The non-zero entries below document genuine compiler-philosophy
-// differences (most prominently: the game does not bit-deduplicate
-// face-corner GPU vertices the way we do, so per-corner data ends up
-// duplicated in body-part and animated-mesh outputs even when the
-// resulting triangle attributes are bit-identical). These are not bugs
-// in either compiler's output — both produce visually identical render
-// output — but they are real binary-level differences worth gating.
-//
-// To improve a baseline (smaller |delta|), edit the entry. To eliminate
-// a divergence, remove the entry entirely. To add a fixture, leave it
-// out unless it diverges; this forces parity to be the default.
+// Every entry is a case where the game binary has MORE vertices than we
+// emit (negative delta), and every one is a legacy-tool binary: Red_M_Torso,
+// pmh0_head001 and ctl_compass are shipped base-game assets whose binaries
+// contain exact duplicate vertices (identical position, UV, normal and color)
+// that the EE compiler's own merge can never leave behind. In each case the
+// delta equals the number of exact-duplicate vertices in the game output
+// (torso_g 62, pmh0_head001g 119, box01 104, cmp_pointer 4), so there is
+// nothing in the engine to mirror. Both versions render identically.
 var vertParityBaseline = map[string]map[string]int{
 	"Red_M_Torso.mdl": {
 		"torso_g": -62,
 	},
-	"abp_weaprack_1.mdl": {
-		"guard_curved":   +8,
-		"guard_curved01": +8,
-		"guard_curved02": +8,
-		"guard_curved03": +8,
-		"pommel":         +4,
-		"pommel01":       +4,
-		"pommel02":       +4,
-		"pommel03":       +4,
-	},
 	"ctl_compass.mdl": {
-		"box01":       -72,
+		"box01":       -104,
 		"cmp_pointer": -4,
 	},
-	"plc_guillo2.mdl": {
-		"box03": +4,
-		"box07": +4,
-		"blade": +2,
-	},
-	"plc_nc03.mdl": {
-		"groups02487": +6,
-		"groups02501": +6,
-		"groups02503": +6,
-		"box155793":   -4,
-		"box155797":   -4,
-	},
-	"plc_statdwl.mdl": {
-		"box01":      +2,
-		"hammerhead": +32,
-	},
 	"pmh0_head001.mdl": {
-		"pmh0_head001g": -101,
-	},
-	"zlc_o23.mdl": {
-		"box872":   +13,
-		"box871":   +13,
-	},
-	// c_marilith2 — combined skin + dangly + emitter creature. The
-	// non-zero deltas on hand/claw/sword nodes match the body-part
-	// philosophy difference; head_g and the wswsc grip/middle nodes
-	// each differ by a few per-corner duplicates in the game's
-	// output. No visual impact.
-	"c_marilith2.mdl": {
-		"claw05":       +3,
-		"claw06":       +3,
-		"claw07":       +3,
-		"claw08":       +3,
-		"lhand_g":      +3,
-		"rhand_g":      +3,
-		"g_wswsc_b_12": +11,
-		"g_wswsc_b_13": +11,
-		"g_wswsc_b_14": +11,
-		"g_wswsc_b_15": +11,
-		"g_wswsc_m_22": +6,
-		"g_wswsc_m_23": +6,
-		"g_wswsc_m_24": +6,
-		"g_wswsc_m_25": +6,
-	},
-	// tdc01_a01_03 — small AABB walkmesh tile divergences on a few
-	// inner mesh nodes. AABB topology itself is unaffected.
-	"tdc01_a01_03.mdl": {
-		"meshtdc5076": -9,
-		"object57":    +6,
-		"meshtdc0828": +4,
-	},
-	// wsf10_p01_01 — Layonara hak forest tile, perfect tangent
-	// (1.0000 mean) but the AABB walkmesh node ("wok") under-merges
-	// vs the game (we collapse 71 face-corner duplicates the game
-	// keeps). The walkmesh tree topology is preserved; pathing and
-	// collision are unaffected since both compilers emit the same
-	// face-to-leaf assignments.
-	"wsf10_p01_01.mdl": {
-		"wok": -71,
+		"pmh0_head001g": -119,
 	},
 }
 

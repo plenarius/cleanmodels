@@ -381,6 +381,13 @@ func (w *writer) writeMeshData(n *Node, m *MeshData) {
 
 	w.writeFaces(4, m.Faces)
 
+	if len(m.MirrorList) > 0 {
+		w.indent(4, "mirrorlist %d", len(m.MirrorList))
+		for _, v := range m.MirrorList {
+			w.indent(6, "%d", v)
+		}
+	}
+
 	// TVerts
 	w.writeVec3List("tverts", m.TVerts)
 	w.writeVec3List("tverts1", m.TVerts1)

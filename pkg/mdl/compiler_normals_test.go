@@ -2,6 +2,7 @@ package mdl
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -183,5 +184,117 @@ func TestBuildExpandedMeshSplitsSkinVerticesByInfluence(t *testing.T) {
 	}
 	if len(withSkin.positions) != 4 {
 		t.Fatalf("with skin keys: %d vertices, want 4 (different bones stay apart)", len(withSkin.positions))
+	}
+}
+
+// On AABB nodes the game only reuses a vertex through an earlier face that
+// shares at least two equal corners. Here faces 0 and 1 share an edge and
+// merge, but face 2 touches face 0 at a single corner only, so its copy of
+// that corner stays a separate vertex.
+func TestBuildExpandedMeshAABBMergeNeedsSharedEdge(t *testing.T) {
+	mesh := &MeshData{
+		Verts: []Vec3{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}, {-1, 0, 0}, {0, -1, 0}},
+		Faces: []Face{
+			{Verts: [3]int32{0, 1, 2}},
+			{Verts: [3]int32{1, 3, 2}},
+			{Verts: [3]int32{0, 4, 5}},
+		},
+	}
+	global, err := buildExpandedMeshOpts(mesh, expandOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aabb, err := buildExpandedMeshOpts(mesh, expandOpts{aabbMerge: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(global.positions) != 6 {
+		t.Errorf("global merge: %d vertices, want 6", len(global.positions))
+	}
+	if len(aabb.positions) != 7 {
+		t.Errorf("AABB merge: %d vertices, want 7 (single shared corner is not merged)", len(aabb.positions))
+	}
+	if aabb.faceVerts[1][0] != aabb.faceVerts[0][1] || aabb.faceVerts[1][2] != aabb.faceVerts[0][2] {
+		t.Errorf("faces sharing an edge should reuse vertices: %v", aabb.faceVerts)
+	}
+}
+
+// Faces with different mirrorlist values never share a GPU vertex, even when
+// every other attribute matches.
+func TestBuildExpandedMeshMirrorListSplitsVertices(t *testing.T) {
+	mesh := &MeshData{
+		Verts:  []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}},
+		TVerts: []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}},
+		Faces: []Face{
+			{Verts: [3]int32{0, 1, 2}, UVs: [3]int32{0, 1, 2}},
+			{Verts: [3]int32{0, 2, 3}, UVs: [3]int32{0, 2, 3}},
+		},
+	}
+	merged, err := buildExpandedMesh(mesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merged.positions) != 4 {
+		t.Fatalf("without mirrorlist: %d vertices, want 4", len(merged.positions))
+	}
+	mesh.MirrorList = []int32{0, 1}
+	split, err := buildExpandedMesh(mesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(split.positions) != 6 {
+		t.Fatalf("with differing mirrorlist: %d vertices, want 6 (the two shared corners split)", len(split.positions))
+	}
+	// Only the low byte counts.
+	mesh.MirrorList = []int32{1, 257}
+	same, _ := buildExpandedMesh(mesh)
+	if len(same.positions) != 4 {
+		t.Errorf("values 1 and 257 share a low byte: %d vertices, want 4", len(same.positions))
+	}
+}
+
+func TestMirrorListASCIIRoundTrip(t *testing.T) {
+	src := `newmodel mirrortest
+setsupermodel mirrortest NULL
+classification PLACEABLE
+setanimationscale 1.00
+beginmodelgeom mirrortest
+  node dummy mirrortest
+    parent NULL
+  endnode
+  node trimesh m
+    parent mirrortest
+    bitmap NULL
+    render 1
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 0 0 0
+      0 2 3 1 0 0 0 0
+    mirrorlist 2
+      0
+      1
+  endnode
+endmodelgeom
+donemodel mirrortest
+`
+	m := mustParseASCII(t, src)
+	mesh := m.FindNode("m").Mesh
+	if len(mesh.MirrorList) != 2 || mesh.MirrorList[0] != 0 || mesh.MirrorList[1] != 1 {
+		t.Fatalf("parsed MirrorList = %v, want [0 1]", mesh.MirrorList)
+	}
+	var out strings.Builder
+	if err := Write(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "mirrorlist 2") {
+		t.Errorf("writer dropped mirrorlist:\n%s", out.String())
+	}
+	back := mustParseASCII(t, out.String())
+	if got := back.FindNode("m").Mesh.MirrorList; len(got) != 2 || got[1] != 1 {
+		t.Errorf("round-tripped MirrorList = %v", got)
 	}
 }

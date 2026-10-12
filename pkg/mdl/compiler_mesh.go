@@ -5,20 +5,17 @@ package mdl
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
-// vertKey is a bit-exact key for vertex deduplication.
-// Using uint32 bit patterns avoids float comparison ambiguity.
-//
-// The game compiler splits at material and smoothing-group boundaries
-// even when those values would otherwise share a GPU vertex with the
-// same position/UV/normal/color. We must include them in the dedup key
-// to match the game's vertex count exactly. Without these, multi-
-// material meshes (e.g. character body parts with 4-6 material indices)
-// over-merge by 30-50%, which then perturbs Mikktspace tangents at
-// material/SG boundaries and is the dominant cause of the ~1-3% bad-
-// alignment corners observed in the oracle suite.
+// vertKey is the dedup key for GPU vertices. It mirrors the game's
+// NodeVertex::operator== (and the Skin/Dangly subclass comparisons): two face
+// corners share a GPU vertex when position, UV0-3, normal and color all match,
+// plus the bone influences on skin meshes and the constraint on dangly
+// meshes. Material and smoothing group are deliberately NOT part of it: the
+// game merges across both, and the oracle fixtures compiled by EE only match
+// when we do too. Floats are compared by value (-0 == +0), via f32bits.
 type vertKey struct {
 	px, py, pz     uint32 // position bits
 	ux, uy         uint32 // UV0 bits
@@ -27,8 +24,7 @@ type vertKey struct {
 	u3x, u3y       uint32 // UV3 bits
 	nx, ny, nz     uint32 // normal bits
 	cr, cg, cb     uint32 // color bits
-	mat            int32  // face material index
-	sg             int32  // face smoothing group
+	mirror         uint8  // face's mirrorlist value (low byte)
 	skin           string // skinmesh: bone names that influence the vertex
 	dangly         uint32 // danglymesh: constraint bits
 }
@@ -68,7 +64,10 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// Build expanded vertex data (one GPU vertex per face-vertex reference).
 	// The game drops degenerate faces from every mesh except AABB walkmeshes,
 	// whose authored tree indexes faces by position.
-	opts := expandOpts{stripDegenerate: n == nil || n.Aabb == nil}
+	opts := expandOpts{
+		stripDegenerate: n == nil || n.Aabb == nil,
+		aabbMerge:       n != nil && n.Aabb != nil,
+	}
 	if n != nil {
 		opts.skinKeys = skinMergeKeys(n.Skin)
 		opts.danglyKeys = n.Dangly
@@ -85,7 +84,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// real MDX pointer or leave -1 ("not present"). Generation needs the
 	// expanded mesh's positions, normals, and UV0 — meshes without UVs
 	// (e.g. AABB walkmesh) keep both pointers at -1.
-	tangentsOut, bitangentsOut := resolveTangents(mesh, &expanded, isNormalMapped(mesh, c.resourceDirs))
+	tangentsOut, handednessOut := resolveTangents(mesh, &expanded, isNormalMapped(mesh, c.resourceDirs), n != nil && n.AnimMesh != nil)
 
 	// uint32 p_func1, p_func2 (8 bytes) — engine fills at load
 	c.core.zeros(8)
@@ -331,7 +330,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// Write a slice of Vec3 vertex attributes to the volatile MDX block and
 	// patch the corresponding header pointer. Mirrors the writeUVs closure
 	// above; centralising it keeps the guard semantics consistent across
-	// normals, tangents, and bitangents.
+	// normals and tangents.
 	writeVec3Stream := func(data []Vec3, ptrPos int) {
 		if len(data) == 0 || ptrPos < 0 {
 			return
@@ -395,30 +394,9 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 		}
 		c.core.patchU32(ptrPos, uint32(start))
 	}
-	writeFloatStream(handednessOf(expanded.normals, tangentsOut, bitangentsOut), mdxHandednessPtrPos)
+	writeFloatStream(handednessOut, mdxHandednessPtrPos)
 
 	return
-}
-
-// handednessOf reduces a tangent/bitangent basis to the per-vertex sign the
-// binary format stores: +1 when the bitangent matches cross(normal, tangent),
-// -1 when it is mirrored (a flipped UV chart). Returns nil when there is no
-// basis to describe, so the caller leaves the token unset.
-func handednessOf(normals, tangents, bitangents []Vec3) []float32 {
-	if len(tangents) == 0 {
-		return nil
-	}
-	out := make([]float32, len(tangents))
-	for i := range tangents {
-		w := float32(1)
-		if i < len(normals) && i < len(bitangents) {
-			if vecDot(vecCross(normals[i], tangents[i]), bitangents[i]) < 0 {
-				w = -1
-			}
-		}
-		out[i] = w
-	}
-	return out
 }
 
 // writeMeshFaceData writes the face array to core and patches the faces pointer.
@@ -431,6 +409,7 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 	facesOff := int32(c.core.len())
 	c.core.patchU32(exp.facesPtrPos, uint32(facesOff))
 
+	adjacency := buildFaceAdjacency(mesh.Faces, len(exp.faceVerts))
 	for k, fi := range exp.faceSrc {
 		face := mesh.Faces[fi]
 		faceNormal := face.Normal
@@ -454,9 +433,9 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 		c.core.vec3(faceNormal)
 		c.core.f32le(dist)
 		c.core.i32le(face.Material)
-		c.core.u16le(0xFFFF)
-		c.core.u16le(0xFFFF)
-		c.core.u16le(0xFFFF)
+		c.core.u16le(adjacency[k][0])
+		c.core.u16le(adjacency[k][1])
+		c.core.u16le(adjacency[k][2])
 		c.core.u16le(exp.faceVerts[k][0])
 		c.core.u16le(exp.faceVerts[k][1])
 		c.core.u16le(exp.faceVerts[k][2])
@@ -541,6 +520,17 @@ type expandOpts struct {
 	// danglyKeys supplies per-vertex constraints, which the game also
 	// compares when merging.
 	danglyKeys *DanglyData
+	// aabbMerge selects the game's AABB-node merge: a corner joins an
+	// existing vertex only through an earlier face that has at least two
+	// equal corners, and the first such face wins. Every other mesh type
+	// merges against the whole vertex list.
+	aabbMerge bool
+}
+
+// posBits returns a vertex position as float bits, with -0 folded into +0 so
+// it groups positions the same way vertKey compares them.
+func posBits(p Vec3) [3]uint32 {
+	return [3]uint32{f32bits(p.X), f32bits(p.Y), f32bits(p.Z)}
 }
 
 // skinMergeKeys builds the per-vertex string that decides whether two skin
@@ -595,10 +585,54 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 	if hasUV2 { exp.texStages = 3 }
 	if hasUV3 { exp.texStages = 4 }
 
+	// expCorner is one face corner with everything needed to add it as a GPU
+	// vertex and to compare it with existing ones.
+	type expCorner struct {
+		key                         vertKey
+		vertIdx                     int
+		pos, uv, uv1, uv2, uv3, nor Vec3
+		col                         Vec3
+	}
+
+	var vkeys []vertKey // key of each GPU vertex, same order as exp.positions
+	addVertex := func(c expCorner) (uint16, error) {
+		if len(exp.positions) >= math.MaxUint16 {
+			return 0, fmt.Errorf("mesh exceeds 65535 unique GPU vertices (%d); split the mesh", len(exp.positions))
+		}
+		idx := uint16(len(exp.positions))
+		vkeys = append(vkeys, c.key)
+		exp.positions = append(exp.positions, c.pos)
+		exp.origVert = append(exp.origVert, int32(c.vertIdx))
+		if hasUV      { exp.uvs  = append(exp.uvs,  c.uv)  }
+		if hasUV1     { exp.uvs1 = append(exp.uvs1, c.uv1) }
+		if hasUV2     { exp.uvs2 = append(exp.uvs2, c.uv2) }
+		if hasUV3     { exp.uvs3 = append(exp.uvs3, c.uv3) }
+		if hasNormals { exp.normals = append(exp.normals, c.nor) }
+		if hasColors  { exp.colors  = append(exp.colors,  c.col) }
+		return idx, nil
+	}
+
+	// Global merge (every mesh type but AABB): the first existing vertex that
+	// compares equal wins.
 	cache := make(map[vertKey]uint16, len(mesh.Faces)*3)
 
+	// AABB merge: see resolveAABB below.
+	var (
+		allFaces [][3]uint16     // GPU indices of every face processed so far
+		posFaces map[[3]uint32][]int // position bits -> earlier faces touching it, ascending
+	)
+	if opts.aabbMerge {
+		posFaces = make(map[[3]uint32][]int, len(mesh.Faces))
+	}
+
+	var mirror uint8
 	for fi, face := range mesh.Faces {
-		var corners [3]uint16
+		// The game reads the face's mirrorlist value when the list exists and
+		// otherwise keeps the previous face's (0 to start with).
+		if fi < len(mesh.MirrorList) {
+			mirror = uint8(mesh.MirrorList[fi])
+		}
+		var cs [3]expCorner
 		for vi := 0; vi < 3; vi++ {
 			vertIdx := int(face.Verts[vi])
 			uvIdx   := int(face.UVs[vi])
@@ -645,33 +679,90 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 				u3x: f32bits(uv3.X), u3y: f32bits(uv3.Y),
 				nx: f32bits(nor.X), ny: f32bits(nor.Y), nz: f32bits(nor.Z),
 				cr: f32bits(col.X), cg: f32bits(col.Y), cb: f32bits(col.Z),
-				mat: face.Material,
-				sg:  face.SmoothGroup,
 			}
+			key.mirror = mirror
 			if vertIdx >= 0 && vertIdx < len(opts.skinKeys) {
 				key.skin = opts.skinKeys[vertIdx]
 			}
 			if d := opts.danglyKeys; d != nil && vertIdx >= 0 && vertIdx < len(d.Constraints) {
 				key.dangly = f32bits(d.Constraints[vertIdx])
 			}
+			cs[vi] = expCorner{key: key, vertIdx: vertIdx, pos: pos, uv: uv, uv1: uv1, uv2: uv2, uv3: uv3, nor: nor, col: col}
+		}
 
-			gpuIdx, ok := cache[key]
-			if !ok {
-			if len(exp.positions) >= math.MaxUint16 {
-				return exp, fmt.Errorf("mesh exceeds 65535 unique GPU vertices (%d); split the mesh", len(exp.positions))
-				}
-				gpuIdx = uint16(len(exp.positions))
-				cache[key] = gpuIdx
-				exp.positions = append(exp.positions, pos)
-				exp.origVert = append(exp.origVert, int32(vertIdx))
-				if hasUV      { exp.uvs  = append(exp.uvs,  uv)  }
-				if hasUV1     { exp.uvs1 = append(exp.uvs1, uv1) }
-				if hasUV2     { exp.uvs2 = append(exp.uvs2, uv2) }
-				if hasUV3     { exp.uvs3 = append(exp.uvs3, uv3) }
-				if hasNormals { exp.normals = append(exp.normals, nor) }
-				if hasColors  { exp.colors  = append(exp.colors,  col) }
+		var corners [3]uint16
+		if opts.aabbMerge {
+			// Mirror the game's AABB InternalGenVertices. Candidates are the
+			// earlier faces that touch one of this face's positions, in
+			// ascending order: faces touching none of them can't match.
+			var cand []int
+			for vi := 0; vi < 3; vi++ {
+				cand = append(cand, posFaces[posBits(cs[vi].pos)]...)
 			}
-			corners[vi] = gpuIdx
+			sort.Ints(cand)
+			var match [3]int
+			resolved := false
+			prev := -1
+			for _, j := range cand {
+				if j == prev {
+					continue
+				}
+				prev = j
+				count := 0
+				for k := 0; k < 3; k++ {
+					match[k] = -1
+					for c := 0; c < 3; c++ {
+						if vkeys[allFaces[j][c]] == cs[k].key {
+							match[k] = c
+							count++
+							break
+						}
+					}
+				}
+				if count > 1 {
+					for k := 0; k < 3; k++ {
+						if match[k] < 0 {
+							idx, err := addVertex(cs[k])
+							if err != nil {
+								return exp, err
+							}
+							corners[k] = idx
+						} else {
+							corners[k] = allFaces[j][match[k]]
+						}
+					}
+					resolved = true
+					break
+				}
+			}
+			if !resolved {
+				for k := 0; k < 3; k++ {
+					idx, err := addVertex(cs[k])
+					if err != nil {
+						return exp, err
+					}
+					corners[k] = idx
+				}
+			}
+			allFaces = append(allFaces, corners)
+			for vi := 0; vi < 3; vi++ {
+				pb := posBits(cs[vi].pos)
+				if l := posFaces[pb]; len(l) == 0 || l[len(l)-1] != fi {
+					posFaces[pb] = append(posFaces[pb], fi)
+				}
+			}
+		} else {
+			for vi := 0; vi < 3; vi++ {
+				gpuIdx, ok := cache[cs[vi].key]
+				if !ok {
+					var err error
+					if gpuIdx, err = addVertex(cs[vi]); err != nil {
+						return exp, err
+					}
+					cache[cs[vi].key] = gpuIdx
+				}
+				corners[vi] = gpuIdx
+			}
 		}
 		if opts.stripDegenerate && (corners[0] == corners[1] || corners[1] == corners[2] || corners[0] == corners[2]) {
 			continue
@@ -721,4 +812,52 @@ func computeBounds(verts []Vec3) (bmin, bmax, center Vec3, radius float32) {
 		}
 	}
 	return
+}
+
+// buildFaceAdjacency ports the game's MdlNodeTriMesh::BuildNeighborLists.
+// Entry [i][k] is the lowest-numbered other face that shares the edge from
+// corner k to corner k+1 of face i, or 0xFFFF when there is none. Faces match
+// on source position indices (the ASCII verts), not on coordinates or GPU
+// vertices, and an edge matches in either direction.
+//
+// The game runs this after degenerate faces were removed, but still reads the
+// source face list by position: row i describes source face i, and only the
+// first n source faces are searched, where n is the surviving face count. So
+// on a mesh that lost faces the numbers refer to the source numbering, not
+// the surviving faces. We reproduce that so the bytes match.
+func buildFaceAdjacency(src []Face, n int) [][3]uint16 {
+	if n > len(src) {
+		n = len(src)
+	}
+	type edge struct{ a, b int32 }
+	norm := func(a, b int32) edge {
+		if a > b {
+			a, b = b, a
+		}
+		return edge{a, b}
+	}
+	byEdge := make(map[edge][]int, n*3)
+	for i := 0; i < n; i++ {
+		v := src[i].Verts
+		for k := 0; k < 3; k++ {
+			e := norm(v[k], v[(k+1)%3])
+			if l := byEdge[e]; len(l) == 0 || l[len(l)-1] != i {
+				byEdge[e] = append(byEdge[e], i)
+			}
+		}
+	}
+	out := make([][3]uint16, n)
+	for i := 0; i < n; i++ {
+		v := src[i].Verts
+		for k := 0; k < 3; k++ {
+			out[i][k] = 0xFFFF
+			for _, j := range byEdge[norm(v[k], v[(k+1)%3])] {
+				if j != i {
+					out[i][k] = uint16(j)
+					break
+				}
+			}
+		}
+	}
+	return out
 }

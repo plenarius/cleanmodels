@@ -87,13 +87,14 @@ func materialRenderHint(ref *resourceRef) string {
 	return hint
 }
 
-// isNormalMapped reports whether the mesh's effective render hint is
-// NormalAndSpecMapped: its own hint, or its material's when dirs can find one.
+// isNormalMapped reports whether the mesh's effective render hint is one the
+// game generates tangents for (NormalAndSpecMapped or NormalTangents): its own
+// hint, or its material's when dirs can find one.
 func isNormalMapped(mesh *MeshData, dirs []string) bool {
 	if mesh == nil {
 		return false
 	}
-	if mesh.RenderHint == "NormalAndSpecMapped" {
+	if hintWantsTangents(mesh.RenderHint) {
 		return true
 	}
 	if len(dirs) == 0 {
@@ -101,7 +102,7 @@ func isNormalMapped(mesh *MeshData, dirs []string) bool {
 	}
 	for _, name := range []string{mesh.MaterialName, mesh.Bitmap} {
 		if ref := findMaterial(name, dirs); ref != nil {
-			return materialRenderHint(ref) == "normalandspecmapped"
+			return hintWantsTangents(materialRenderHint(ref))
 		}
 	}
 	return false

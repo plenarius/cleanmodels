@@ -77,7 +77,7 @@ func generateNormals(mesh *MeshData) {
 	cornerNormals := make([][3]Vec3, nFaces)
 	for fi, f := range mesh.Faces {
 		sg := f.SmoothGroup
-		own := vecNormalize32(faceNormals[fi])
+		own := gameNormalize(faceNormals[fi])
 		for vi := 0; vi < 3; vi++ {
 			vertIdx := int(f.Verts[vi])
 			if vertIdx < 0 || vertIdx >= nVerts {
@@ -109,11 +109,9 @@ func generateNormals(mesh *MeshData) {
 			}
 			switch {
 			case acc.X*acc.X+acc.Y*acc.Y+acc.Z*acc.Z != 0:
-				cornerNormals[fi][vi] = vecNormalize32(acc)
-			case own != (Vec3{}):
-				cornerNormals[fi][vi] = own
+				cornerNormals[fi][vi] = gameNormalize(acc)
 			default:
-				cornerNormals[fi][vi] = Vec3{Z: 1}
+				cornerNormals[fi][vi] = own
 			}
 		}
 	}
@@ -157,12 +155,24 @@ func cornerAt(f Face, v int) int {
 	return 0
 }
 
-// vecNormalize32 returns v scaled to unit length, or the zero vector when v
-// has no length.
-func vecNormalize32(v Vec3) Vec3 {
-	l := math.Sqrt(float64(v.X*v.X + v.Y*v.Y + v.Z*v.Z))
-	if l == 0 {
-		return Vec3{}
+// gameNormalize ports the game's Vector::Normalize bit for bit, in float32:
+// a vector whose squared length is already within 1e-5 of 1 is left alone, a
+// zero vector becomes (1, 0, 0), and anything else is scaled by
+// sqrt(1/lengthSquared). The shortcut matters: it keeps nearly-unit normals
+// from picking up a rounding step, which would split vertices the game keeps
+// whole (or merge ones it keeps apart).
+func gameNormalize(v Vec3) Vec3 {
+	l := float32(v.X*v.X) + float32(v.Y*v.Y)
+	l += float32(v.Z * v.Z)
+	if l == 1 {
+		return v
 	}
-	return Vec3{X: float32(float64(v.X) / l), Y: float32(float64(v.Y) / l), Z: float32(float64(v.Z) / l)}
+	if l >= 0.9999899864196777 && l <= 1.0000100135803223 {
+		return v
+	}
+	if l == 0 {
+		return Vec3{X: 1}
+	}
+	s := float32(math.Sqrt(float64(float32(1) / l)))
+	return Vec3{X: v.X * s, Y: v.Y * s, Z: v.Z * s}
 }
