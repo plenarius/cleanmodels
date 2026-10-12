@@ -30,7 +30,14 @@ type vertKey struct {
 	sg             int32  // face smoothing group
 }
 
-func f32bits(f float32) uint32 { return math.Float32bits(f) }
+// f32bits maps a float to its dedup-key bits. The game compares vertex
+// attributes with float ==, so -0 and +0 must hash alike.
+func f32bits(f float32) uint32 {
+	if f == 0 {
+		return 0
+	}
+	return math.Float32bits(f)
+}
 
 // writeMeshHeaderFull writes the full 512-byte header_mesh and any inline data
 // (faces array), then appends vertex data to the MDX (volatile) buffer.

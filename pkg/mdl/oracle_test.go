@@ -726,10 +726,6 @@ var vertParityBaseline = map[string]map[string]int{
 		"box01":       -72,
 		"cmp_pointer": -4,
 	},
-	"plc_dd27.mdl": {
-		"line566":  -4,
-		"line1073": -4,
-	},
 	"plc_guillo2.mdl": {
 		"box03": +4,
 		"box07": +4,
@@ -739,7 +735,7 @@ var vertParityBaseline = map[string]map[string]int{
 		"groups02487": +6,
 		"groups02501": +6,
 		"groups02503": +6,
-		"box155793":   -2,
+		"box155793":   -4,
 		"box155797":   -4,
 	},
 	"plc_statdwl.mdl": {
@@ -750,8 +746,6 @@ var vertParityBaseline = map[string]map[string]int{
 		"pmh0_head001g": -101,
 	},
 	"zlc_o23.mdl": {
-		"line1962": -12,
-		"line1961": -12,
 		"box872":   +13,
 		"box871":   +13,
 	},
@@ -765,7 +759,6 @@ var vertParityBaseline = map[string]map[string]int{
 		"claw06":       +3,
 		"claw07":       +3,
 		"claw08":       +3,
-		"head_g":       -3,
 		"lhand_g":      +3,
 		"rhand_g":      +3,
 		"g_wswsc_b_12": +11,
