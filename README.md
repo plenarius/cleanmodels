@@ -144,7 +144,19 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 ```bash
 cleanmodels compile plc_torch.mdl plc_torch.mdl
 cleanmodels compile -r models/ compiled/
+
+# Body-part models and normal-mapped tiles: let the compiler see the game's data
+cleanmodels compile --game-dir "/path/to/Neverwinter Nights" -r parts/ compiled/
+cleanmodels compile --resource-dir my_haks/ --resource-dir ts_pbr.hak -r tiles/ compiled/
 ```
+
+| Flag | Description |
+|---|---|
+| `--game-dir DIR` | NWN install directory (the one with `data/nwn_base.key`). Stock supermodels and materials are read straight from its BIF files. Defaults to `$NWN_ROOT`. |
+| `--resource-dir PATH` | Extra folder, or `.hak`/`.erf`/`.mod` archive, searched for supermodels and for `.mtr` materials (repeatable). The input file's own folder is always searched. |
+| `--supermodel-dir DIR` | Extra folder searched for the model's supermodel (repeatable). |
+
+A model's node numbers follow its supermodel, and a mesh whose material is normal-mapped gets tangents baked in, so the compiler needs to find both. If a supermodel can't be found the compile still succeeds and a warning says so. Without materials in reach, only a mesh's own `renderhint` decides about tangents.
 
 ### decompile — binary to ASCII MDL
 
@@ -208,7 +220,7 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
 
-**Compile/Decompile** — Convert between ASCII and binary MDL formats. The binary compiler is checked against the NWN:EE game compiler on the engine-compiled models in the test suite; known differences are listed in `RELEASE-v4.md`.
+**Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
 
 ## Specifications
 
