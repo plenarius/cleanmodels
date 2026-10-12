@@ -1,5 +1,6 @@
 // compiler_tangents_test.go — unit and roundtrip tests for the binary
-// compiler's Mikktspace tangent generation. See compiler_tangents.go.
+// compiler's tangent generation, a port of the game's
+// CalculateTangentSpaceBasis. See compiler_tangents.go.
 package mdl
 
 import (
@@ -10,8 +11,8 @@ import (
 
 // TestGenerateTangentsSimpleQuad covers the canonical case: a flat XY-plane
 // quad whose UV U-axis aligns with world +X and UV V-axis with world +Y.
-// Every per-vertex tangent must point along +X (the UV U-axis) and every
-// bitangent must point along +Y, with W=+1 handedness.
+// Every per-vertex tangent must point along +X (the UV U-axis) with W=+1
+// handedness, so the implied bitangent cross(n, t)*w points along +Y.
 func TestGenerateTangentsSimpleQuad(t *testing.T) {
 	mesh := &MeshData{
 		Verts: []Vec3{
@@ -43,12 +44,10 @@ func TestGenerateTangentsSimpleQuad(t *testing.T) {
 		t.Fatalf("buildExpandedMesh: %v", err)
 	}
 
-	tangents, bitangents := generateTangents(&exp)
-	if len(tangents) != len(exp.positions) {
-		t.Fatalf("tangents len=%d want %d", len(tangents), len(exp.positions))
-	}
-	if len(bitangents) != len(exp.positions) {
-		t.Fatalf("bitangents len=%d want %d", len(bitangents), len(exp.positions))
+	tangents, handed := generateTangents(&exp, false)
+	if len(tangents) != len(exp.positions) || len(handed) != len(exp.positions) {
+		t.Fatalf("got %d tangents and %d handedness values for %d vertices",
+			len(tangents), len(handed), len(exp.positions))
 	}
 
 	const eps = 1e-5
@@ -62,16 +61,12 @@ func TestGenerateTangentsSimpleQuad(t *testing.T) {
 		if math.Abs(float64(tang.Z)) > eps {
 			t.Errorf("tangent[%d].Z = %g, want ~0", i, tang.Z)
 		}
-	}
-	for i, bt := range bitangents {
-		if math.Abs(float64(bt.X)) > eps {
-			t.Errorf("bitangent[%d].X = %g, want ~0", i, bt.X)
+		if handed[i] != 1 {
+			t.Errorf("handedness[%d] = %g, want +1", i, handed[i])
 		}
+		bt := vecScale(vecCross(exp.normals[i], tang), handed[i])
 		if math.Abs(float64(bt.Y)-1.0) > eps {
 			t.Errorf("bitangent[%d].Y = %g, want ~1", i, bt.Y)
-		}
-		if math.Abs(float64(bt.Z)) > eps {
-			t.Errorf("bitangent[%d].Z = %g, want ~0", i, bt.Z)
 		}
 	}
 }
@@ -94,18 +89,18 @@ func TestGenerateTangentsNoUVs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildExpandedMesh: %v", err)
 	}
-	tangents, bitangents := generateTangents(&exp)
-	if tangents != nil || bitangents != nil {
-		t.Fatalf("expected nil tangents/bitangents without UVs, got %d/%d",
-			len(tangents), len(bitangents))
+	tangents, handed := generateTangents(&exp, false)
+	if tangents != nil || handed != nil {
+		t.Fatalf("expected nil tangents/handedness without UVs, got %d/%d",
+			len(tangents), len(handed))
 	}
 }
 
 // TestGenerateTangentsDegenerateUVs ensures a triangle whose UV mapping has
 // zero area (collinear UVs) doesn't poison the per-vertex sums with NaN/Inf.
-// Two of the three UVs are identical → deltaUV2 = (0, 0) → denom = 0 → that
-// triangle's contribution must be skipped, and the other valid triangle in
-// the strip should still produce a finite, unit-length tangent.
+// The game does not skip such a triangle: it derives a tangent from the
+// vertex normals instead (see TestGenerateTangentsZeroDeterminantUsesNormals),
+// so every output must still be finite.
 func TestGenerateTangentsDegenerateUVs(t *testing.T) {
 	mesh := &MeshData{
 		Verts: []Vec3{
@@ -138,9 +133,9 @@ func TestGenerateTangentsDegenerateUVs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildExpandedMesh: %v", err)
 	}
-	tangents, bitangents := generateTangents(&exp)
-	if tangents == nil || bitangents == nil {
-		t.Fatalf("expected tangents/bitangents from healthy triangle")
+	tangents, handed := generateTangents(&exp, false)
+	if tangents == nil || handed == nil {
+		t.Fatalf("expected tangents/handedness from healthy triangle")
 	}
 	if len(tangents) != len(exp.positions) {
 		t.Fatalf("tangents len=%d want %d", len(tangents), len(exp.positions))
@@ -150,9 +145,9 @@ func TestGenerateTangentsDegenerateUVs(t *testing.T) {
 			t.Errorf("tangent[%d] not finite: %+v", i, v)
 		}
 	}
-	for i, v := range bitangents {
-		if isBadFloat(v.X) || isBadFloat(v.Y) || isBadFloat(v.Z) {
-			t.Errorf("bitangent[%d] not finite: %+v", i, v)
+	for i, w := range handed {
+		if isBadFloat(w) {
+			t.Errorf("handedness[%d] not finite: %g", i, w)
 		}
 	}
 }
@@ -527,5 +522,99 @@ func TestCompareNodeTangents(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func tangentMesh(uvs []Vec3, faces []Face) *MeshData {
+	return &MeshData{
+		Verts:   []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}},
+		TVerts:  uvs,
+		Normals: []Vec3{{0, 0, 1}, {0, 0, 1}, {0, 0, 1}, {0, 0, 1}},
+		Faces:   faces,
+	}
+}
+
+// A triangle with a zero UV determinant gets a tangent from its vertex
+// normals: the sum of the normals / 3 with components rotated (y, z, x),
+// handedness +1. The game does this instead of skipping the triangle.
+func TestGenerateTangentsZeroDeterminantUsesNormals(t *testing.T) {
+	mesh := &MeshData{
+		Verts:   []Vec3{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}},
+		TVerts:  []Vec3{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}},
+		Normals: []Vec3{{0, 1, 0}, {0, 1, 0}, {0, 1, 0}},
+		Faces:   []Face{{Verts: [3]int32{0, 1, 2}, UVs: [3]int32{0, 1, 2}}},
+	}
+	exp, err := buildExpandedMesh(mesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tangents, handed := generateTangents(&exp, false)
+	// Normals sum to (0,3,0); /3 and rotated (y,z,x) gives (1,0,0), which is
+	// already perpendicular to the +Y normal.
+	if len(tangents) != 3 || math.Abs(float64(tangents[0].X)-1) > 1e-5 {
+		t.Fatalf("tangents = %v, want +X", tangents)
+	}
+	for i, w := range handed {
+		if w != 1 {
+			t.Errorf("handedness[%d] = %g, want +1", i, w)
+		}
+	}
+}
+
+// Triangles that disagree on handedness at a shared vertex split it: the
+// mirrored triangle gets a clone with its own tangent and handedness, and
+// its index is rewritten.
+func TestGenerateTangentsClonesVertexAtMirroredUVs(t *testing.T) {
+	// Face 0 has a normal UV layout; face 1 reuses vertices 0 and 2 but
+	// mirrors U, flipping the determinant sign. Distinct UV indices keep the
+	// shared corners as separate merge keys only where UVs differ, so use
+	// identical UVs at vertex 0 and 2 to force them to merge.
+	mesh := tangentMesh(
+		[]Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}},
+		[]Face{
+			{Verts: [3]int32{0, 1, 2}, UVs: [3]int32{0, 1, 2}},
+			{Verts: [3]int32{0, 2, 3}, UVs: [3]int32{0, 2, 1}}, // vertex 3 takes UV 1: mirrored
+		},
+	)
+	exp, err := buildExpandedMesh(mesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(exp.positions)
+	tangents, handed := generateTangents(&exp, false)
+	if len(exp.positions) <= before {
+		t.Fatalf("expected a cloned vertex, still %d vertices", len(exp.positions))
+	}
+	if len(tangents) != len(exp.positions) || len(handed) != len(exp.positions) || len(exp.normals) != len(exp.positions) || len(exp.origVert) != len(exp.positions) {
+		t.Fatalf("clone must extend every per-vertex array: t=%d h=%d n=%d o=%d v=%d",
+			len(tangents), len(handed), len(exp.normals), len(exp.origVert), len(exp.positions))
+	}
+	seenPlus, seenMinus := false, false
+	for _, w := range handed {
+		seenPlus = seenPlus || w == 1
+		seenMinus = seenMinus || w == -1
+	}
+	if !seenPlus || !seenMinus {
+		t.Errorf("expected both handedness values, got %v", handed)
+	}
+	for f, fv := range exp.faceVerts {
+		for _, v := range fv {
+			if int(v) >= len(exp.positions) {
+				t.Errorf("face %d index %d out of range", f, v)
+			}
+		}
+	}
+}
+
+// RenderHint decides whether tangents are generated: both normal-mapped hints
+// qualify, case-insensitively; anything else does not.
+func TestHintWantsTangents(t *testing.T) {
+	for hint, want := range map[string]bool{
+		"NormalAndSpecMapped": true, "normalandspecmapped": true, "NormalTangents": true,
+		"NONE": false, "": false, "Foo": false,
+	} {
+		if got := hintWantsTangents(hint); got != want {
+			t.Errorf("hintWantsTangents(%q) = %v, want %v", hint, got, want)
+		}
 	}
 }

@@ -90,6 +90,12 @@ type MeshData struct {
 	TexIndices2 [][3]int32
 	TexIndices3 [][3]int32
 
+	// MirrorList is the optional per-face "mirrorlist" field. The game uses
+	// each value's low byte as part of the vertex-merge key, so faces with
+	// different values never share a GPU vertex. It is not stored in
+	// binaries.
+	MirrorList []int32
+
 	Diffuse          Vec3
 	Ambient          Vec3
 	Specular         Vec3

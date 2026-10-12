@@ -615,6 +615,8 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 		p.parseCountedInt3(tokens, &mesh.TexIndices3)
 	case "multimaterial":
 		p.parseCountedStrings(tokens, &mesh.Multimaterial)
+	case "mirrorlist":
+		p.parseCountedInts(tokens, &mesh.MirrorList)
 	default:
 		return false
 	}
@@ -1403,6 +1405,14 @@ func (p *parser) parseCountedInt3(tokens []string, out *[][3]int32) {
 	}
 }
 
+func (p *parser) parseCountedInts(tokens []string, out *[]int32) {
+	if len(tokens) >= 2 {
+		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+			p.readIntList(out, int(count))
+		}
+	}
+}
+
 func (p *parser) parseCountedStrings(tokens []string, out *[]string) {
 	if len(tokens) >= 2 {
 		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
@@ -1475,6 +1485,25 @@ func (p *parser) readFaceList(out *[]Face, count int) {
 				UVs:         [3]int32{uv0, uv1, uv2},
 				Material:    mat,
 			})
+		}
+	}
+}
+
+func (p *parser) readIntList(out *[]int32, count int) {
+	if !p.trackAlloc(int64(count) * 4) {
+		p.errorf("allocation limit exceeded reading %d int entries", count)
+		return
+	}
+	for i := 0; i < count; i++ {
+		line, ok := p.nextLine()
+		if !ok {
+			break
+		}
+		tokens := tokenize(line)
+		if len(tokens) >= 1 {
+			if v, err := parseInt(tokens[0]); err == nil {
+				*out = append(*out, v)
+			}
 		}
 	}
 }
@@ -1872,7 +1901,7 @@ func validParamsForType(nodeType string) []string {
 		"tilefade", "rotatetexture", "lightmapped", "center",
 		"multimaterial", "verts", "faces", "tverts", "tverts1", "tverts2", "tverts3",
 		"texindices0", "texindices1", "texindices2", "texindices3",
-		"colors", "normals", "tangents",
+		"colors", "normals", "tangents", "mirrorlist",
 	}
 
 	switch nodeType {
