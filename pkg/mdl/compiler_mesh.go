@@ -420,15 +420,15 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 			e1 := Vec3{X: p2.X - p1.X, Y: p2.Y - p1.Y, Z: p2.Z - p1.Z}
 			e2 := Vec3{X: p3.X - p2.X, Y: p3.Y - p2.Y, Z: p3.Z - p2.Z}
 			n := Vec3{
-				X: e1.Y*e2.Z - e1.Z*e2.Y,
-				Y: e1.Z*e2.X - e1.X*e2.Z,
-				Z: e1.X*e2.Y - e1.Y*e2.X,
+				X: float32(e1.Y*e2.Z) - float32(e1.Z*e2.Y),
+				Y: float32(e1.Z*e2.X) - float32(e1.X*e2.Z),
+				Z: float32(e1.X*e2.Y) - float32(e1.Y*e2.X),
 			}
-			length := float32(math.Sqrt(float64(n.X*n.X + n.Y*n.Y + n.Z*n.Z)))
+			length := float32(math.Sqrt(float64(float32(n.X*n.X) + float32(n.Y*n.Y) + float32(n.Z*n.Z))))
 			if length > 1e-10 {
 				faceNormal = Vec3{X: n.X / length, Y: n.Y / length, Z: n.Z / length}
 			}
-			dist = -(faceNormal.X*p1.X + faceNormal.Y*p1.Y + faceNormal.Z*p1.Z)
+			dist = -(float32(faceNormal.X*p1.X) + float32(faceNormal.Y*p1.Y) + float32(faceNormal.Z*p1.Z))
 		}
 		c.core.vec3(faceNormal)
 		c.core.f32le(dist)
@@ -460,7 +460,7 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 }
 
 func clampByte(f float32) byte {
-	v := int(f*255.0 + 0.5)
+	v := int(float32(f*255.0) + 0.5)
 	if v < 0 {
 		return 0
 	}
@@ -806,7 +806,7 @@ func computeBounds(verts []Vec3) (bmin, bmax, center Vec3, radius float32) {
 		dx := v.X - center.X
 		dy := v.Y - center.Y
 		dz := v.Z - center.Z
-		r := float32(math.Sqrt(float64(dx*dx + dy*dy + dz*dz)))
+		r := float32(math.Sqrt(float64(float32(dx*dx) + float32(dy*dy) + float32(dz*dz))))
 		if r > radius {
 			radius = r
 		}

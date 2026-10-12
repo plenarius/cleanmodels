@@ -8,6 +8,14 @@ package mdl
 
 import "math"
 
+// A note on the float32(...) wrapped products in this file, compiler_tangents.go
+// and writeMeshFaceData: Go may fuse x*y + z into one fused multiply-add on
+// arm64 (Apple Silicon, including the macOS CI runners), which rounds once
+// instead of twice. The engine's x86 code rounds after every multiply, and a
+// one-ulp difference in a normal is enough to split or merge a GPU vertex. An
+// explicit float32 conversion is the language's way to forbid the fusion, so
+// keep them. The vertex-parity oracle test catches a regression on arm64.
+
 // generateNormals computes per-face-corner normals from face geometry and
 // smoothing groups. The result is stored in mesh.Normals indexed the same
 // way as mesh.Verts — but because different smoothing groups at the same
@@ -45,9 +53,9 @@ func generateNormals(mesh *MeshData) {
 		e1 := Vec3{X: p2.X - p1.X, Y: p2.Y - p1.Y, Z: p2.Z - p1.Z}
 		e2 := Vec3{X: p3.X - p2.X, Y: p3.Y - p2.Y, Z: p3.Z - p2.Z}
 		faceNormals[fi] = Vec3{
-			X: e1.Y*e2.Z - e1.Z*e2.Y,
-			Y: e1.Z*e2.X - e1.X*e2.Z,
-			Z: e1.X*e2.Y - e1.Y*e2.X,
+			X: float32(e1.Y*e2.Z) - float32(e1.Z*e2.Y),
+			Y: float32(e1.Z*e2.X) - float32(e1.X*e2.Z),
+			Z: float32(e1.X*e2.Y) - float32(e1.Y*e2.X),
 		}
 	}
 
@@ -92,7 +100,7 @@ func generateNormals(mesh *MeshData) {
 					}
 					if fj < fi {
 						cn := cornerNormals[fj][cornerAt(mesh.Faces[fj], vertIdx)]
-						dot := own.X*cn.X + own.Y*cn.Y + own.Z*cn.Z
+						dot := float32(own.X*cn.X) + float32(own.Y*cn.Y) + float32(own.Z*cn.Z)
 						if float64(dot) >= -0.99 {
 							cornerNormals[fi][vi] = cn
 							reused = true
@@ -108,7 +116,7 @@ func generateNormals(mesh *MeshData) {
 				continue
 			}
 			switch {
-			case acc.X*acc.X+acc.Y*acc.Y+acc.Z*acc.Z != 0:
+			case float32(acc.X*acc.X)+float32(acc.Y*acc.Y)+float32(acc.Z*acc.Z) != 0:
 				cornerNormals[fi][vi] = gameNormalize(acc)
 			default:
 				cornerNormals[fi][vi] = own
