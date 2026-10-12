@@ -2,7 +2,7 @@
 
 Static analysis only, from `nwmain-linux` (unstripped x86-64, Steam NWN:EE, 2026-10-11).
 Addresses are nm/file vaddrs. Ghidra shows them +0x100000 (PIE load base).
-Decompiles are in `/tmp/nwmain-out/*.c`. Project is `/tmp/nwmain-ghidra/proj`.
+Decompiles, the Ghidra project and the scripts live in `~/dev/nwn/nwmain-analysis/` (see its README).
 Status: CONFIRMED (read in code), UNVERIFIED (inferred or incomplete). Decision column is ours to fill in.
 
 ## Pipeline
