@@ -63,7 +63,7 @@ Compiling models that share a skeleton is faster too: each supermodel is parsed 
 - **Face adjacency.** The three neighbour numbers in each face record are filled in the way the engine fills them, instead of left empty. They match the engine's byte for byte on 60 nodes.
 - **Tangents.** Computed per triangle from the UV layout, with a new vertex split off where UV islands are mirrored, as in the engine. Against engine-compiled models the tangent directions agree at a mean alignment of 1.0000 on the core-game tiles (worst file 0.9974, down from a 0.969 floor).
 
-Checked against the engine's binaries and its decompiled code, and by the test suite. **Not yet tested in game.**
+Checked against the engine's binaries and its decompiled code, and by the test suite. Also checked in game on a castle tile (`tdc01_a01_03`, unchanged) and on test cards added to a floor tile: the tile renders pixel-identically with the old and new compilers, and back-to-back faces are lit like the engine's own compile of the same source instead of like an up-facing face.
 
 **Shadow default.** A trimesh, skin or danglymesh with no `shadow` line now casts shadows, as in the engine; walkmeshes still default to off.
 
