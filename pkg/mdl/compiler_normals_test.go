@@ -109,3 +109,44 @@ func TestDedupTreatsNegativeZeroAsZero(t *testing.T) {
 		t.Error("f32bits must still distinguish 1 and -1")
 	}
 }
+
+// A face with two corners that resolve to the same GPU vertex is dropped, as
+// the game does, but only when stripping is on (AABB walkmeshes keep theirs).
+// Verts 1 and 3 share coordinates, so face 1 (0,1,3) collapses to a line.
+func degenerateMesh() *MeshData {
+	return &MeshData{
+		Verts: []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 0, 0}},
+		Faces: []Face{
+			{Verts: [3]int32{0, 1, 2}, UVs: [3]int32{0, 1, 2}},
+			{Verts: [3]int32{0, 1, 3}, UVs: [3]int32{0, 1, 1}},
+			{Verts: [3]int32{0, 2, 1}, UVs: [3]int32{0, 2, 1}},
+		},
+		TVerts: []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}},
+	}
+}
+
+func TestBuildExpandedMeshStripsDegenerateFaces(t *testing.T) {
+	exp, err := buildExpandedMeshOpts(degenerateMesh(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exp.faceVerts) != 2 || len(exp.faceSrc) != 2 {
+		t.Fatalf("kept %d faces, want 2", len(exp.faceVerts))
+	}
+	if exp.faceSrc[0] != 0 || exp.faceSrc[1] != 2 {
+		t.Errorf("faceSrc = %v, want [0 2]", exp.faceSrc)
+	}
+}
+
+func TestBuildExpandedMeshKeepsDegenerateFacesWhenAsked(t *testing.T) {
+	exp, err := buildExpandedMeshOpts(degenerateMesh(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exp.faceVerts) != 3 {
+		t.Fatalf("kept %d faces, want 3", len(exp.faceVerts))
+	}
+	if exp.faceVerts[1][1] != exp.faceVerts[1][2] {
+		t.Errorf("degenerate face should share a vertex: %v", exp.faceVerts[1])
+	}
+}

@@ -63,7 +63,9 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// explicit color data. We match the game's behavior.
 
 	// Build expanded vertex data (one GPU vertex per face-vertex reference).
-	expanded, err := buildExpandedMesh(mesh)
+	// The game drops degenerate faces from every mesh except AABB walkmeshes,
+	// whose authored tree indexes faces by position.
+	expanded, err := buildExpandedMeshOpts(mesh, n == nil || n.Aabb == nil)
 	if err != nil {
 		c.err = err
 		c.writeEmptyMeshHeader()
@@ -82,8 +84,8 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 
 	// array_definition faces {offset, count, alloc}
 	facesPtrPos := c.core.placeholder() // will be patched after faces are written
-	c.core.u32le(uint32(len(mesh.Faces)))
-	c.core.u32le(uint32(len(mesh.Faces)))
+	c.core.u32le(uint32(len(expanded.faceVerts)))
+	c.core.u32le(uint32(len(expanded.faceVerts)))
 
 	// bmin, bmax (24 bytes)
 	bmin, bmax, center, radius := computeBounds(expanded.positions)
@@ -153,7 +155,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// is written (writeMeshFaceData, after all type-specific headers), so
 	// these two are placeholders patched there — mirroring how facesPtrPos
 	// is deferred already.
-	if len(mesh.Faces) > 0 {
+	if len(expanded.faceVerts) > 0 {
 		expanded.indexCountListPtrPos = c.core.placeholder()
 		c.core.u32le(1) // count
 		c.core.u32le(1) // alloc
@@ -421,7 +423,8 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 	facesOff := int32(c.core.len())
 	c.core.patchU32(exp.facesPtrPos, uint32(facesOff))
 
-	for fi, face := range mesh.Faces {
+	for k, fi := range exp.faceSrc {
+		face := mesh.Faces[fi]
 		faceNormal := face.Normal
 		var dist float32
 		v0i, v1i, v2i := int(face.Verts[0]), int(face.Verts[1]), int(face.Verts[2])
@@ -446,9 +449,9 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 		c.core.u16le(0xFFFF)
 		c.core.u16le(0xFFFF)
 		c.core.u16le(0xFFFF)
-		c.core.u16le(exp.faceVerts[fi][0])
-		c.core.u16le(exp.faceVerts[fi][1])
-		c.core.u16le(exp.faceVerts[fi][2])
+		c.core.u16le(exp.faceVerts[k][0])
+		c.core.u16le(exp.faceVerts[k][1])
+		c.core.u16le(exp.faceVerts[k][2])
 	}
 
 	// Point vertexindicescount/vertextokenindices at the GPU index buffer.
@@ -460,7 +463,7 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 	// nothing — issue #12's actual root cause.
 	if exp.indexCountListPtrPos >= 0 && exp.indexBufOff >= 0 {
 		countElemOff := c.core.len()
-		c.core.u32le(uint32(len(mesh.Faces) * 3))
+		c.core.u32le(uint32(len(exp.faceVerts) * 3))
 		c.core.patchU32(exp.indexCountListPtrPos, uint32(countElemOff))
 
 		offsetElemOff := c.core.len()
@@ -490,7 +493,8 @@ type expandedMesh struct {
 	normals    []Vec3
 	colors     []Vec3
 	texStages  int
-	faceVerts  [][3]uint16 // per-face GPU vertex indices (into the arrays above)
+	faceVerts  [][3]uint16 // per-kept-face GPU vertex indices (into the arrays above)
+	faceSrc    []int       // faceVerts[k] came from mesh.Faces[faceSrc[k]]
 	origVert   []int32     // GPU vertex → original mesh vertex index
 
 	facesPtrPos int // core buffer position of faces array pointer (for deferred patching)
@@ -515,6 +519,15 @@ type expandedMesh struct {
 // Deduplication uses exact bit-level float comparison (no epsilon) so that
 // vertices authored as identical in ASCII always merge.
 func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
+	return buildExpandedMeshOpts(mesh, false)
+}
+
+// buildExpandedMeshOpts is buildExpandedMesh with optional degenerate-face
+// stripping, matching the game's MdlNodeTriMesh::InternalGenVertices: after
+// vertices are merged, any face whose corners resolve to fewer than three
+// distinct GPU vertices is dropped. Only the stripped face goes; vertices it
+// introduced stay in the arrays, as in the game.
+func buildExpandedMeshOpts(mesh *MeshData, stripDegenerate bool) (expandedMesh, error) {
 	hasUV      := len(mesh.TVerts) > 0
 	hasTexIdx0 := len(mesh.TexIndices0) > 0
 	hasUV1     := len(mesh.TVerts1) > 0
@@ -524,7 +537,8 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 	hasColors  := len(mesh.Colors) > 0
 
 	exp := expandedMesh{
-		faceVerts: make([][3]uint16, len(mesh.Faces)),
+		faceVerts: make([][3]uint16, 0, len(mesh.Faces)),
+		faceSrc:   make([]int, 0, len(mesh.Faces)),
 	}
 	if hasUV  { exp.texStages = 1 }
 	if hasUV1 { exp.texStages = 2 }
@@ -534,6 +548,7 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 	cache := make(map[vertKey]uint16, len(mesh.Faces)*3)
 
 	for fi, face := range mesh.Faces {
+		var corners [3]uint16
 		for vi := 0; vi < 3; vi++ {
 			vertIdx := int(face.Verts[vi])
 			uvIdx   := int(face.UVs[vi])
@@ -600,8 +615,13 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 				if hasNormals { exp.normals = append(exp.normals, nor) }
 				if hasColors  { exp.colors  = append(exp.colors,  col) }
 			}
-			exp.faceVerts[fi][vi] = gpuIdx
+			corners[vi] = gpuIdx
 		}
+		if stripDegenerate && (corners[0] == corners[1] || corners[1] == corners[2] || corners[0] == corners[2]) {
+			continue
+		}
+		exp.faceVerts = append(exp.faceVerts, corners)
+		exp.faceSrc = append(exp.faceSrc, fi)
 	}
 
 	return exp, nil
