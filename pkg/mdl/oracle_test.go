@@ -563,7 +563,7 @@ func compareOracleTangents(t *testing.T, binaryName string) {
 	// Per-fixture mean alignment must exceed this threshold. Tangent
 	// generation is a port of the game's own algorithm, so the core-game
 	// fixtures match to 1.0000 and the worst fixture (a hak tile whose
-	// ASCII is a different revision of the binary) sits at 0.9966. The bar
+	// ASCII is a different revision of the binary) sits at 0.9974. The bar
 	// leaves room for that drift but fails on any real regression.
 	const meanAlignFloor = 0.99
 	// Per-corner bad-alignment ratio must stay below this. A "bad" corner

@@ -114,11 +114,11 @@ the heavy lifting:
   - `mesh.Tangents` already populated (parsed from ASCII or recovered by
   the decompiler) and covers every GPU vertex → used as authored, with the
   sign of `W` as handedness.
-  - Mesh declares `RenderHint NormalAndSpecMapped` or `NormalTangents`
-  (case-insensitive, the two hints the game generates tangents for) and has
-  UVs + normals → generate via `generateTangents`, a port of the game's
-  algorithm described below. This can **append cloned vertices**, so the
-  vertex count is read after it runs.
+  - The mesh is normal-mapped (`isNormalMapped`): a `NormalAndSpecMapped` or
+  `NormalTangents` render hint, case-insensitive, on the mesh or in its
+  material, and it has UVs + normals → generate via `generateTangents`, a
+  port of the game's algorithm described below. This can **append cloned
+  vertices**, so the vertex count is read after it runs.
   - Otherwise → leave both MDX pointers at `-1` ("not present"). The
   engine still works; it just regenerates them at load.
 4. **Write the 512-byte mesh header** — fixed offsets, every field mirrored
@@ -242,7 +242,7 @@ What `TestOracleTangents` enforces: mean `|dot(ourTangent, gameTangent)|`
 across all matched face corners must clear **0.99**, and the bad-corner
 ratio (`|dot| < 0.5`) must stay below **1%**. Because we port the game's
 algorithm, the core-game fixtures match to 1.0000 and the worst fixture (a
-hak tile whose ASCII is a different revision of the binary) is 0.9966.
+hak tile whose ASCII is a different revision of the binary) is 0.9974.
 
 What the adjacency tests enforce: for the fixtures whose binary was compiled
 from exactly this ASCII by the EE compiler, the adjacency bytes we write equal
@@ -269,10 +269,11 @@ the only entries left in `vertParityBaseline`.
 the stored adjacency can hold numbers at or above the face count, because
 the legacy tool computed it before faces were removed. We write what the EE
 compiler would write.
-- **Cloned-vertex ordering in drifted fixtures.** A few `tin01_*` hak tiles
-pair an ASCII with a different revision of the binary, so tangents on some
-corners differ in sign or handedness (about 0.7% of corners across all
-`tangent_pairs`). The core-game tangent fixtures are exact.
+- **Drifted fixtures.** A few `tin01_*` hak tiles pair an ASCII with a
+different revision of the binary, so tangents on some corners differ in sign
+or handedness: 0.65% of corners across the 18 `tangent_pairs` models, and the
+worst model (`tin01_a02_03`) is 97.3% exact. The core-game tangent fixtures
+are exact.
 
 ## Known gaps
 
@@ -288,11 +289,11 @@ because there's no apples-to-apples comparison to make.
 nodes too, but no fixture has an AABB node that lost faces, so we cannot see
 how the game keeps the authored tree's face indices valid afterwards. We keep
 every face on AABB nodes.
-- **Render hint inference.** When a mesh has no `renderhint`, the game looks
-the hint up from the shared material of the mesh's texture (for example a
-`_n` normal-map sibling) and generates tangents if that says so. We only act
-on an explicit `renderhint`, so a mesh the game would give tangents to by
-inference gets none from us; the engine regenerates them at load.
+- **Render hint inference needs the materials.** With no `renderhint` on the
+mesh, the game takes the hint from the mesh's `.mtr` material. We do the same
+(`isNormalMapped`), but only when `--resource-dir` or `--game-dir` can reach
+that material. Without it only an explicit `renderhint` counts, and the engine
+regenerates tangents at load.
 - **No fuzz harness.** Parsing untrusted ASCII is bounded by alloc tracking
 and a max-depth guard, but we haven't exercised the parser/compiler with
 random or adversarial inputs.
