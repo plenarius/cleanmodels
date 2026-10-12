@@ -126,7 +126,7 @@ func degenerateMesh() *MeshData {
 }
 
 func TestBuildExpandedMeshStripsDegenerateFaces(t *testing.T) {
-	exp, err := buildExpandedMeshOpts(degenerateMesh(), true)
+	exp, err := buildExpandedMeshOpts(degenerateMesh(), expandOpts{stripDegenerate: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestBuildExpandedMeshStripsDegenerateFaces(t *testing.T) {
 }
 
 func TestBuildExpandedMeshKeepsDegenerateFacesWhenAsked(t *testing.T) {
-	exp, err := buildExpandedMeshOpts(degenerateMesh(), false)
+	exp, err := buildExpandedMeshOpts(degenerateMesh(), expandOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,5 +148,40 @@ func TestBuildExpandedMeshKeepsDegenerateFacesWhenAsked(t *testing.T) {
 	}
 	if exp.faceVerts[1][1] != exp.faceVerts[1][2] {
 		t.Errorf("degenerate face should share a vertex: %v", exp.faceVerts[1])
+	}
+}
+
+// Skin vertices that agree on position, UV and normal but carry different
+// bone influences must not share a GPU vertex, or the second one's weights
+// are lost.
+func TestBuildExpandedMeshSplitsSkinVerticesByInfluence(t *testing.T) {
+	mesh := &MeshData{
+		Verts:  []Vec3{{0, 0, 0}, {0, 0, 0}, {1, 0, 0}, {1, 1, 0}},
+		TVerts: []Vec3{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}},
+		Faces: []Face{
+			{Verts: [3]int32{0, 2, 3}, UVs: [3]int32{0, 1, 2}},
+			{Verts: [3]int32{1, 2, 3}, UVs: [3]int32{0, 1, 2}},
+		},
+	}
+	skin := &SkinData{Weights: []VertexWeight{
+		{Bones: []string{"pelvis"}, Weights: []float32{1}},
+		{Bones: []string{"torso"}, Weights: []float32{1}},
+		{Bones: []string{"pelvis"}, Weights: []float32{1}},
+		{Bones: []string{"pelvis"}, Weights: []float32{1}},
+	}}
+
+	plain, err := buildExpandedMesh(mesh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSkin, err := buildExpandedMeshOpts(mesh, expandOpts{skinKeys: skinMergeKeys(skin)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain.positions) != 3 {
+		t.Fatalf("without skin keys: %d vertices, want 3 (verts 0 and 1 merge)", len(plain.positions))
+	}
+	if len(withSkin.positions) != 4 {
+		t.Fatalf("with skin keys: %d vertices, want 4 (different bones stay apart)", len(withSkin.positions))
 	}
 }

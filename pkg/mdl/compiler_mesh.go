@@ -5,6 +5,7 @@ package mdl
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // vertKey is a bit-exact key for vertex deduplication.
@@ -28,6 +29,8 @@ type vertKey struct {
 	cr, cg, cb     uint32 // color bits
 	mat            int32  // face material index
 	sg             int32  // face smoothing group
+	skin           string // skinmesh: bone names that influence the vertex
+	dangly         uint32 // danglymesh: constraint bits
 }
 
 // f32bits maps a float to its dedup-key bits. The game compares vertex
@@ -65,7 +68,12 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// Build expanded vertex data (one GPU vertex per face-vertex reference).
 	// The game drops degenerate faces from every mesh except AABB walkmeshes,
 	// whose authored tree indexes faces by position.
-	expanded, err := buildExpandedMeshOpts(mesh, n == nil || n.Aabb == nil)
+	opts := expandOpts{stripDegenerate: n == nil || n.Aabb == nil}
+	if n != nil {
+		opts.skinKeys = skinMergeKeys(n.Skin)
+		opts.danglyKeys = n.Dangly
+	}
+	expanded, err := buildExpandedMeshOpts(mesh, opts)
 	if err != nil {
 		c.err = err
 		c.writeEmptyMeshHeader()
@@ -519,7 +527,49 @@ type expandedMesh struct {
 // Deduplication uses exact bit-level float comparison (no epsilon) so that
 // vertices authored as identical in ASCII always merge.
 func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
-	return buildExpandedMeshOpts(mesh, false)
+	return buildExpandedMeshOpts(mesh, expandOpts{})
+}
+
+// expandOpts carries the per-node inputs to vertex merging.
+type expandOpts struct {
+	// stripDegenerate drops faces that collapse to fewer than three GPU
+	// vertices after merging.
+	stripDegenerate bool
+	// skinKeys[i] describes original vertex i's bone influences. The game
+	// only merges skin vertices whose influence lists compare equal.
+	skinKeys []string
+	// danglyKeys supplies per-vertex constraints, which the game also
+	// compares when merging.
+	danglyKeys *DanglyData
+}
+
+// skinMergeKeys builds the per-vertex string that decides whether two skin
+// vertices may share a GPU vertex: bone count, then each bone name
+// (case-insensitive) and weight in slot order. The game's
+// SkinVertexWeight::operator== compares the names only, so it can merge
+// vertices whose weights differ and drop the second one's; we keep the
+// weights in the key so no weight data is lost. Influences are truncated the
+// same way the writer does (top four by weight), so the key matches what is
+// written.
+func skinMergeKeys(skin *SkinData) []string {
+	if skin == nil {
+		return nil
+	}
+	keys := make([]string, len(skin.Weights))
+	for i, vw := range skin.Weights {
+		vw = pickTopBoneInfluences(vw, 4)
+		var b strings.Builder
+		fmt.Fprintf(&b, "%d", len(vw.Bones))
+		for bi, bone := range vw.Bones {
+			b.WriteByte(0)
+			b.WriteString(strings.ToLower(bone))
+			if bi < len(vw.Weights) {
+				fmt.Fprintf(&b, ":%x", f32bits(vw.Weights[bi]))
+			}
+		}
+		keys[i] = b.String()
+	}
+	return keys
 }
 
 // buildExpandedMeshOpts is buildExpandedMesh with optional degenerate-face
@@ -527,7 +577,7 @@ func buildExpandedMesh(mesh *MeshData) (expandedMesh, error) {
 // vertices are merged, any face whose corners resolve to fewer than three
 // distinct GPU vertices is dropped. Only the stripped face goes; vertices it
 // introduced stay in the arrays, as in the game.
-func buildExpandedMeshOpts(mesh *MeshData, stripDegenerate bool) (expandedMesh, error) {
+func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error) {
 	hasUV      := len(mesh.TVerts) > 0
 	hasTexIdx0 := len(mesh.TexIndices0) > 0
 	hasUV1     := len(mesh.TVerts1) > 0
@@ -598,6 +648,12 @@ func buildExpandedMeshOpts(mesh *MeshData, stripDegenerate bool) (expandedMesh, 
 				mat: face.Material,
 				sg:  face.SmoothGroup,
 			}
+			if vertIdx >= 0 && vertIdx < len(opts.skinKeys) {
+				key.skin = opts.skinKeys[vertIdx]
+			}
+			if d := opts.danglyKeys; d != nil && vertIdx >= 0 && vertIdx < len(d.Constraints) {
+				key.dangly = f32bits(d.Constraints[vertIdx])
+			}
 
 			gpuIdx, ok := cache[key]
 			if !ok {
@@ -617,7 +673,7 @@ func buildExpandedMeshOpts(mesh *MeshData, stripDegenerate bool) (expandedMesh, 
 			}
 			corners[vi] = gpuIdx
 		}
-		if stripDegenerate && (corners[0] == corners[1] || corners[1] == corners[2] || corners[0] == corners[2]) {
+		if opts.stripDegenerate && (corners[0] == corners[1] || corners[1] == corners[2] || corners[0] == corners[2]) {
 			continue
 		}
 		exp.faceVerts = append(exp.faceVerts, corners)
