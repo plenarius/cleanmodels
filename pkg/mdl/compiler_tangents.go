@@ -54,7 +54,7 @@ func generateTangents(exp *expandedMesh, animMesh bool) ([]Vec3, []float32) {
 		u0, u1, u2 := exp.uvs[i0], exp.uvs[i1], exp.uvs[i2]
 		dv2 := u2.Y - u0.Y
 		dv1 := u1.Y - u0.Y
-		det := (u1.X-u0.X)*dv2 - (u2.X-u0.X)*dv1
+		det := float32((u1.X-u0.X)*dv2) - float32((u2.X-u0.X)*dv1)
 		w := float32(1)
 		if !(det >= 0) {
 			w = -1
@@ -63,9 +63,9 @@ func generateTangents(exp *expandedMesh, animMesh bool) ([]Vec3, []float32) {
 		if det != 0 {
 			a, b := dv1/det, dv2/det
 			t = Vec3{
-				X: b*(p1.X-p0.X) - a*(p2.X-p0.X),
-				Y: (p1.Y-p0.Y)*b - (p2.Y-p0.Y)*a,
-				Z: (p1.Z-p0.Z)*b - (p2.Z-p0.Z)*a,
+				X: float32(b*(p1.X-p0.X)) - float32(a*(p2.X-p0.X)),
+				Y: float32((p1.Y-p0.Y)*b) - float32((p2.Y-p0.Y)*a),
+				Z: float32((p1.Z-p0.Z)*b) - float32((p2.Z-p0.Z)*a),
 			}
 		} else {
 			const third = float32(0.3333333432674408)
@@ -159,8 +159,8 @@ func generateTangents(exp *expandedMesh, animMesh bool) ([]Vec3, []float32) {
 	for i := range tan {
 		nv := exp.normals[i]
 		t := tan[i]
-		d := nv.X*t.X + nv.Y*t.Y + nv.Z*t.Z
-		t = Vec3{X: t.X - nv.X*d, Y: t.Y - nv.Y*d, Z: t.Z - nv.Z*d}
+		d := float32(nv.X*t.X) + float32(nv.Y*t.Y) + float32(nv.Z*t.Z)
+		t = Vec3{X: t.X - float32(nv.X*d), Y: t.Y - float32(nv.Y*d), Z: t.Z - float32(nv.Z*d)}
 		tan[i] = gameNormalize(t)
 	}
 	return tan, hand
