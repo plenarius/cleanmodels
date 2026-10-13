@@ -143,8 +143,21 @@ func (tw *termWriter) printResultDetail(res Result, parseErrs []mdl.ParseError, 
 		if r.Fixed {
 			fixTag = tw.green(" [FIXED]")
 		}
-		fmt.Fprintf(tw.w, "  [%s] %s (%s): %s%s\n", tw.severityTag(r.Severity), r.Check, node, r.Message, fixTag)
+		fmt.Fprintf(tw.w, "  [%s] %s (%s): %s%s\n", tw.severityTag(r.Severity), r.Check, node, withoutFilePrefix(r.Message, res.File), fixTag)
 	}
+}
+
+// withoutFilePrefix drops the leading "<file>: " that every check message
+// carries. The text output prints the file name in the header or batch line
+// right above, so repeating it only lengthens each line. JSON keeps the full
+// message: it is the machine contract and has no header to lean on.
+func withoutFilePrefix(msg, file string) string {
+	for _, name := range []string{file, filepath.Base(file)} {
+		if name != "" && strings.HasPrefix(msg, name+": ") {
+			return msg[len(name)+2:]
+		}
+	}
+	return msg
 }
 
 // printBatchLine formats a single line of batch progress output.

@@ -180,3 +180,37 @@ func TestPrintSingleResult_ErrorsAndParseWarningsStillShow(t *testing.T) {
 		t.Errorf("parse warning not shown: %q", out)
 	}
 }
+
+// The check messages start with "<file>: ", and the text output already names
+// the file in the line above them, so the prefix is dropped when printing.
+func TestWithoutFilePrefix(t *testing.T) {
+	cases := []struct{ msg, file, want string }{
+		{"x.mdl: node \"a\" has no faces", "x.mdl", "node \"a\" has no faces"},
+		{"in/x.mdl: node \"a\" has no faces", "in/x.mdl", "node \"a\" has no faces"},
+		{"x.mdl: node \"a\" has no faces", "in/x.mdl", "node \"a\" has no faces"},             // message carries the base name only
+		{"other.mdl: node \"a\" has no faces", "x.mdl", "other.mdl: node \"a\" has no faces"}, // someone else's name stays
+		{"node \"a\" has no faces", "x.mdl", "node \"a\" has no faces"},
+		{"x.mdl:but no space", "x.mdl", "x.mdl:but no space"},
+		{"x.mdl: msg", "", "x.mdl: msg"},
+	}
+	for _, c := range cases {
+		if got := withoutFilePrefix(c.msg, c.file); got != c.want {
+			t.Errorf("withoutFilePrefix(%q, %q) = %q, want %q", c.msg, c.file, got, c.want)
+		}
+	}
+}
+
+func TestResultDetailDoesNotRepeatTheFileName(t *testing.T) {
+	res := Result{File: "tiles/x.mdl", Checks: []mdl.CheckResult{
+		{Check: "aabb_fields", Node: "wok", Severity: mdl.SevWarning, Message: "tiles/x.mdl: AABB node \"wok\" has empty AABB tree", Fixed: true},
+	}}
+	var buf bytes.Buffer
+	newTermWriter(&buf, false).printResultDetail(res, nil, false)
+	got := buf.String()
+	if strings.Contains(got, "x.mdl") {
+		t.Errorf("file name repeated in %q", got)
+	}
+	if !strings.Contains(got, "aabb_fields (wok): AABB node \"wok\" has empty AABB tree") {
+		t.Errorf("message lost: %q", got)
+	}
+}
