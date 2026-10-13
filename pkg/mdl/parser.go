@@ -140,6 +140,20 @@ func (p *parser) intParam(tokens []string, dst *int32) {
 	*dst = v
 }
 
+// boolParam is intParam for a flag that some tools write as true/false
+// instead of 1/0 (NWNCQ's emitters do). Reading "true" as unusable would have
+// dropped the flag; any other non-number is still reported.
+func (p *parser) boolParam(tokens []string, dst *int32) {
+	switch strings.ToLower(safeIndex(tokens, 1)) {
+	case "true":
+		*dst = 1
+	case "false":
+		*dst = 0
+	default:
+		p.intParam(tokens, dst)
+	}
+}
+
 // countParam reads the entry count that opens a list. When it is unusable the
 // list cannot be read, so say so rather than letting its lines fall through.
 func (p *parser) countParam(tokens []string) (int32, bool) {
@@ -767,7 +781,7 @@ func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []str
 	case "p2p_sel":
 		p.intParam(tokens, &em.P2PSel)
 	case "affectedbywind":
-		p.intParam(tokens, &em.AffectedByWind)
+		p.boolParam(tokens, &em.AffectedByWind)
 	case "m_istinted":
 		p.intParam(tokens, &em.IsTinted)
 	case "bounce":
