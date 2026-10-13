@@ -45,7 +45,7 @@ func wrapWithSuggestion(err error, path string) error {
 	if errors.Is(err, mdl.ErrNotModel) {
 		return &cliError{
 			err:        err,
-			suggestion: "if this is a binary model that was not recognised, try decompile --force; otherwise it is not an MDL file",
+			suggestion: "if it is a binary model, try decompile --force",
 		}
 	}
 
