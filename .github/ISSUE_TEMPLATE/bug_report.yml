@@ -1,0 +1,43 @@
+name: Bug report
+description: A model that is handled wrongly, a wrong or missing finding, a crash, or output that looks wrong in game
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The quickest route is `cleanmodels report model.mdl`, which files an issue for you with the model attached. This form is for when you would rather describe it yourself.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `cleanmodels -v` (or the version shown in cleanmodels-qt).
+      placeholder: "cleanmodels v4.1.2 (revision 8acb2ef, ...)"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "Windows 11 / macOS 15 Apple Silicon / Ubuntu 24.04, CLI or GUI"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, or the options you ticked in the GUI.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: Paste the output. For a model that looks wrong in game, say what you see and what you expected to see.
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: Model file
+      description: Drag the .mdl (zip it if it is large) into this box, or say where it comes from. A small model that shows the problem is ideal. Please only share files you are allowed to share.
