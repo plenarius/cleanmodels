@@ -16,7 +16,7 @@ const (
 func init() {
 	Register("vertex_face_consistency", "geometry", true, "Clamp out-of-range vertex indices in faces", checkVertexFaceConsistency)
 	Register("tvert_consistency", "geometry", true, "Clamp out-of-range UV indices in faces", checkTvertConsistency)
-	Register("tvert_range", "geometry", true, "Replace texture coordinates too large to mean anything (>= 2^24, or non-finite) with 0", checkTvertRange)
+	Register("tvert_range", "geometry", true, "Replace texture coordinates (UV sets and animmesh AnimTVerts) too large to mean anything (>= 2^24, or non-finite) with 0", checkTvertRange)
 	Register("degenerate_faces", "geometry", false, "Detect zero-area faces with repeated vertex indices", checkDegenerateFaces)
 	Register("triangle_limit", "geometry", false, "Detect meshes exceeding the EE triangle limit", checkTriangleLimit)
 	Register("bone_limit", "geometry", false, "Detect skin meshes exceeding the EE bone limit", checkBoneLimit)
@@ -388,62 +388,84 @@ func unusableTexCoord(f float32) bool {
 }
 
 // checkTvertRange finds texture coordinates that are non-finite or at or above
-// 2^24 in magnitude. Exporters occasionally write uninitialised floats there
+// 2^24 in magnitude, in the mesh UV sets and in animmesh AnimTVerts (geometry
+// and animation nodes). Exporters occasionally write uninitialised floats there
 // (7.34e+23 and 1e+30 turn up in real tilesets and placeables). The value is
 // unrecoverable, so with fix set only the offending component is replaced with
 // 0, which samples the same texel as the original under a repeating texture and
-// keeps the good component. Everything below the limit is left alone, including
-// large but meaningful tiling. One result is reported per node and UV set.
+// keeps the good component. All three components are checked; the third is
+// unused for 2D texturing, but a non-finite one is still garbage. Everything
+// below the limit is left alone, including large but meaningful tiling. One
+// result is reported per node and UV set.
 func checkTvertRange(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
 	var out []mdl.CheckResult
+	report := func(node, setName string, tv []mdl.Vec3) {
+		var bad []int
+		for i := range tv {
+			if unusableTexCoord(tv[i].X) || unusableTexCoord(tv[i].Y) || unusableTexCoord(tv[i].Z) {
+				bad = append(bad, i)
+			}
+		}
+		if len(bad) == 0 {
+			return
+		}
+		first := tv[bad[0]]
+		example := fmt.Sprintf("tvert %d = (%g, %g, %g)", bad[0], first.X, first.Y, first.Z)
+		if fix {
+			for _, i := range bad {
+				if unusableTexCoord(tv[i].X) {
+					tv[i].X = 0
+				}
+				if unusableTexCoord(tv[i].Y) {
+					tv[i].Y = 0
+				}
+				if unusableTexCoord(tv[i].Z) {
+					tv[i].Z = 0
+				}
+			}
+		}
+		action := "would be set to 0"
+		if fix {
+			action = "set to 0"
+		}
+		out = append(out, mdl.CheckResult{
+			Check:    "tvert_range",
+			Node:     node,
+			Severity: mdl.SevWarning,
+			Fixed:    fix,
+			Message: fmt.Sprintf(
+				"%s: %d texture coordinate(s) in %s are not usable values (%s); %s",
+				file, len(bad), setName, example, action,
+			),
+		})
+	}
 	for _, n := range model.Nodes {
-		if n == nil || n.Mesh == nil || !meshGeometryNodeType(n.NodeType()) {
+		if n == nil {
 			continue
 		}
-		sets := [][]mdl.Vec3{n.Mesh.TVerts, n.Mesh.TVerts1, n.Mesh.TVerts2, n.Mesh.TVerts3}
-		for set, tv := range sets {
-			var bad []int
-			for i := range tv {
-				if unusableTexCoord(tv[i].X) || unusableTexCoord(tv[i].Y) {
-					bad = append(bad, i)
+		if n.Mesh != nil && meshGeometryNodeType(n.NodeType()) {
+			sets := [][]mdl.Vec3{n.Mesh.TVerts, n.Mesh.TVerts1, n.Mesh.TVerts2, n.Mesh.TVerts3}
+			for set, tv := range sets {
+				setName := "UV set 0"
+				if set > 0 {
+					setName = fmt.Sprintf("UV set %d", set)
 				}
+				report(n.Name, setName, tv)
 			}
-			if len(bad) == 0 {
-				continue
+		}
+		if n.AnimMesh != nil {
+			report(n.Name, "AnimTVerts", n.AnimMesh.AnimTVerts)
+		}
+	}
+	for ai := range model.Animations {
+		anim := &model.Animations[ai]
+		for ni := range anim.Nodes {
+			if am := anim.Nodes[ni].AnimMesh; am != nil {
+				report(anim.Nodes[ni].Name, fmt.Sprintf("AnimTVerts in animation %q", anim.Name), am.AnimTVerts)
 			}
-			first := tv[bad[0]]
-			example := fmt.Sprintf("tvert %d = (%g, %g)", bad[0], first.X, first.Y)
-			if fix {
-				for _, i := range bad {
-					if unusableTexCoord(tv[i].X) {
-						tv[i].X = 0
-					}
-					if unusableTexCoord(tv[i].Y) {
-						tv[i].Y = 0
-					}
-				}
-			}
-			setName := "UV set 0"
-			if set > 0 {
-				setName = fmt.Sprintf("UV set %d", set)
-			}
-			action := "would be set to 0"
-			if fix {
-				action = "set to 0"
-			}
-			out = append(out, mdl.CheckResult{
-				Check:    "tvert_range",
-				Node:     n.Name,
-				Severity: mdl.SevWarning,
-				Fixed:    fix,
-				Message: fmt.Sprintf(
-					"%s: %d texture coordinate(s) in %s are not usable values (%s); %s",
-					file, len(bad), setName, example, action,
-				),
-			})
 		}
 	}
 	return out
