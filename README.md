@@ -22,7 +22,7 @@ Grab the latest binary for your platform from the [Releases](https://github.com/
 
 ## Building from source
 
-Requires [Go 1.22+](https://go.dev/dl/). No external dependencies.
+Requires [Go 1.26.2 or newer](https://go.dev/dl/) (the version `go.mod` pins; Go 1.21 and later download the right toolchain automatically). No external dependencies.
 
 ```
 git clone https://github.com/plenarius/cleanmodels
