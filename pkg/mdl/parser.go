@@ -118,6 +118,47 @@ func (p *parser) errorf(format string, args ...interface{}) {
 	})
 }
 
+// floatParam stores the value of a one-value parameter line ("shininess 1.0")
+// in dst. A missing or unusable value leaves dst as it was and is reported with
+// the line number, rather than silently keeping the default.
+func (p *parser) floatParam(tokens []string, dst *float32) {
+	v, err := parseFloat(safeIndex(tokens, 1))
+	if err != nil {
+		p.badParam(tokens, "number")
+		return
+	}
+	*dst = v
+}
+
+// intParam is floatParam for integer parameters.
+func (p *parser) intParam(tokens []string, dst *int32) {
+	v, err := parseInt(safeIndex(tokens, 1))
+	if err != nil {
+		p.badParam(tokens, "integer")
+		return
+	}
+	*dst = v
+}
+
+// countParam reads the entry count that opens a list. When it is unusable the
+// list cannot be read, so say so rather than letting its lines fall through.
+func (p *parser) countParam(tokens []string) (int32, bool) {
+	v, err := parseInt(safeIndex(tokens, 1))
+	if err != nil {
+		p.badParam(tokens, "count")
+		return 0, false
+	}
+	return v, true
+}
+
+func (p *parser) badParam(tokens []string, kind string) {
+	if len(tokens) < 2 {
+		p.errorf("%q has no value, keeping the default", tokens[0])
+		return
+	}
+	p.errorf("%q is not a usable %s for %q, keeping the default", tokens[1], kind, tokens[0])
+}
+
 func (p *parser) trackAlloc(bytes int64) bool {
 	p.allocBytes += bytes
 	return p.allocBytes <= p.maxAlloc
@@ -221,9 +262,7 @@ func (p *parser) parseSuperModel(tokens []string) {
 
 func (p *parser) parseAnimationScale(tokens []string) {
 	if len(tokens) >= 2 {
-		if v, err := parseFloat(tokens[1]); err == nil {
-			p.model.AnimationScale = v
-		}
+		p.floatParam(tokens, &p.model.AnimationScale)
 	}
 }
 
@@ -235,9 +274,7 @@ func (p *parser) parseClassification(tokens []string) {
 
 func (p *parser) parseIgnoreFog(tokens []string) {
 	if len(tokens) >= 2 {
-		if v, err := parseInt(tokens[1]); err == nil {
-			p.model.IgnoreFog = v
-		}
+		p.intParam(tokens, &p.model.IgnoreFog)
 	}
 }
 
@@ -355,16 +392,15 @@ func (p *parser) parseAnimLength(tokens []string) {
 	if strings.EqualFold(tokens[0], "animlength") && len(tokens) >= 3 {
 		idx = 2
 	}
-	if v, err := parseFloat(tokens[idx]); err == nil {
-		p.currentAnim.Length = v
+	if idx > 1 {
+		tokens = tokens[1:]
 	}
+	p.floatParam(tokens, &p.currentAnim.Length)
 }
 
 func (p *parser) parseAnimTransTime(tokens []string) {
 	if len(tokens) >= 2 {
-		if v, err := parseFloat(tokens[1]); err == nil {
-			p.currentAnim.TransTime = v
-		}
+		p.floatParam(tokens, &p.currentAnim.TransTime)
 	}
 }
 
@@ -415,9 +451,7 @@ func (p *parser) parseParameter(tokens []string) {
 		}
 	case "#part-number":
 		if len(tokens) >= 2 {
-			if v, err := parseInt(tokens[1]); err == nil {
-				node.PartNumber = v
-			}
+			p.intParam(tokens, &node.PartNumber)
 		}
 	case "position":
 		if v, ok := parseVec3(tokens[1:]); ok {
@@ -429,15 +463,11 @@ func (p *parser) parseParameter(tokens []string) {
 		}
 	case "scale":
 		if len(tokens) >= 2 {
-			if v, err := parseFloat(tokens[1]); err == nil {
-				node.Scale = v
-			}
+			p.floatParam(tokens, &node.Scale)
 		}
 	case "inheritcolor":
 		if len(tokens) >= 2 {
-			if v, err := parseInt(tokens[1]); err == nil {
-				node.InheritColor = v
-			}
+			p.intParam(tokens, &node.InheritColor)
 		}
 	case "wirecolor":
 		if v, ok := parseVec3(tokens[1:]); ok {
@@ -521,9 +551,7 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 			mesh.Specular = v
 		}
 	case "shininess":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			mesh.Shininess = v
-		}
+		p.floatParam(tokens, &mesh.Shininess)
 	case "bitmap", "texture0":
 		if len(tokens) >= 2 {
 			mesh.Bitmap = tokens[1]
@@ -545,41 +573,25 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 			mesh.RenderHint = tokens[1]
 		}
 	case "shadow":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.Shadow = v
-		}
+		p.intParam(tokens, &mesh.Shadow)
 	case "beaming":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.Beaming = v
-		}
+		p.intParam(tokens, &mesh.Beaming)
 	case "render":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.Render = v
-		}
+		p.intParam(tokens, &mesh.Render)
 	case "transparencyhint":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.TransparencyHint = v
-		}
+		p.intParam(tokens, &mesh.TransparencyHint)
 	case "alpha":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			mesh.Alpha = v
-		}
+		p.floatParam(tokens, &mesh.Alpha)
 	case "selfillumcolor", "setfillumcolor":
 		if v, ok := parseVec3(tokens[1:]); ok {
 			mesh.SelfIllumColor = v
 		}
 	case "tilefade":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.TileFade = v
-		}
+		p.intParam(tokens, &mesh.TileFade)
 	case "rotatetexture":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.RotateTexture = v
-		}
+		p.intParam(tokens, &mesh.RotateTexture)
 	case "lightmapped":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			mesh.LightMapped = v
-		}
+		p.intParam(tokens, &mesh.LightMapped)
 	case "center":
 		// center can be mn3 or man -- accept both forms
 		// As mn3: center x y z
@@ -627,8 +639,8 @@ func (p *parser) parseSkinParam(node *Node, keyword string, tokens []string) boo
 	switch keyword {
 	case "weights":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readWeightList(node.Skin, int(count))
 			}
 		}
@@ -641,28 +653,20 @@ func (p *parser) parseSkinParam(node *Node, keyword string, tokens []string) boo
 func (p *parser) parseDanglyParam(dangly *DanglyData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "displacement":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			dangly.Displacement = v
-		}
+		p.floatParam(tokens, &dangly.Displacement)
 	case "tightness":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			dangly.Tightness = v
-		}
+		p.floatParam(tokens, &dangly.Tightness)
 	case "period":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			dangly.Period = v
-		}
+		p.floatParam(tokens, &dangly.Period)
 	case "constraints":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readFloatList(&dangly.Constraints, int(count))
 			}
 		}
 	case "displtype":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			dangly.DisplType = int32(v)
-		}
+		p.intParam(tokens, &dangly.DisplType)
 	case "danglymesh", "showdispl", "gizmo":
 		// Accepted but not stored (display-only parameters)
 	default:
@@ -674,36 +678,26 @@ func (p *parser) parseDanglyParam(dangly *DanglyData, keyword string, tokens []s
 func (p *parser) parseAnimMeshParam(am *AnimMeshData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "sampleperiod":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			am.SamplePeriod = v
-		}
+		p.floatParam(tokens, &am.SamplePeriod)
 	case "clipu":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			am.ClipU = v
-		}
+		p.floatParam(tokens, &am.ClipU)
 	case "clipv":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			am.ClipV = v
-		}
+		p.floatParam(tokens, &am.ClipV)
 	case "clipw":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			am.ClipW = v
-		}
+		p.floatParam(tokens, &am.ClipW)
 	case "cliph":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			am.ClipH = v
-		}
+		p.floatParam(tokens, &am.ClipH)
 	case "animverts":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readVec3List(&am.AnimVerts, int(count))
 			}
 		}
 	case "animtverts":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readVec3List(&am.AnimTVerts, int(count))
 			}
 		}
@@ -717,8 +711,8 @@ func (p *parser) parseAabbParam(aabb *AabbData, keyword string, tokens []string)
 	switch keyword {
 	case "aabb":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readAabbList(&aabb.Entries, int(count))
 			}
 		}
@@ -731,29 +725,17 @@ func (p *parser) parseAabbParam(aabb *AabbData, keyword string, tokens []string)
 func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "deadspace":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			em.DeadSpace = v
-		}
+		p.floatParam(tokens, &em.DeadSpace)
 	case "blastradius":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			em.BlastRadius = v
-		}
+		p.floatParam(tokens, &em.BlastRadius)
 	case "blastlength":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			em.BlastLength = v
-		}
+		p.floatParam(tokens, &em.BlastLength)
 	case "xgrid":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.XGrid = v
-		}
+		p.intParam(tokens, &em.XGrid)
 	case "ygrid":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.YGrid = v
-		}
+		p.intParam(tokens, &em.YGrid)
 	case "spawntype":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.SpawnType = v
-		}
+		p.intParam(tokens, &em.SpawnType)
 	case "update":
 		if len(tokens) >= 2 {
 			em.Update = tokens[1]
@@ -775,102 +757,56 @@ func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []str
 			em.ChunkName = tokens[1]
 		}
 	case "twosidedtex":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.TwoSidedTex = v
-		}
+		p.intParam(tokens, &em.TwoSidedTex)
 	case "loop":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Loop = v
-		}
+		p.intParam(tokens, &em.Loop)
 	case "renderorder":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.RenderOrder = v
-		}
+		p.intParam(tokens, &em.RenderOrder)
 	case "p2p":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.P2P = v
-		}
+		p.intParam(tokens, &em.P2P)
 	case "p2p_sel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.P2PSel = v
-		}
+		p.intParam(tokens, &em.P2PSel)
 	case "affectedbywind":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.AffectedByWind = v
-		}
+		p.intParam(tokens, &em.AffectedByWind)
 	case "m_istinted":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.IsTinted = v
-		}
+		p.intParam(tokens, &em.IsTinted)
 	case "bounce":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Bounce = v
-		}
+		p.intParam(tokens, &em.Bounce)
 	case "random":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Random = v
-		}
+		p.intParam(tokens, &em.Random)
 	case "inherit":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Inherit = v
-		}
+		p.intParam(tokens, &em.Inherit)
 	case "inheritvel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.InheritVel = v
-		}
+		p.intParam(tokens, &em.InheritVel)
 	case "inherit_local":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.InheritLocal = v
-		}
+		p.intParam(tokens, &em.InheritLocal)
 	case "splat":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Splat = v
-		}
+		p.intParam(tokens, &em.Splat)
 	case "inherit_part":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.InheritPart = v
-		}
+		p.intParam(tokens, &em.InheritPart)
 	case "p2p_type":
 		if len(tokens) >= 2 {
 			em.P2PType = tokens[1]
 		}
 	case "render_sel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.RenderSel = v
-		}
+		p.intParam(tokens, &em.RenderSel)
 	case "blend_sel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.BlendSel = v
-		}
+		p.intParam(tokens, &em.BlendSel)
 	case "update_sel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.UpdateSel = v
-		}
+		p.intParam(tokens, &em.UpdateSel)
 	case "spawntype_sel":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.SpawnTypeSel = v
-		}
+		p.intParam(tokens, &em.SpawnTypeSel)
 	case "opacity":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Opacity = v
-		}
+		p.intParam(tokens, &em.Opacity)
 	case "iconsize":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.IconSize = v
-		}
+		p.intParam(tokens, &em.IconSize)
 	case "lockaxes":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.LockAxes = v
-		}
+		p.intParam(tokens, &em.LockAxes)
 	case "chunky":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			em.Chunky = v
-		}
+		p.intParam(tokens, &em.Chunky)
 	default:
 		if getter, ok := emitterFloatFields[keyword]; ok {
-			if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-				*getter(em) = v
-			}
+			p.floatParam(tokens, getter(em))
 			return true
 		}
 		if getter, ok := emitterColorFields[keyword]; ok {
@@ -887,94 +823,64 @@ func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []str
 func (p *parser) parseLightParam(light *LightData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "flareradius":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			light.FlareRadius = v
-		}
+		p.floatParam(tokens, &light.FlareRadius)
 	case "lensflares":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.LensFlares = v
-		}
+		p.intParam(tokens, &light.LensFlares)
 	case "lightpriority":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.LightPriority = v
-		}
+		p.intParam(tokens, &light.LightPriority)
 	case "ambientonly":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.AmbientOnly = v
-		}
+		p.intParam(tokens, &light.AmbientOnly)
 	case "isdynamic":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.NDynamicType = v
-		}
+		p.intParam(tokens, &light.NDynamicType)
 	case "ndynamictype", "n_dynamic_type":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.NDynamicType = v
-		}
+		p.intParam(tokens, &light.NDynamicType)
 	case "affectdynamic":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.AffectDynamic = v
-		}
+		p.intParam(tokens, &light.AffectDynamic)
 	case "shadow":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.Shadow = v
-		}
+		p.intParam(tokens, &light.Shadow)
 	case "generateflare":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.GenerateFlare = v
-		}
+		p.intParam(tokens, &light.GenerateFlare)
 	case "fadinglight":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.FadingLight = v
-		}
+		p.intParam(tokens, &light.FadingLight)
 	case "negativelight":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			light.NegativeLight = v
-		}
+		p.intParam(tokens, &light.NegativeLight)
 	case "color":
 		if v, ok := parseVec3(tokens[1:]); ok {
 			light.Color = v
 		}
 	case "radius":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			light.Radius = v
-		}
+		p.floatParam(tokens, &light.Radius)
 	case "multiplier":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			light.Multiplier = v
-		}
+		p.floatParam(tokens, &light.Multiplier)
 	case "shadowradius":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			light.ShadowRadius = v
-		}
+		p.floatParam(tokens, &light.ShadowRadius)
 	case "verticaldisplacement":
-		if v, err := parseFloat(safeIndex(tokens, 1)); err == nil {
-			light.VerticalDisplacement = v
-		}
+		p.floatParam(tokens, &light.VerticalDisplacement)
 	case "flaresizes":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readFloatList(&light.FlareSizes, int(count))
 			}
 		}
 	case "flarepositions":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readFloatList(&light.FlarePositions, int(count))
 			}
 		}
 	case "flarecolorshifts":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readVec3List(&light.FlareColorShifts, int(count))
 			}
 		}
 	case "texturenames":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil && count > 0 {
+			count, ok := p.countParam(tokens)
+			if ok && count > 0 {
 				p.readStringList(&light.TextureNames, int(count))
 			}
 		}
@@ -991,9 +897,7 @@ func (p *parser) parseReferenceParam(ref *ReferenceData, keyword string, tokens 
 			ref.RefModel = tokens[1]
 		}
 	case "reattachable":
-		if v, err := parseInt(safeIndex(tokens, 1)); err == nil {
-			ref.Reattachable = v
-		}
+		p.intParam(tokens, &ref.Reattachable)
 	default:
 		return false
 	}
@@ -1139,8 +1043,8 @@ func init() {
 func (p *parser) tryAnimKeyTable(keyword string, tokens []string, an *AnimNode) bool {
 	if keyword == "detonatekey" {
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readDetonateKeys(&an.DetonateKeys, int(count))
 			}
 		}
@@ -1148,8 +1052,8 @@ func (p *parser) tryAnimKeyTable(keyword string, tokens []string, an *AnimNode) 
 	}
 	if getter, ok := animFloatKeyTable[keyword]; ok {
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readFloatKeys(getter(an), int(count))
 			}
 		} else {
@@ -1159,8 +1063,8 @@ func (p *parser) tryAnimKeyTable(keyword string, tokens []string, an *AnimNode) 
 	}
 	if getter, ok := animColorKeyTable[keyword]; ok {
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readColorKeys(getter(an), int(count))
 			}
 		} else {
@@ -1210,8 +1114,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 	// uncounted ("positionkey" + lines + "endlist") formats.
 	case "positionkey":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readPositionKeys(&an.PositionKeys, int(count))
 			}
 		} else {
@@ -1222,8 +1126,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		// fewer columns are kept as zero-tangent keys rather than dropped.
 		an.PositionBezier = true
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readPositionBezierKeys(&an.PositionKeys, int(count))
 			}
 		} else {
@@ -1231,8 +1135,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		}
 	case "orientationkey":
 		if len(tokens) >= 2 {
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readOrientationKeys(&an.OrientationKeys, int(count))
 			}
 		} else {
@@ -1244,8 +1148,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readVec3List(&an.Mesh.Verts, int(count))
 			}
 		}
@@ -1254,8 +1158,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readFaceList(&an.Mesh.Faces, int(count))
 			}
 		}
@@ -1264,8 +1168,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readVec3List(&an.Mesh.TVerts, int(count))
 			}
 		}
@@ -1309,8 +1213,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readVec3List(&an.AnimMesh.AnimVerts, int(count))
 			}
 		}
@@ -1319,8 +1223,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			count, err := parseInt(safeIndex(tokens, 1))
-			if err == nil {
+			count, ok := p.countParam(tokens)
+			if ok {
 				p.readVec3List(&an.AnimMesh.AnimTVerts, int(count))
 			}
 		}
@@ -1375,7 +1279,7 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 // parseCountedVec3 extracts a count from tokens[1] and reads that many Vec3 lines.
 func (p *parser) parseCountedVec3(tokens []string, out *[]Vec3) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readVec3List(out, int(count))
 		}
 	}
@@ -1383,7 +1287,7 @@ func (p *parser) parseCountedVec3(tokens []string, out *[]Vec3) {
 
 func (p *parser) parseCountedVec4(tokens []string, out *[]Vec4) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readVec4List(out, int(count))
 		}
 	}
@@ -1391,7 +1295,7 @@ func (p *parser) parseCountedVec4(tokens []string, out *[]Vec4) {
 
 func (p *parser) parseCountedFaces(tokens []string, out *[]Face) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readFaceList(out, int(count))
 		}
 	}
@@ -1399,7 +1303,7 @@ func (p *parser) parseCountedFaces(tokens []string, out *[]Face) {
 
 func (p *parser) parseCountedInt3(tokens []string, out *[][3]int32) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readInt3List(out, int(count))
 		}
 	}
@@ -1407,7 +1311,7 @@ func (p *parser) parseCountedInt3(tokens []string, out *[][3]int32) {
 
 func (p *parser) parseCountedInts(tokens []string, out *[]int32) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readIntList(out, int(count))
 		}
 	}
@@ -1415,7 +1319,7 @@ func (p *parser) parseCountedInts(tokens []string, out *[]int32) {
 
 func (p *parser) parseCountedStrings(tokens []string, out *[]string) {
 	if len(tokens) >= 2 {
-		if count, err := parseInt(safeIndex(tokens, 1)); err == nil && count > 0 {
+		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readStringList(out, int(count))
 		}
 	}
