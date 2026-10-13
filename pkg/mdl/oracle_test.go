@@ -431,12 +431,11 @@ func runOracleDiff(t *testing.T, name, asciiPath string, gameData []byte) {
 }
 
 // TestOracleTangents compares per-vertex tangent direction between our
-// compiler and the game compiler for every fixture in game_binary/. Both
-// compilers run independent tangent-generation passes (we use Mikktspace,
-// the game uses its own algorithm) so an exact match is not expected;
-// instead we check that the tangent xyz vectors point in the same
-// direction (allowing sign flip, since each compiler may pick opposite
-// W handedness).
+// compiler and the game compiler for every fixture in game_binary/. Our
+// generator is a port of the game's own algorithm, so the core-game fixtures
+// match to 1.0000; the check allows a sign flip and some drift because a few
+// hak tiles pair an ASCII with a different revision of the binary, and each
+// compiler may pick opposite W handedness at a vertex.
 //
 // Approach: walk faces in lockstep (face order is preserved per
 // TestOracleCompare's face-count invariant), match each face's 3 corners
