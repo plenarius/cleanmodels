@@ -2,20 +2,22 @@ package mdl
 
 import "math"
 
+// Products are wrapped so arm64 (Apple Silicon) cannot fuse them into FMAs: the
+// results then match amd64 bit for bit. See compiler_normals.go.
 func vecDot(a, b Vec3) float32 {
-	return a.X*b.X + a.Y*b.Y + a.Z*b.Z
+	return float32(a.X*b.X) + float32(a.Y*b.Y) + float32(a.Z*b.Z)
 }
 
 func vecCross(a, b Vec3) Vec3 {
 	return Vec3{
-		X: a.Y*b.Z - a.Z*b.Y,
-		Y: a.Z*b.X - a.X*b.Z,
-		Z: a.X*b.Y - a.Y*b.X,
+		X: float32(a.Y*b.Z) - float32(a.Z*b.Y),
+		Y: float32(a.Z*b.X) - float32(a.X*b.Z),
+		Z: float32(a.X*b.Y) - float32(a.Y*b.X),
 	}
 }
 
 func vecLen(v Vec3) float32 {
-	return float32(math.Sqrt(float64(v.X*v.X + v.Y*v.Y + v.Z*v.Z)))
+	return float32(math.Sqrt(float64(float32(v.X*v.X) + float32(v.Y*v.Y) + float32(v.Z*v.Z))))
 }
 
 // vecNormalize returns the unit-length vector, or the zero vector if the
@@ -55,18 +57,18 @@ func vecMax(a, b Vec3) Vec3 {
 
 func vecLerp3(a, b Vec3, t float32) Vec3 {
 	return Vec3{
-		X: a.X + (b.X-a.X)*t,
-		Y: a.Y + (b.Y-a.Y)*t,
-		Z: a.Z + (b.Z-a.Z)*t,
+		X: a.X + float32((b.X-a.X)*t),
+		Y: a.Y + float32((b.Y-a.Y)*t),
+		Z: a.Z + float32((b.Z-a.Z)*t),
 	}
 }
 
 func vecLerp4(a, b Vec4, t float32) Vec4 {
 	return Vec4{
-		X: a.X + (b.X-a.X)*t,
-		Y: a.Y + (b.Y-a.Y)*t,
-		Z: a.Z + (b.Z-a.Z)*t,
-		W: a.W + (b.W-a.W)*t,
+		X: a.X + float32((b.X-a.X)*t),
+		Y: a.Y + float32((b.Y-a.Y)*t),
+		Z: a.Z + float32((b.Z-a.Z)*t),
+		W: a.W + float32((b.W-a.W)*t),
 	}
 }
 

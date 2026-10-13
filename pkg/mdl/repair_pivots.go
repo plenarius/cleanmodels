@@ -440,11 +440,11 @@ func pivotSolveZ(x0, y0, zmin, zmax float32, hs []pivotHalfSpace) (float32, bool
 	lo, hi := zmin, zmax
 	for i := range hs {
 		c := &hs[i]
-		rhs := c.d - c.n.X*x0 - c.n.Y*y0
+		rhs := c.d - float32(c.n.X*x0) - float32(c.n.Y*y0)
 		nz := c.n.Z
 		if absF32(nz) < pivotPlaneNZEps {
 			// Constraint independent of z: check (nx*x0+ny*y0) vs d.
-			lhs := c.n.X*x0 + c.n.Y*y0
+			lhs := float32(c.n.X*x0) + float32(c.n.Y*y0)
 			if c.ge {
 				if lhs < c.d-pivotTol {
 					return 0, false
@@ -509,15 +509,15 @@ func pivotRelaxInBox(minB, maxB Vec3, hs []pivotHalfSpace) (Vec3, bool) {
 			}
 			if c.ge && v < c.d {
 				t := (c.d - v) / dn
-				p.X += c.n.X * t
-				p.Y += c.n.Y * t
-				p.Z += c.n.Z * t
+				p.X += float32(c.n.X * t)
+				p.Y += float32(c.n.Y * t)
+				p.Z += float32(c.n.Z * t)
 				moved = true
 			} else if !c.ge && v > c.d {
 				t := (c.d - v) / dn
-				p.X += c.n.X * t
-				p.Y += c.n.Y * t
-				p.Z += c.n.Z * t
+				p.X += float32(c.n.X * t)
+				p.Y += float32(c.n.Y * t)
+				p.Z += float32(c.n.Z * t)
 				moved = true
 			}
 		}

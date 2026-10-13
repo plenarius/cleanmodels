@@ -123,10 +123,10 @@ func (c *compiler) computeWorldTransforms() {
 // Quaternions here are x, y, z, w.
 func quatMul(a, b [4]float64) [4]float64 {
 	return [4]float64{
-		a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
-		a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
-		a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
-		a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2],
+		float64(a[3]*b[0]) + float64(a[0]*b[3]) + float64(a[1]*b[2]) - float64(a[2]*b[1]),
+		float64(a[3]*b[1]) - float64(a[0]*b[2]) + float64(a[1]*b[3]) + float64(a[2]*b[0]),
+		float64(a[3]*b[2]) + float64(a[0]*b[1]) - float64(a[1]*b[0]) + float64(a[2]*b[3]),
+		float64(a[3]*b[3]) - float64(a[0]*b[0]) - float64(a[1]*b[1]) - float64(a[2]*b[2]),
 	}
 }
 
@@ -138,7 +138,7 @@ func quatRotate(q [4]float64, v [3]float64) [3]float64 {
 }
 
 func quatNormalize(q [4]float64) [4]float64 {
-	l := math.Sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3])
+	l := math.Sqrt(float64(q[0]*q[0]) + float64(q[1]*q[1]) + float64(q[2]*q[2]) + float64(q[3]*q[3]))
 	if l == 0 {
 		return [4]float64{0, 0, 0, 1}
 	}

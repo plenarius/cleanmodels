@@ -49,7 +49,7 @@ func edgeLenSq(mesh *MeshData, a, b int32) float64 {
 	dx := float64(mesh.Verts[a].X - mesh.Verts[b].X)
 	dy := float64(mesh.Verts[a].Y - mesh.Verts[b].Y)
 	dz := float64(mesh.Verts[a].Z - mesh.Verts[b].Z)
-	return dx*dx + dy*dy + dz*dz
+	return float64(dx*dx) + float64(dy*dy) + float64(dz*dz)
 }
 
 // findLongestEdge returns the (face index, corner) of the longest edge among

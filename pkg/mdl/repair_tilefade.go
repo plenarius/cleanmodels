@@ -276,12 +276,12 @@ func lerpVertexWeight(a, b VertexWeight, t float32) VertexWeight {
 	acc := map[string]float32{}
 	for i := range a.Bones {
 		if i < len(a.Weights) {
-			acc[strings.ToLower(a.Bones[i])] += a.Weights[i] * (1 - t)
+			acc[strings.ToLower(a.Bones[i])] += float32(a.Weights[i] * (1 - t))
 		}
 	}
 	for i := range b.Bones {
 		if i < len(b.Weights) {
-			acc[strings.ToLower(b.Bones[i])] += b.Weights[i] * t
+			acc[strings.ToLower(b.Bones[i])] += float32(b.Weights[i] * t)
 		}
 	}
 	bones := make([]string, 0, len(acc))
