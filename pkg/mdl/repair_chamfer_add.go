@@ -3,6 +3,7 @@ package mdl
 import (
 	"fmt"
 	"math"
+	"sort"
 )
 
 // AddChamfers walks every mesh-bearing node, finds open boundary edges that
@@ -108,6 +109,14 @@ func findChamferEdges(dirEdges map[DirectedEdge][]DirectedEdgeFace, world []Vec3
 		}
 		out = append(out, chamferCandidate{V0: v1, V1: v2})
 	}
+	// dirEdges is a map; chamfer faces and vertices are appended in this
+	// order, so sort it to keep the output the same from run to run.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].V0 != out[j].V0 {
+			return out[i].V0 < out[j].V0
+		}
+		return out[i].V1 < out[j].V1
+	})
 	return out
 }
 

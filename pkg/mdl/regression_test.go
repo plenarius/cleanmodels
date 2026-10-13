@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -422,4 +423,59 @@ func minimalModelWithMesh() *Model {
 	meshNode := &Node{Name: "mymesh", Parent: "test", Mesh: mesh}
 	m.Nodes = append(m.Nodes, meshNode)
 	return m
+}
+
+// SplitMultipleEdges hands out new vertex indices edge by edge. It used to
+// visit the edges in map order, so the same model came out differently from
+// run to run.
+func TestRegression_SplitMultiEdgeIsDeterministic(t *testing.T) {
+	build := func() *Node {
+		mesh := NewMeshData()
+		// Three fins glued onto each of three shared edges.
+		for i := 0; i < 5; i++ {
+			mesh.Verts = append(mesh.Verts, Vec3{float32(i), float32(i * i), 0})
+		}
+		mesh.Verts = append(mesh.Verts, Vec3{0, 0, 1}, Vec3{0, 0, 2}, Vec3{0, 0, 3}, Vec3{0, 0, 4})
+		for _, e := range [][2]int32{{0, 1}, {1, 2}, {2, 3}, {3, 4}} {
+			for k := int32(5); k < 9; k++ {
+				mesh.Faces = append(mesh.Faces, Face{Verts: [3]int32{e[0], e[1], k}, UVs: [3]int32{e[0], e[1], k}})
+			}
+		}
+		mesh.TVerts = append(mesh.TVerts, mesh.Verts...)
+		return &Node{Name: "multi", Mesh: mesh}
+	}
+	ref := build()
+	SplitMultipleEdges(ref)
+	for i := 0; i < 50; i++ {
+		got := build()
+		SplitMultipleEdges(got)
+		if !reflect.DeepEqual(got.Mesh.Faces, ref.Mesh.Faces) || !reflect.DeepEqual(got.Mesh.Verts, ref.Mesh.Verts) {
+			t.Fatalf("run %d produced a different mesh from run 0", i)
+		}
+	}
+}
+
+// Chamfer candidates come out of a map walk; they must be in a fixed order so
+// the faces and vertices appended for them are the same on every run.
+func TestRegression_ChamferCandidatesAreOrdered(t *testing.T) {
+	var faces []Face
+	var world []Vec3
+	// A row of upward-facing triangles whose outer edge lies on X = 5.
+	for i := 0; i < 8; i++ {
+		y := float32(i) * 0.25
+		base := int32(len(world))
+		world = append(world, Vec3{5, y, 0}, Vec3{5, y + 0.25, 0}, Vec3{4, y, 0})
+		faces = append(faces, Face{Verts: [3]int32{base, base + 1, base + 2}})
+	}
+	for run := 0; run < 50; run++ {
+		got := findChamferEdges(BuildDirectedEdgeMap(faces), world)
+		if len(got) != 8 {
+			t.Fatalf("run %d: %d candidates, want 8", run, len(got))
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i-1].V0 >= got[i].V0 {
+				t.Fatalf("run %d: candidates not in vertex order: %+v", run, got)
+			}
+		}
+	}
 }

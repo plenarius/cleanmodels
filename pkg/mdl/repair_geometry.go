@@ -1,5 +1,7 @@
 package mdl
 
+import "sort"
+
 // StripDegenerateFaces removes faces where two or more vertex indices are
 // identical (zero-area triangles). Returns the number of faces removed.
 func StripDegenerateFaces(model *Model) int {
@@ -77,6 +79,14 @@ func SplitMultipleEdges(n *Node) int {
 	if len(multiEdges) == 0 {
 		return 0
 	}
+	// edgeFaces is a map, so its order changes from run to run. New vertex
+	// indices are handed out in this order; sort it so the output is stable.
+	sort.Slice(multiEdges, func(i, j int) bool {
+		if multiEdges[i].V0 != multiEdges[j].V0 {
+			return multiEdges[i].V0 < multiEdges[j].V0
+		}
+		return multiEdges[i].V1 < multiEdges[j].V1
+	})
 
 	hasNormals := len(mesh.Normals) == len(mesh.Verts)
 	hasColors := len(mesh.Colors) == len(mesh.Verts)
