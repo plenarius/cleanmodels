@@ -99,6 +99,7 @@ func runLegacy(args []string) int {
 	fs.SetOutput(os.Stderr)
 
 	checkFlag := fs.Bool("check", false, "run validation checks")
+	overwriteFlag := fs.Bool("overwrite", false, "replace an existing output file")
 	decompileOnly := fs.Bool("decompile-only", false, "decompile binary to ASCII without checks or repairs")
 	decompileFlag := fs.Bool("decompile", false, "force binary decompilation mode")
 	jsonOut := fs.Bool("json", false, "output results as JSON to stdout")
@@ -196,10 +197,10 @@ func runLegacy(args []string) int {
 		return exitUsage
 	}
 
-	inputPath := pos[0]
-	var outputPath string
-	if len(pos) >= 2 {
-		outputPath = pos[1]
+	inputs, outputPath, splitErr := splitInputs(pos, true)
+	if splitErr != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", splitErr)
+		return exitUsage
 	}
 
 	if *workers < 1 {
@@ -217,6 +218,7 @@ func runLegacy(args []string) int {
 
 	opts := procOpts{
 		check:          *checkFlag,
+		overwrite:      *overwriteFlag,
 		decompileOnly:  *decompileOnly,
 		forceBin:       *decompileFlag,
 		jsonOut:        *jsonOut,
@@ -288,5 +290,5 @@ func runLegacy(args []string) int {
 		},
 	}
 
-	return dispatch(inputPath, outputPath, opts)
+	return dispatchInputs(inputs, outputPath, opts)
 }

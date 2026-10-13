@@ -27,8 +27,8 @@ func cmdCheck(args []string) int {
 	cf.register(fs)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: cleanmodels check [flags] <input> [output]\n\n")
-		fmt.Fprintf(os.Stderr, "Run validation checks on MDL models.\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: cleanmodels check [flags] <input>...\n       cleanmodels check --fix [flags] <input> [output]\n\n")
+		fmt.Fprintf(os.Stderr, "Run validation checks on MDL models. Any number of files and directories can be given;\ncheck never writes a file unless --fix is used, and then the last argument is the output.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -60,10 +60,10 @@ func cmdCheck(args []string) int {
 		return exitUsage
 	}
 
-	inputPath := pos[0]
-	var outputPath string
-	if len(pos) >= 2 {
-		outputPath = pos[1]
+	inputs, outputPath, splitErr := splitInputs(pos, *fix)
+	if splitErr != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", splitErr)
+		return exitUsage
 	}
 
 	opts := procOpts{
@@ -78,5 +78,5 @@ func cmdCheck(args []string) int {
 		setAllRepairs(&opts)
 	}
 
-	return dispatch(inputPath, outputPath, opts)
+	return dispatchInputs(inputs, outputPath, opts)
 }
