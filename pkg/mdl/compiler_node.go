@@ -26,7 +26,7 @@ func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
 
 	// ---- header_node (112 bytes) ----
 	// Ref: binary.go readNodeDepth lines 484-511
-	c.core.zeros(24)              // p_func1..p_func6 (6×4 = 24 bytes)
+	c.core.zeros(24)             // p_func1..p_func6 (6×4 = 24 bytes)
 	c.core.i32le(n.InheritColor) // inheritColor
 	c.core.i32le(partNum)        // node_number / m_ID
 	c.core.fixedStr(n.Name, 32)  // char node_name[32]
@@ -607,7 +607,7 @@ func (c *compiler) writeAABBHeader(n *Node) int32 {
 type aabbTreeEntry struct {
 	BoundMin Vec3
 	BoundMax Vec3
-	LeafFace int  // -1 for internal
+	LeafFace int // -1 for internal
 	Plane    uint32
 	Left     int // index into tree slice, -1 if absent
 	Right    int
@@ -663,12 +663,24 @@ func facesAABB(mesh *MeshData, faceIdxs []int) (bmin, bmax Vec3) {
 				continue
 			}
 			v := mesh.Verts[vi]
-			if v.X < bmin.X { bmin.X = v.X }
-			if v.Y < bmin.Y { bmin.Y = v.Y }
-			if v.Z < bmin.Z { bmin.Z = v.Z }
-			if v.X > bmax.X { bmax.X = v.X }
-			if v.Y > bmax.Y { bmax.Y = v.Y }
-			if v.Z > bmax.Z { bmax.Z = v.Z }
+			if v.X < bmin.X {
+				bmin.X = v.X
+			}
+			if v.Y < bmin.Y {
+				bmin.Y = v.Y
+			}
+			if v.Z < bmin.Z {
+				bmin.Z = v.Z
+			}
+			if v.X > bmax.X {
+				bmax.X = v.X
+			}
+			if v.Y > bmax.Y {
+				bmax.Y = v.Y
+			}
+			if v.Z > bmax.Z {
+				bmax.Z = v.Z
+			}
 		}
 	}
 	return

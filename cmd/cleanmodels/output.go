@@ -2,21 +2,21 @@ package main
 
 import (
 	"fmt"
+	"github.com/plenarius/cleanmodels/pkg/mdl"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
 // ANSI escape sequences for terminal color output.
 const (
-	ansiReset   = "\033[0m"
-	ansiBold    = "\033[1m"
-	ansiDim     = "\033[2m"
-	ansiRed     = "\033[31m"
-	ansiYellow  = "\033[33m"
-	ansiGreen   = "\033[32m"
+	ansiReset  = "\033[0m"
+	ansiBold   = "\033[1m"
+	ansiDim    = "\033[2m"
+	ansiRed    = "\033[31m"
+	ansiYellow = "\033[33m"
+	ansiGreen  = "\033[32m"
 )
 
 // termWriter wraps an io.Writer with optional ANSI color support.
@@ -43,11 +43,11 @@ func (tw *termWriter) styled(style, s string) string {
 	return style + s + ansiReset
 }
 
-func (tw *termWriter) bold(s string) string    { return tw.styled(ansiBold, s) }
-func (tw *termWriter) dim(s string) string     { return tw.styled(ansiDim, s) }
-func (tw *termWriter) red(s string) string     { return tw.styled(ansiRed, s) }
-func (tw *termWriter) yellow(s string) string  { return tw.styled(ansiYellow, s) }
-func (tw *termWriter) green(s string) string   { return tw.styled(ansiGreen, s) }
+func (tw *termWriter) bold(s string) string   { return tw.styled(ansiBold, s) }
+func (tw *termWriter) dim(s string) string    { return tw.styled(ansiDim, s) }
+func (tw *termWriter) red(s string) string    { return tw.styled(ansiRed, s) }
+func (tw *termWriter) yellow(s string) string { return tw.styled(ansiYellow, s) }
+func (tw *termWriter) green(s string) string  { return tw.styled(ansiGreen, s) }
 
 // severityTag returns a color-coded severity label.
 func (tw *termWriter) severityTag(s mdl.Severity) string {
@@ -176,8 +176,8 @@ func pluralize(n int, singular, plural string) string {
 
 // ANSI cursor control for in-place terminal rewriting.
 const (
-	ansiClearLine = "\033[2K"
-	ansiCursorUp  = "\033[%dA"
+	ansiClearLine  = "\033[2K"
+	ansiCursorUp   = "\033[%dA"
 	ansiHideCursor = "\033[?25l"
 	ansiShowCursor = "\033[?25h"
 )
@@ -452,4 +452,3 @@ func formatCount(n int) string {
 	}
 	return fmt.Sprintf("%d", n)
 }
-

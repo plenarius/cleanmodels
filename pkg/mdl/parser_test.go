@@ -226,8 +226,8 @@ func TestNearMatch(t *testing.T) {
 		{"bitmap", []string{"bitmap", "render"}, "bitmap", true},
 		{"setfillumcolor", []string{"selfillumcolor"}, "selfillumcolor", true},
 		{"n_dynamic_type", []string{"ndynamictype"}, "ndynamictype", true},
-		{"bitmpa", []string{"bitmap", "render"}, "bitmap", true},       // Levenshtein 2
-		{"zzzzz", []string{"bitmap", "render"}, "", false},             // too far
+		{"bitmpa", []string{"bitmap", "render"}, "bitmap", true}, // Levenshtein 2
+		{"zzzzz", []string{"bitmap", "render"}, "", false},       // too far
 	}
 
 	for _, tt := range tests {

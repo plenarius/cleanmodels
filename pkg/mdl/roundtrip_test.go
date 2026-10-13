@@ -148,19 +148,19 @@ func TestWriteAndParse(t *testing.T) {
 		AnimationScale: 1.0,
 		Nodes: []*Node{
 			{
-				Name:   "test",
-				Parent: "NULL",
-				Scale:  1.0,
+				Name:        "test",
+				Parent:      "NULL",
+				Scale:       1.0,
 				Orientation: Vec4{W: 1.0},
 			},
 			{
-				Name:   "mesh01",
-				Parent: "test",
-				Scale:  1.0,
+				Name:        "mesh01",
+				Parent:      "test",
+				Scale:       1.0,
 				Orientation: Vec4{W: 1.0},
 				Mesh: &MeshData{
-					Render: 1,
-					Alpha:  1.0,
+					Render:  1,
+					Alpha:   1.0,
 					Diffuse: Vec3{X: 0.8, Y: 0.8, Z: 0.8},
 					Ambient: Vec3{X: 0.2, Y: 0.2, Z: 0.2},
 					Bitmap:  "test_texture",

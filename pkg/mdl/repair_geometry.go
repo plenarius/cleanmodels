@@ -125,17 +125,17 @@ func SplitMultipleEdges(n *Node) int {
 					if hasDangly {
 						n.Dangly.Constraints = append(n.Dangly.Constraints, n.Dangly.Constraints[oldIdx])
 					}
-				f.Verts[vi] = newIdx
-				if hasTVerts {
-					uvIdx := f.UVs[vi]
-					if uvIdx >= 0 && int(uvIdx) < len(mesh.TVerts) {
-						f.UVs[vi] = int32(len(mesh.TVerts))
-						mesh.TVerts = append(mesh.TVerts, mesh.TVerts[uvIdx])
+					f.Verts[vi] = newIdx
+					if hasTVerts {
+						uvIdx := f.UVs[vi]
+						if uvIdx >= 0 && int(uvIdx) < len(mesh.TVerts) {
+							f.UVs[vi] = int32(len(mesh.TVerts))
+							mesh.TVerts = append(mesh.TVerts, mesh.TVerts[uvIdx])
+						}
+					} else {
+						f.UVs[vi] = newIdx
 					}
-				} else {
-					f.UVs[vi] = newIdx
-				}
-				dupUV(hasTVerts, fi, vi, &mesh.TVerts, mesh.TexIndices0)
+					dupUV(hasTVerts, fi, vi, &mesh.TVerts, mesh.TexIndices0)
 					dupUV(hasTVerts1, fi, vi, &mesh.TVerts1, mesh.TexIndices1)
 					dupUV(hasTVerts2, fi, vi, &mesh.TVerts2, mesh.TexIndices2)
 					dupUV(hasTVerts3, fi, vi, &mesh.TVerts3, mesh.TexIndices3)

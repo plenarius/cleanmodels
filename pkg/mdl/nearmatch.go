@@ -16,11 +16,11 @@ import "strings"
 // knownAliases maps common misspellings/variants to their canonical names.
 // These are guaranteed matches that don't need fuzzy comparison.
 var knownAliases = map[string]string{
-	"setfillumcolor":  "selfillumcolor",
-	"n_dynamic_type":  "ndynamictype",
-	"filedependancy":  "filedependency",
-	"texture0":        "bitmap",
-	"isdynamic":       "ndynamictype",
+	"setfillumcolor": "selfillumcolor",
+	"n_dynamic_type": "ndynamictype",
+	"filedependancy": "filedependency",
+	"texture0":       "bitmap",
+	"isdynamic":      "ndynamictype",
 }
 
 // NearMatchParam attempts to match input against a set of valid parameter names.

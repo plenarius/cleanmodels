@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	reportEndpoint  = "https://cleanmodels.layonara.com/report"
-	maxFileSize     = 10 * 1024 * 1024 // 10 MB per file
-	maxTotalSize    = 25 * 1024 * 1024 // 25 MB total
+	reportEndpoint = "https://cleanmodels.layonara.com/report"
+	maxFileSize    = 10 * 1024 * 1024 // 10 MB per file
+	maxTotalSize   = 25 * 1024 * 1024 // 25 MB total
 )
 
 // Embedded at build time via ldflags alongside version.
