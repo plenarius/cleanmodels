@@ -51,3 +51,36 @@ donemodel params
 		t.Errorf("good value should apply and bad ones keep the default: %+v", n)
 	}
 }
+
+// Emitter flags written as true/false (NWNCQ) are read as 1/0, not dropped.
+func TestAffectedByWindAcceptsTrueFalse(t *testing.T) {
+	for _, tc := range []struct {
+		val  string
+		want int32
+		warn bool
+	}{{"true", 1, false}, {"False", 0, false}, {"1", 1, false}, {"maybe", 0, true}} {
+		src := `newmodel w
+setsupermodel w NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom w
+  node emitter e
+    parent NULL
+    affectedByWind ` + tc.val + `
+  endnode
+endmodelgeom
+donemodel w
+`
+		pr, err := Parse(strings.NewReader(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := pr.Model.RootNode()
+		if n == nil || n.Emitter == nil || n.Emitter.AffectedByWind != tc.want {
+			t.Errorf("%s: got %+v, want %d", tc.val, n, tc.want)
+		}
+		if hasError(pr.Errors, "affectedByWind") != tc.warn {
+			t.Errorf("%s: warnings %+v, want warn=%v", tc.val, pr.Errors, tc.warn)
+		}
+	}
+}
