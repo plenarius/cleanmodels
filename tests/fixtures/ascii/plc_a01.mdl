@@ -1,0 +1,140 @@
+# Exported from blender at Friday, 2017-03-24
+filedependancy test.blend
+newmodel plc_a01
+setsupermodel plc_a01 null
+classification UNKNOWN
+setanimationscale 1.0
+beginmodelgeom plc_a01
+node dummy plc_a01
+  parent null
+endnode
+node animmesh plane
+  parent plc_a01
+  position  0.00000  0.00000  0.00000
+  orientation  1.00000  0.00000  0.00000  0.00000
+  wirecolor  1.00  1.00  1.00
+  ambient  1.00  1.00  1.00
+  diffuse  0.80  0.80  0.80
+  specular  1.00  1.00  1.00
+  bitmap colorgrid
+  alpha 1.0
+  shininess 1
+  ambient  0.00  0.00  0.00
+  render 1
+  shadow 0
+  beaming 0
+  inheritcolor 0
+  transparencyhint 0
+  verts 4
+     3.00000 -3.00000  0.00000
+    -3.00000 -3.00000  0.00000
+     3.00000  3.00000  0.00000
+    -3.00000  3.00000  0.00000
+  faces 2
+    1 0 2  0  0 1 2   0
+    3 1 2  0  3 4 5   0
+  tverts 6
+     0.000  0.000  0
+     1.000  0.000  0
+     1.000  1.000  0
+     0.000  1.000  0
+     0.000  0.000  0
+     1.000  1.000  0
+endnode
+node trimesh select_a01
+  parent plc_a01
+  position  0.00000  0.00000  0.00000
+  orientation  1.00000  0.00000  0.00000  0.00000
+  wirecolor  1.00  1.00  1.00
+  ambient  1.00  1.00  1.00
+  diffuse  0.80  0.80  0.80
+  specular  1.00  1.00  1.00
+  bitmap null
+  alpha 0.0
+  shininess 1
+  ambient  0.00  0.00  0.00
+  render 1
+  shadow 0
+  beaming 0
+  inheritcolor 0
+  transparencyhint 0
+  verts 8
+    -3.00000 -3.00000  0.00000
+    -3.00000  3.00000  0.00000
+     3.00000  3.00000  0.00000
+     3.00000 -3.00000  0.00000
+    -3.00000 -3.00000  0.50000
+    -3.00000  3.00000  0.50000
+     3.00000  3.00000  0.50000
+     3.00000 -3.00000  0.50000
+  faces 12
+    5 0 4  0  0 0 0   0
+    5 6 1  0  0 0 0   0
+    6 7 2  0  0 0 0   0
+    7 4 3  0  0 0 0   0
+    0 1 3  0  0 0 0   0
+    7 6 4  0  0 0 0   0
+    1 0 5  0  0 0 0   0
+    6 2 1  0  0 0 0   0
+    7 3 2  0  0 0 0   0
+    4 0 3  0  0 0 0   0
+    1 2 3  0  0 0 0   0
+    6 5 4  0  0 0 0   0
+endnode
+endmodelgeom plc_a01
+
+# ANIM ASCII
+newanim default plc_a01
+  length 2.0
+  transtime 0.25
+  animroot plc_a01
+  node dummy plc_a01
+    parent null
+  endnode
+  node animmesh plane
+    parent plc_a01
+    verts 4
+       3.00000 -3.00000  0.00000
+      -3.00000 -3.00000  0.00000
+       3.00000  3.00000  0.00000
+      -3.00000  3.00000  0.00000
+    faces 2
+      1 0 2  0  0 1 2   0
+      3 1 2  0  3 4 5   0
+    tverts 6
+       0.000  0.000  0
+       1.000  0.000  0
+       1.000  1.000  0
+       0.000  1.000  0
+       0.000  0.000  0
+       1.000  1.000  0
+    clipu 0.0
+    clipv 0.0
+    clipw 1.0
+    cliph 1.0
+    sampleperiod 2.0
+    animtverts 12
+       0.000  0.000  0
+       1.000  0.000  0
+       1.000  1.000  0
+       0.000  1.000  0
+       0.000  0.000  0
+       1.000  1.000  0
+       1.000  0.000  0
+       2.000  0.000  0
+       2.000  1.000  0
+       1.000  1.000  0
+       1.000  0.000  0
+       2.000  1.000  0
+    endlist
+    positionkey 3
+      0.00000  0.00000  0.00000  0.00000
+      1.00000  0.00000  0.00000  1.00000
+      2.00000  0.00000  0.00000  0.00000
+  endnode
+  node trimesh select_a01
+    parent plc_a01
+  endnode
+doneanim default plc_a01
+
+donemodel plc_a01

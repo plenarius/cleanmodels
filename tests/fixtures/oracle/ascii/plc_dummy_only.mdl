@@ -1,0 +1,11 @@
+# Oracle test: dummy-only model (no mesh)
+newmodel plc_dummy_only
+  setsupermodel plc_dummy_only NULL
+  classification EFFECTS
+  setanimationscale 1.0
+beginmodelgeom plc_dummy_only
+  node dummy plc_dummy_only
+    parent NULL
+  endnode
+endmodelgeom plc_dummy_only
+donemodel plc_dummy_only

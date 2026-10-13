@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v4-go-rewrite]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION_TAG: ${{ github.ref_name }}
+          CLIENT_KEY: ${{ secrets.REPORT_CLIENT_KEY }}
+        run: |
+          EXT=""
+          if [ "${GOOS}" = "windows" ]; then EXT=".exe"; fi
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION_TAG} -X main.clientKey=${CLIENT_KEY}" \
+            -o "cleanmodels-${GOOS}-${GOARCH}${EXT}" \
+            ./cmd/cleanmodels
+
+      - name: Compress
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          ARCHIVE="cleanmodels-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+          zip "${ARCHIVE}" "cleanmodels-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: cleanmodels-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: "*.zip"
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build cleanmodels.wasm
+        env:
+          GOOS: js
+          GOARCH: wasm
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist/wasm
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${VERSION_TAG}" \
+            -o dist/wasm/cleanmodels.wasm \
+            ./cmd/cleanmodels-wasm
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" dist/wasm/wasm_exec.js
+          ls -la dist/wasm/
+
+      - name: Package wasm bundle
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: dist/wasm
+        run: zip ../../cleanmodels-wasm.zip cleanmodels.wasm wasm_exec.js
+
+      - name: Upload wasm artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v6
+        with:
+          name: cleanmodels-wasm
+          path: cleanmodels-wasm.zip
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: "*.zip"
