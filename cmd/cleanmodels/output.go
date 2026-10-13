@@ -78,7 +78,8 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 		return
 	}
 
-	if fixes == 0 && len(res.Actions) == 0 && len(res.Warnings) == 0 && len(parseErrs) == 0 && countCheckErrors(res.Checks) == 0 {
+	if fixes == 0 && len(res.Actions) == 0 && len(res.Warnings) == 0 && len(parseErrs) == 0 &&
+		countCheckErrors(res.Checks) == 0 && countCheckBySeverity(res.Checks, mdl.SevWarning) == 0 {
 		if verbose {
 			fmt.Fprintf(tw.w, "%s %s\n", tw.bold(baseName), tw.green("clean"))
 		}
