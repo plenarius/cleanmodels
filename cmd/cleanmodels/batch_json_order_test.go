@@ -32,7 +32,7 @@ func TestBatchJSONFollowsInputOrder(t *testing.T) {
 		stdout, _ := captureStdio(t, func() {
 			tw := newTermWriter(os.Stdout, false)
 			errTw := newTermWriter(os.Stderr, false)
-			runBatch(dir, "", opts, tw, errTw)
+			runBatch([]string{dir}, "", opts, tw, errTw)
 		})
 		var got []Result
 		if err := json.Unmarshal([]byte(stdout), &got); err != nil {

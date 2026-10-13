@@ -89,6 +89,21 @@ cleanmodels repair -a -r haks/ cleaned/
 cleanmodels repair -a -r -w 4 haks/
 ```
 
+Several files and directories can be given at once. `check` takes any number of inputs and never writes a file, so a shell glob is safe:
+
+```bash
+cleanmodels check *.mdl
+cleanmodels check plc_torch.mdl tiles/ more_tiles/
+```
+
+For `repair`, `compile` and `decompile`, give several inputs and the **last argument is the output folder**, as with `cp` and `mv`:
+
+```bash
+cleanmodels repair -a plc_torch.mdl plc_chest.mdl cleaned/
+```
+
+cleanmodels will not replace an existing file with the result for a different input: `cleanmodels repair -a a.mdl b.mdl` stops with an error if `b.mdl` exists, instead of overwriting it. Pass `--overwrite` if that is what you mean. Writing a model over itself (`repair -a a.mdl a.mdl`) and writing into an output folder are always allowed.
+
 A live progress bar is shown automatically when output is a terminal.
 
 ### Output and logging
@@ -200,6 +215,7 @@ These flags work with all subcommands:
 | `--quiet` | `-q` | Suppress all output except errors |
 | `--workers N` | `-w N` | Parallel workers for batch mode (default: CPU count) |
 | `--recursive` | `-r` | Process directories recursively |
+| `--overwrite` | | Replace an existing output file (never done by default) |
 
 ### report — submit a bug report
 

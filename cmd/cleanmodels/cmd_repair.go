@@ -84,8 +84,8 @@ func cmdRepair(args []string) int {
 	cf.register(fs)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: cleanmodels repair [flags] <input> [output]\n\n")
-		fmt.Fprintf(os.Stderr, "Apply repairs and transformations to MDL models.\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: cleanmodels repair [flags] <input>... [output]\n\n")
+		fmt.Fprintf(os.Stderr, "Apply repairs and transformations to MDL models.\n\nGive several inputs (files or directories) and the last argument is the output directory.\nAn existing output file is not overwritten unless --overwrite is given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -106,10 +106,10 @@ func cmdRepair(args []string) int {
 		return exitUsage
 	}
 
-	inputPath := pos[0]
-	var outputPath string
-	if len(pos) >= 2 {
-		outputPath = pos[1]
+	inputs, outputPath, splitErr := splitInputs(pos, true)
+	if splitErr != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", splitErr)
+		return exitUsage
 	}
 
 	opts := procOpts{
@@ -180,5 +180,5 @@ func cmdRepair(args []string) int {
 		opts.splitMultiEdge = *splitMultiEdge
 	}
 
-	return dispatch(inputPath, outputPath, opts)
+	return dispatchInputs(inputs, outputPath, opts)
 }

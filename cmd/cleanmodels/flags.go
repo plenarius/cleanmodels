@@ -20,6 +20,7 @@ type commonFlags struct {
 	superDirs *dirList
 	resDirs   *dirList
 	gameDir   *string
+	overwrite *bool
 }
 
 // dirList is a repeatable string flag: each use adds a directory.
@@ -54,6 +55,7 @@ func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.resDirs = new(dirList)
 	fs.Var(cf.resDirs, "resource-dir", resourceDirUsage)
 	cf.gameDir = fs.String("game-dir", "", gameDirUsage)
+	cf.overwrite = fs.Bool("overwrite", false, "replace an existing output file (by default a file that is not the input is never overwritten)")
 
 	fs.BoolVar(cf.jsonOut, "j", false, "alias for --json")
 	fs.BoolVar(cf.verbose, "v", false, "alias for --verbose")
@@ -79,6 +81,7 @@ func (cf *commonFlags) apply(o *procOpts) {
 	o.supermodelDirs = *cf.superDirs
 	o.resourceDirs = *cf.resDirs
 	o.gameDir = *cf.gameDir
+	o.overwrite = *cf.overwrite
 }
 
 // validateColorMode rejects values outside the documented set.
