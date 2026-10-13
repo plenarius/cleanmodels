@@ -28,7 +28,7 @@ func TestBatchProgressCounterCountsUp(t *testing.T) {
 	for run := 0; run < 10; run++ {
 		opts := procOpts{check: true, workers: 8, colorMode: "never"}
 		stdout, _ := captureStdio(t, func() {
-			runBatch(dir, "", opts, newTermWriter(os.Stdout, false), newTermWriter(os.Stderr, false))
+			runBatch([]string{dir}, "", opts, newTermWriter(os.Stdout, false), newTermWriter(os.Stderr, false))
 		})
 		want := 1
 		for _, m := range line.FindAllStringSubmatch(stdout, -1) {
