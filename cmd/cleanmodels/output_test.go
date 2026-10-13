@@ -127,3 +127,56 @@ func TestFormatBatchLine_ParseErrorsCountAsWarnings(t *testing.T) {
 		t.Fatalf("expected `3 warnings`, got %q", line)
 	}
 }
+
+func singleResultOutput(res Result, parseErrs []mdl.ParseError, verbose bool) string {
+	var buf bytes.Buffer
+	tw := &termWriter{w: &buf, color: false, cols: 0}
+	tw.printSingleResult("/tmp/f.mdl", res, nil, parseErrs, verbose, false)
+	return buf.String()
+}
+
+// A single file whose only findings are check warnings (the most common kind)
+// used to print nothing, or "clean" under -v, while the summary line counted
+// the warnings. The batch line had the same bug and was fixed earlier; the
+// single-file path was missed.
+func TestPrintSingleResult_WarningsOnlyShowsDetails(t *testing.T) {
+	res := Result{Checks: []mdl.CheckResult{
+		{Check: "degenerate_faces", Node: "Mesh1", Severity: mdl.SevWarning, Message: "face 0 has repeated vertex indices"},
+	}}
+	for _, verbose := range []bool{false, true} {
+		out := stripANSI(singleResultOutput(res, nil, verbose))
+		if strings.Contains(out, "clean") {
+			t.Errorf("verbose=%v: warnings-only file rendered as clean: %q", verbose, out)
+		}
+		if !strings.Contains(out, "1 warning") || !strings.Contains(out, "degenerate_faces (Mesh1)") || !strings.Contains(out, "face 0 has repeated vertex indices") {
+			t.Errorf("verbose=%v: header and detail expected, got %q", verbose, out)
+		}
+	}
+}
+
+// A file with nothing to report stays quiet, and says "clean" only under -v.
+func TestPrintSingleResult_CleanStaysQuiet(t *testing.T) {
+	if out := singleResultOutput(Result{}, nil, false); out != "" {
+		t.Errorf("clean, not verbose: want no output, got %q", out)
+	}
+	if out := stripANSI(singleResultOutput(Result{}, nil, true)); !strings.Contains(out, "clean") {
+		t.Errorf("clean, verbose: want \"clean\", got %q", out)
+	}
+	// Info-level findings are filtered unless verbose, so they do not make a file noisy.
+	info := Result{Checks: []mdl.CheckResult{{Check: "x", Severity: mdl.SevInfo, Message: "note"}}}
+	if out := singleResultOutput(info, nil, false); out != "" {
+		t.Errorf("info only, not verbose: want no output, got %q", out)
+	}
+}
+
+// Check errors and parse warnings still show, as before.
+func TestPrintSingleResult_ErrorsAndParseWarningsStillShow(t *testing.T) {
+	errRes := Result{Checks: []mdl.CheckResult{{Check: "missing_parents", Node: "n", Severity: mdl.SevError, Message: "boom"}}}
+	if out := stripANSI(singleResultOutput(errRes, nil, false)); !strings.Contains(out, "1 error") || !strings.Contains(out, "boom") {
+		t.Errorf("error not shown: %q", out)
+	}
+	pe := []mdl.ParseError{{Line: 352, Message: `"0/934729" is not a usable number, set to 0`}}
+	if out := stripANSI(singleResultOutput(Result{}, pe, false)); !strings.Contains(out, "line 352") {
+		t.Errorf("parse warning not shown: %q", out)
+	}
+}
