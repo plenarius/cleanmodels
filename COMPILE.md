@@ -220,7 +220,7 @@ sources. The fixtures and methodology live in
 
 ### Oracle coverage today
 
-26 fixture pairs in `ascii/` ↔ `game_binary/`, plus 18 tangent pairs.
+26 ASCII fixtures in `ascii/`, 19 of which have an engine-compiled binary in `game_binary/` (the rest are compile-only), plus 18 tangent pairs.
 Coverage spans:
 
 - Static placeables and UI assets (perfect-parity baselines)
