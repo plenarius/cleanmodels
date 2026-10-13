@@ -89,7 +89,8 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 		totalW       int
 		totalE       int
 		totalRepairs int
-		procN        int
+		procN        int // files started; numbers the JSON-lines start/done events
+		doneN        int // files finished; numbers the plain progress lines so they count up in order
 		exitCode     = exitOK
 	)
 
@@ -140,6 +141,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 				mu.Lock()
 				totalE++
 				procN++
+				doneN++
 				if o.jsonLines {
 					emitEvent(Event{Type: "error", File: baseName, Message: mkdirErr.Error(), Index: procN, Total: total})
 				} else if o.jsonOut {
@@ -148,7 +150,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 					lp.update(idx, baseName, Result{Error: mkdirErr.Error()}, nil)
 					lp.render()
 				} else if !bo.quiet {
-					tw.printBatchLine(procN, total, baseName, Result{Error: mkdirErr.Error()}, nil)
+					tw.printBatchLine(doneN, total, baseName, Result{Error: mkdirErr.Error()}, nil)
 				}
 				mu.Unlock()
 				continue
@@ -174,6 +176,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 			totalW += w
 			totalE += e
 			totalRepairs += fixes
+			doneN++
 			if e > 0 {
 				exitCode = exitErrors
 			}
@@ -189,7 +192,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 				lp.update(idx, baseName, res, parseErrs)
 				lp.render()
 			} else if !o.quiet {
-				tw.printBatchLine(seqIdx, total, baseName, res, parseErrs)
+				tw.printBatchLine(doneN, total, baseName, res, parseErrs)
 				if o.verbose {
 					tw.printResultDetail(res, parseErrs, true)
 				}
