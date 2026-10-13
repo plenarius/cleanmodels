@@ -180,5 +180,9 @@ func cmdRepair(args []string) int {
 		opts.splitMultiEdge = *splitMultiEdge
 	}
 
-	return dispatchInputs(inputs, outputPath, opts)
+	code := dispatchInputs(inputs, outputPath, opts)
+	if outputPath == "" && !opts.dryRun && !opts.quiet && code != exitUsage {
+		fmt.Fprint(os.Stderr, noOutputNote)
+	}
+	return code
 }

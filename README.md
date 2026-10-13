@@ -76,11 +76,14 @@ cleanmodels decompile plc_torch.mdl plc_torch.mdl
 Point any subcommand at a directory to process all `.mdl` files inside it. No shell loops or scripts needed.
 
 ```bash
-# All MDLs in a flat directory
+# See what would be repaired in a folder of models; nothing is written
 cleanmodels repair -a models/
 
+# Repair them in place: name the folder twice
+cleanmodels repair -a models/ models/
+
 # Recursive (includes subdirectories)
-cleanmodels repair -a -r haks/
+cleanmodels repair -a -r haks/ haks/
 
 # Output to a separate folder (originals untouched)
 cleanmodels repair -a -r haks/ cleaned/
