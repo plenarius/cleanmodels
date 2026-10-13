@@ -134,8 +134,6 @@ To OldMansBeard for designing the original [CleanModels3](https://neverwintervau
 
 Format documentation and reference implementations: [nwn.wiki](https://nwn.wiki/display/NWN1/MDL), [xoreos-docs](https://github.com/xoreos/xoreos-docs), [neverwinter.nim](https://github.com/niv/neverwinter.nim), [nwnmdlcomp](https://github.com/nwneetools/nwnmdlcomp), [varenx/borealis_nwn_model_viewer](https://github.com/varenx/borealis_nwn_model_viewer) (Qt animation player + skinmesh rendering reference), and [dunahan/nwn_mdl_webviewer](https://github.com/dunahan/nwn_mdl_webviewer) (WebGL renderer cross-reference).
 
-Morten S. Mikkelsen for [mikktspace](http://mikktspace.com/).
-
 ## License
 
 MIT. See [LICENSE](https://github.com/plenarius/cleanmodels/blob/main/LICENSE).

@@ -48,11 +48,11 @@ Tangent fixtures live in their own directory because the ASCII source and the ga
 
 ### Tangent oracle (`tangent_pairs/`)
 
-18 fixtures with baked tangents — the only place that exercises the Mikktspace path end-to-end against an oracle.
+18 fixtures with baked tangents — the only place that exercises tangent generation end-to-end against an oracle.
 
 | Group | Files | Mean alignment |
 |---|---|---|
-| `tin01_*` (12) | Hak-sourced tin01 tiles | 0.97 – 1.00 |
+| `tin01_*` (12) | Hak-sourced tin01 tiles | 0.9974 – 1.0000 |
 | `tdc01_g02_01`, `tdc01_g02_03` | Core game tdc01 tiles | **1.0000** (perfect) |
 | `wsf10_p01_01`, `wsf10_s01_02`, `wsf10_s11_04` | Layonara hak wsf10 tiles | **1.0000** (perfect) |
 | `TTR01_G02_02` | Core ttr01 tile | **1.0000** (perfect) |
@@ -127,9 +127,10 @@ go test ./pkg/mdl/ -run 'TestOracleCompare|TestOracleVertexParity|TestOracleTang
 
 What each test enforces:
 
-- **`TestOracleCompare`** — structural diff (model name, supermodel, classification, node hierarchy, animation names, mesh face counts). Tolerates intentional differences (tangents, AABB split order, vertex counts).
+- **`TestOracleCompare`** — structural diff (model name, supermodel, classification, node hierarchy, animation names, mesh face counts). Compares face counts, which now match the engine (degenerate faces are removed as the engine does).
 - **`TestOracleVertexParity`** — per-mesh-node GPU vertex count. Defaults to **strict equality** with the game; documented divergences live in `vertParityBaseline` in `oracle_test.go`. Adding a new fixture forces parity unless you explicitly record an expected delta.
-- **`TestOracleTangents`** — per-corner |dot(ourTangent, gameTangent)| ≥ alignment floor (currently 0.96 mean, ≤5% bad-corner ratio). Activates only on baked-tangent fixtures.
+- **`TestOracleTangents`** — per-corner |dot(ourTangent, gameTangent)| ≥ alignment floor (currently 0.99 mean, ≤1% bad-corner ratio; the core-game fixtures are at 1.0000). Activates only on baked-tangent fixtures.
+- **`TestOracleFaceAdjacency`** and **`TestCompiledFaceAdjacencyMatchesGame`** — the face adjacency numbers we write equal the engine's byte for byte, on the fixtures whose binary the EE compiler built from exactly this ASCII.
 
 ### 4 — Smoke test (no game binary needed)
 
@@ -139,9 +140,10 @@ go test ./pkg/mdl/ -run TestOracleCompileAll -v
 
 ## Known divergences (not bugs)
 
-These differences are intentional and documented in code; they don't change render output:
+`COMPILE.md` has the full list and the reasoning. In short, they don't change render output:
 
-- **Vertex deduplication philosophy** — the game compiler doesn't bit-deduplicate identical face-corner GPU vertices the way we do. The result: body-part, AABB walkmesh, and animated-mesh outputs end up with more unique GPU verts in the game binary than ours, even though both produce bit-identical render attributes per face corner. Locked in via `vertParityBaseline` in `oracle_test.go`.
-- **AABB tree split order** — median-split may differ from game's algorithm; pathing/collision unaffected.
-- **Tangent / bitangent data** — game generates these for normal-mapped meshes; we mirror via Mikktspace and validate alignment, not bit equality.
-- **Degenerate face elimination** — the game compiler silently strips faces with duplicate vertex indices (e.g. `18 0 9` where two refs collapse). Our compiler keeps them. See `tdc01_g02_03` for an example.
+- **Legacy-tool binaries.** `Red_M_Torso`, `pmh0_head001` and `ctl_compass` are shipped base-game assets whose binaries contain exact duplicate vertices (identical position, UV, normal and color) that the EE compiler's own merge cannot leave behind, so they were not built by the EE compile path. In every case the vertex-count difference equals the number of exact-duplicate vertices in the game binary (`torso_g` 62, `pmh0_head001g` 119, `ctl_compass` `box01` 104 and `cmp_pointer` 4). Locked in via `vertParityBaseline` in `oracle_test.go`; everything else matches the engine exactly.
+- **Legacy adjacency.** In the same kind of binary the stored face adjacency can hold numbers at or above the face count, because the legacy tool computed it before faces were removed.
+- **Drifted fixtures.** A few `tin01_*` hak tiles pair an ASCII with a different revision of the binary, so tangents on some corners differ in sign or handedness (0.65% of corners across the tangent pairs).
+
+The engine keeps a walkmesh's AABB tree exactly as authored, so there is no split-order difference to document. Degenerate faces are removed as the engine removes them (`tdc01_g02_03` `object01` goes from 19 faces to 16).
