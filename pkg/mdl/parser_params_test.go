@@ -84,3 +84,35 @@ donemodel w
 		}
 	}
 }
+
+// Static values on an animation node (position, a colour, clip parameters)
+// used to throw away an unusable number without a word.
+func TestAnimNodeStaticValuesReportBadNumbers(t *testing.T) {
+	_, errs := animNode(t, "dummy", `    position 1 x 3
+    orientation 0 0 0 1
+    colorStart 0.1 0.2 q`)
+	for _, want := range []string{`"x" is not a usable number for value 2 of "position"`, `"q" is not a usable number for value 3 of "colorStart"`} {
+		if !hasError(errs, want) {
+			t.Errorf("missing warning %q in %+v", want, errs)
+		}
+	}
+	if hasError(errs, `"orientation"`) {
+		t.Errorf("a good line must not warn: %+v", errs)
+	}
+
+	node, errs := animNode(t, "dummy", `    position 1 2 3`)
+	if len(errs) != 0 || len(node.PositionKeys) != 1 || node.PositionKeys[0].Value.Z != 3 {
+		t.Errorf("good position changed: %+v %+v", node.PositionKeys, errs)
+	}
+}
+
+func TestAnimMeshClipParamsReportBadNumbers(t *testing.T) {
+	_, errs := animNode(t, "animmesh", `    sampleperiod fast
+    clipu 0.5`)
+	if !hasError(errs, `"fast" is not a usable number for "sampleperiod"`) {
+		t.Errorf("missing warning in %+v", errs)
+	}
+	if hasError(errs, `"clipu"`) {
+		t.Errorf("a good value must not warn: %+v", errs)
+	}
+}

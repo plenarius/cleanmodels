@@ -154,6 +154,18 @@ func (p *parser) boolParam(tokens []string, dst *int32) {
 	}
 }
 
+// floatAt reads tokens[i] as a float for a line whose values are all needed
+// ("position x y z"). An unusable one is set to 0 and reported, as the list
+// readers do, instead of silently becoming 0.
+func (p *parser) floatAt(tokens []string, i int) float32 {
+	v, err := parseFloat(safeIndex(tokens, i))
+	if err != nil {
+		p.errorf("%q is not a usable number for value %d of %q, set to 0", safeIndex(tokens, i), i, tokens[0])
+		return 0
+	}
+	return v
+}
+
 // countParam reads the entry count that opens a list. When it is unusable the
 // list cannot be read, so say so rather than letting its lines fall through.
 func (p *parser) countParam(tokens []string) (int32, bool) {
@@ -1106,19 +1118,14 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		// Ignored for anim nodes
 	case "position":
 		if len(tokens) >= 4 {
-			x, _ := parseFloat(safeIndex(tokens, 1))
-			y, _ := parseFloat(safeIndex(tokens, 2))
-			z, _ := parseFloat(safeIndex(tokens, 3))
+			x, y, z := p.floatAt(tokens, 1), p.floatAt(tokens, 2), p.floatAt(tokens, 3)
 			if len(an.PositionKeys) == 0 {
 				an.PositionKeys = append(an.PositionKeys, PositionKey{Time: 0, Value: Vec3{X: x, Y: y, Z: z}})
 			}
 		}
 	case "orientation":
 		if len(tokens) >= 5 {
-			x, _ := parseFloat(safeIndex(tokens, 1))
-			y, _ := parseFloat(safeIndex(tokens, 2))
-			z, _ := parseFloat(safeIndex(tokens, 3))
-			w, _ := parseFloat(safeIndex(tokens, 4))
+			x, y, z, w := p.floatAt(tokens, 1), p.floatAt(tokens, 2), p.floatAt(tokens, 3), p.floatAt(tokens, 4)
 			if len(an.OrientationKeys) == 0 {
 				an.OrientationKeys = append(an.OrientationKeys, OrientationKey{Time: 0, Value: Vec4{X: x, Y: y, Z: z, W: w}})
 			}
@@ -1192,35 +1199,35 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			an.AnimMesh.SamplePeriod, _ = parseFloat(safeIndex(tokens, 1))
+			p.floatParam(tokens, &an.AnimMesh.SamplePeriod)
 		}
 	case "clipu":
 		if len(tokens) >= 2 {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			an.AnimMesh.ClipU, _ = parseFloat(safeIndex(tokens, 1))
+			p.floatParam(tokens, &an.AnimMesh.ClipU)
 		}
 	case "clipv":
 		if len(tokens) >= 2 {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			an.AnimMesh.ClipV, _ = parseFloat(safeIndex(tokens, 1))
+			p.floatParam(tokens, &an.AnimMesh.ClipV)
 		}
 	case "clipw":
 		if len(tokens) >= 2 {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			an.AnimMesh.ClipW, _ = parseFloat(safeIndex(tokens, 1))
+			p.floatParam(tokens, &an.AnimMesh.ClipW)
 		}
 	case "cliph":
 		if len(tokens) >= 2 {
 			if an.AnimMesh == nil {
 				an.AnimMesh = &AnimMeshData{}
 			}
-			an.AnimMesh.ClipH, _ = parseFloat(safeIndex(tokens, 1))
+			p.floatParam(tokens, &an.AnimMesh.ClipH)
 		}
 	case "animverts":
 		if len(tokens) >= 2 {
@@ -1263,21 +1270,17 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		// single-keyframe controllers at t=0, matching nwnmdlcomp behavior.
 		if getter, ok := animControllerFloatTable[keyword]; ok {
 			if len(tokens) >= 2 {
-				v, err := parseFloat(safeIndex(tokens, 1))
-				if err == nil {
-					keys := getter(an)
-					if len(*keys) == 0 {
-						*keys = append(*keys, FloatKey{Time: 0, Value: v})
-					}
+				if v, err := parseFloat(safeIndex(tokens, 1)); err != nil {
+					p.badParam(tokens, "number")
+				} else if keys := getter(an); len(*keys) == 0 {
+					*keys = append(*keys, FloatKey{Time: 0, Value: v})
 				}
 			}
 			return
 		}
 		if getter, ok := animControllerColorTable[keyword]; ok {
 			if len(tokens) >= 4 {
-				r, _ := parseFloat(safeIndex(tokens, 1))
-				g, _ := parseFloat(safeIndex(tokens, 2))
-				b, _ := parseFloat(safeIndex(tokens, 3))
+				r, g, b := p.floatAt(tokens, 1), p.floatAt(tokens, 2), p.floatAt(tokens, 3)
 				keys := getter(an)
 				if len(*keys) == 0 {
 					*keys = append(*keys, ColorKey{Time: 0, Value: Vec3{X: r, Y: g, Z: b}})
