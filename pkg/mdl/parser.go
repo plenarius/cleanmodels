@@ -1717,152 +1717,56 @@ func (p *parser) readWeightList(skin *SkinData, count int) {
 	}
 }
 
-func (p *parser) readPositionKeys(out *[]PositionKey, count int) {
-	if !p.trackAlloc(int64(count) * 16) {
-		p.errorf("allocation limit exceeded reading %d position keys", count)
+// keyValues parses the first n tokens of an animation key line (time first).
+//
+// Unlike a list entry, a key cannot be kept with an invented time or pose: a
+// time of 0 in the middle of a track breaks the ordering the animation relies
+// on. So a key with too few values, or no usable time, is skipped and reported.
+// A bad value after the time is set to 0, as in a list, and reported.
+func (w *listWarn) keyValues(tokens []string, n int) ([]float32, bool) {
+	if len(tokens) < n {
+		w.add("key has %d value(s), expected %d; the key is skipped", len(tokens), n)
+		return nil, false
+	}
+	t, err := parseFloat(tokens[0])
+	if err != nil {
+		w.add("key time %q is not a usable number; the key is skipped", tokens[0])
+		return nil, false
+	}
+	v := make([]float32, n)
+	v[0] = t
+	for i := 1; i < n; i++ {
+		v[i] = w.float(tokens[i])
+	}
+	return v, true
+}
+
+// keyParser parses one key line, appends it, and reports whether the key was
+// kept. Any problem is reported through w.
+type keyParser func(w *listWarn, tokens []string) bool
+
+// readKeys reads a counted run of key lines.
+func (p *parser) readKeys(count int, bytesPerKey int64, label string, parse keyParser) {
+	if !p.trackAlloc(int64(count) * bytesPerKey) {
+		p.errorf("allocation limit exceeded reading %d %s", count, label)
 		return
 	}
+	w := p.newListWarn()
+	defer w.done()
 	for i := 0; i < count; i++ {
 		line, ok := p.nextLine()
 		if !ok {
 			break
 		}
-		tokens := tokenize(line)
-		if len(tokens) >= 4 {
-			t, _ := parseFloat(tokens[0])
-			x, _ := parseFloat(tokens[1])
-			y, _ := parseFloat(tokens[2])
-			z, _ := parseFloat(tokens[3])
-			*out = append(*out, PositionKey{Time: t, Value: Vec3{X: x, Y: y, Z: z}})
-		}
+		parse(w, tokenize(line))
 	}
 }
 
-// positionBezierKeyFromTokens parses "time x y z [tanIn.xyz tanOut.xyz]".
-func positionBezierKeyFromTokens(tokens []string) PositionKey {
-	var f [10]float32
-	for i := 0; i < len(f) && i < len(tokens); i++ {
-		f[i], _ = parseFloat(tokens[i])
-	}
-	return PositionKey{
-		Time:   f[0],
-		Value:  Vec3{X: f[1], Y: f[2], Z: f[3]},
-		TanIn:  Vec3{X: f[4], Y: f[5], Z: f[6]},
-		TanOut: Vec3{X: f[7], Y: f[8], Z: f[9]},
-	}
-}
-
-func (p *parser) readPositionBezierKeys(out *[]PositionKey, count int) {
-	if !p.trackAlloc(int64(count) * 40) {
-		p.errorf("allocation limit exceeded reading %d position bezier keys", count)
-		return
-	}
-	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
-		if !ok {
-			break
-		}
-		if tokens := tokenize(line); len(tokens) >= 4 {
-			*out = append(*out, positionBezierKeyFromTokens(tokens))
-		}
-	}
-}
-
-func (p *parser) readPositionBezierKeysUntilEnd(out *[]PositionKey) {
-	p.readKeysUntilEnd(4, 40, "position bezier keys", func(tokens []string) {
-		*out = append(*out, positionBezierKeyFromTokens(tokens))
-	})
-}
-
-func (p *parser) readOrientationKeys(out *[]OrientationKey, count int) {
-	if !p.trackAlloc(int64(count) * 20) {
-		p.errorf("allocation limit exceeded reading %d orientation keys", count)
-		return
-	}
-	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
-		if !ok {
-			break
-		}
-		tokens := tokenize(line)
-		if len(tokens) >= 5 {
-			t, _ := parseFloat(tokens[0])
-			x, _ := parseFloat(tokens[1])
-			y, _ := parseFloat(tokens[2])
-			z, _ := parseFloat(tokens[3])
-			w, _ := parseFloat(tokens[4])
-			*out = append(*out, OrientationKey{Time: t, Value: Vec4{X: x, Y: y, Z: z, W: w}})
-		}
-	}
-}
-
-func (p *parser) readFloatKeys(out *[]FloatKey, count int) {
-	if !p.trackAlloc(int64(count) * 8) {
-		p.errorf("allocation limit exceeded reading %d float keys", count)
-		return
-	}
-	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
-		if !ok {
-			break
-		}
-		tokens := tokenize(line)
-		if len(tokens) >= 2 {
-			t, _ := parseFloat(tokens[0])
-			v, _ := parseFloat(tokens[1])
-			*out = append(*out, FloatKey{Time: t, Value: v})
-		}
-	}
-}
-
-// readDetonateKeys reads detonate key entries that may be time-only (NWN spec:
-// NumCols=-1) or time+value. Both formats are accepted for interoperability.
-func (p *parser) readDetonateKeys(out *[]FloatKey, count int) {
-	if !p.trackAlloc(int64(count) * 8) {
-		p.errorf("allocation limit exceeded reading %d detonate keys", count)
-		return
-	}
-	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
-		if !ok {
-			break
-		}
-		tokens := tokenize(line)
-		if len(tokens) >= 2 {
-			t, _ := parseFloat(tokens[0])
-			v, _ := parseFloat(tokens[1])
-			*out = append(*out, FloatKey{Time: t, Value: v})
-		} else if len(tokens) == 1 {
-			t, _ := parseFloat(tokens[0])
-			*out = append(*out, FloatKey{Time: t, Value: 1})
-		}
-	}
-}
-
-func (p *parser) readColorKeys(out *[]ColorKey, count int) {
-	if !p.trackAlloc(int64(count) * 16) {
-		p.errorf("allocation limit exceeded reading %d color keys", count)
-		return
-	}
-	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
-		if !ok {
-			break
-		}
-		tokens := tokenize(line)
-		if len(tokens) >= 4 {
-			t, _ := parseFloat(tokens[0])
-			r, _ := parseFloat(tokens[1])
-			g, _ := parseFloat(tokens[2])
-			b, _ := parseFloat(tokens[3])
-			*out = append(*out, ColorKey{Time: t, Value: Vec3{X: r, Y: g, Z: b}})
-		}
-	}
-}
-
-// readKeysUntilEnd scans lines until "endlist", calling parseLine for each
-// line that has at least minTokens tokens. allocBytes is tracked per entry.
-func (p *parser) readKeysUntilEnd(minTokens int, allocBytes int64, label string, parseLine func(tokens []string)) {
+// readKeysUntilEnd reads key lines until "endlist". allocBytes is tracked per
+// key kept.
+func (p *parser) readKeysUntilEnd(allocBytes int64, label string, parse keyParser) {
+	w := p.newListWarn()
+	defer w.done()
 	for {
 		line, ok := p.nextLine()
 		if !ok {
@@ -1875,53 +1779,135 @@ func (p *parser) readKeysUntilEnd(minTokens int, allocBytes int64, label string,
 		if strings.EqualFold(tokens[0], "endlist") {
 			break
 		}
-		if len(tokens) >= minTokens {
-			if !p.trackAlloc(allocBytes) {
-				p.errorf("allocation limit exceeded reading %s", label)
-				break
-			}
-			parseLine(tokens)
+		if !p.trackAlloc(allocBytes) {
+			p.errorf("allocation limit exceeded reading %s", label)
+			break
 		}
+		parse(w, tokens)
 	}
 }
 
+func positionKeyParser(out *[]PositionKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 4)
+		if ok {
+			*out = append(*out, PositionKey{Time: v[0], Value: Vec3{X: v[1], Y: v[2], Z: v[3]}})
+		}
+		return ok
+	}
+}
+
+// positionBezierKeyParser parses "time x y z [tanIn.xyz tanOut.xyz]"; the
+// tangents are optional.
+func positionBezierKeyParser(out *[]PositionKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 4)
+		if !ok {
+			return false
+		}
+		var f [10]float32
+		copy(f[:4], v)
+		for i := 4; i < len(f) && i < len(tokens); i++ {
+			f[i] = w.float(tokens[i])
+		}
+		*out = append(*out, PositionKey{
+			Time:   f[0],
+			Value:  Vec3{X: f[1], Y: f[2], Z: f[3]},
+			TanIn:  Vec3{X: f[4], Y: f[5], Z: f[6]},
+			TanOut: Vec3{X: f[7], Y: f[8], Z: f[9]},
+		})
+		return true
+	}
+}
+
+func orientationKeyParser(out *[]OrientationKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 5)
+		if ok {
+			*out = append(*out, OrientationKey{Time: v[0], Value: Vec4{X: v[1], Y: v[2], Z: v[3], W: v[4]}})
+		}
+		return ok
+	}
+}
+
+func floatKeyParser(out *[]FloatKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 2)
+		if ok {
+			*out = append(*out, FloatKey{Time: v[0], Value: v[1]})
+		}
+		return ok
+	}
+}
+
+func colorKeyParser(out *[]ColorKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 4)
+		if ok {
+			*out = append(*out, ColorKey{Time: v[0], Value: Vec3{X: v[1], Y: v[2], Z: v[3]}})
+		}
+		return ok
+	}
+}
+
+// detonateKeyParser accepts detonate key entries that are time-only (NWN spec:
+// NumCols=-1, value 1) or time plus value. Both formats are accepted for
+// interoperability.
+func detonateKeyParser(out *[]FloatKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		if len(tokens) == 1 {
+			v, ok := w.keyValues(tokens, 1)
+			if ok {
+				*out = append(*out, FloatKey{Time: v[0], Value: 1})
+			}
+			return ok
+		}
+		return floatKeyParser(out)(w, tokens)
+	}
+}
+
+func (p *parser) readPositionKeys(out *[]PositionKey, count int) {
+	p.readKeys(count, 16, "position keys", positionKeyParser(out))
+}
+
+func (p *parser) readPositionBezierKeys(out *[]PositionKey, count int) {
+	p.readKeys(count, 40, "position bezier keys", positionBezierKeyParser(out))
+}
+
+func (p *parser) readPositionBezierKeysUntilEnd(out *[]PositionKey) {
+	p.readKeysUntilEnd(40, "position bezier keys", positionBezierKeyParser(out))
+}
+
+func (p *parser) readOrientationKeys(out *[]OrientationKey, count int) {
+	p.readKeys(count, 20, "orientation keys", orientationKeyParser(out))
+}
+
+func (p *parser) readFloatKeys(out *[]FloatKey, count int) {
+	p.readKeys(count, 8, "float keys", floatKeyParser(out))
+}
+
+func (p *parser) readDetonateKeys(out *[]FloatKey, count int) {
+	p.readKeys(count, 8, "detonate keys", detonateKeyParser(out))
+}
+
+func (p *parser) readColorKeys(out *[]ColorKey, count int) {
+	p.readKeys(count, 16, "color keys", colorKeyParser(out))
+}
+
 func (p *parser) readPositionKeysUntilEnd(out *[]PositionKey) {
-	p.readKeysUntilEnd(4, 16, "position keys", func(tokens []string) {
-		t, _ := parseFloat(tokens[0])
-		x, _ := parseFloat(tokens[1])
-		y, _ := parseFloat(tokens[2])
-		z, _ := parseFloat(tokens[3])
-		*out = append(*out, PositionKey{Time: t, Value: Vec3{X: x, Y: y, Z: z}})
-	})
+	p.readKeysUntilEnd(16, "position keys", positionKeyParser(out))
 }
 
 func (p *parser) readOrientationKeysUntilEnd(out *[]OrientationKey) {
-	p.readKeysUntilEnd(5, 20, "orientation keys", func(tokens []string) {
-		t, _ := parseFloat(tokens[0])
-		x, _ := parseFloat(tokens[1])
-		y, _ := parseFloat(tokens[2])
-		z, _ := parseFloat(tokens[3])
-		w, _ := parseFloat(tokens[4])
-		*out = append(*out, OrientationKey{Time: t, Value: Vec4{X: x, Y: y, Z: z, W: w}})
-	})
+	p.readKeysUntilEnd(20, "orientation keys", orientationKeyParser(out))
 }
 
 func (p *parser) readFloatKeysUntilEnd(out *[]FloatKey) {
-	p.readKeysUntilEnd(2, 8, "float keys", func(tokens []string) {
-		t, _ := parseFloat(tokens[0])
-		v, _ := parseFloat(tokens[1])
-		*out = append(*out, FloatKey{Time: t, Value: v})
-	})
+	p.readKeysUntilEnd(8, "float keys", floatKeyParser(out))
 }
 
 func (p *parser) readColorKeysUntilEnd(out *[]ColorKey) {
-	p.readKeysUntilEnd(4, 16, "color keys", func(tokens []string) {
-		t, _ := parseFloat(tokens[0])
-		r, _ := parseFloat(tokens[1])
-		g, _ := parseFloat(tokens[2])
-		b, _ := parseFloat(tokens[3])
-		*out = append(*out, ColorKey{Time: t, Value: Vec3{X: r, Y: g, Z: b}})
-	})
+	p.readKeysUntilEnd(16, "color keys", colorKeyParser(out))
 }
 
 // Utility functions
