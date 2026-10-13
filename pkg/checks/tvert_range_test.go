@@ -198,3 +198,51 @@ donemodel plc_i05
 		t.Errorf("tvert 1 = %+v, want (0, 0)", got)
 	}
 }
+
+// The third component is not used for 2D texturing, but garbage there is still
+// garbage; only the bad component is replaced.
+func TestTvertRangeChecksZ(t *testing.T) {
+	model := tvertModel([]mdl.Vec3{{X: 0.25, Y: 0.5, Z: 1e30}, {X: 0.1, Y: 0.2, Z: 0}})
+	res := checkTvertRange(model, "f.mdl", true)
+	if len(res) != 1 || !strings.Contains(res[0].Message, "1 texture coordinate") {
+		t.Fatalf("results = %+v", res)
+	}
+	if got := model.Nodes[0].Mesh.TVerts[0]; got != (mdl.Vec3{X: 0.25, Y: 0.5, Z: 0}) {
+		t.Errorf("tvert 0 = %+v, want only Z zeroed", got)
+	}
+	if got := model.Nodes[0].Mesh.TVerts[1]; got != (mdl.Vec3{X: 0.1, Y: 0.2, Z: 0}) {
+		t.Errorf("good tvert changed: %+v", got)
+	}
+}
+
+// animmesh AnimTVerts, on a geometry node and on an animation node.
+func TestTvertRangeAnimTVerts(t *testing.T) {
+	model := &mdl.Model{
+		Nodes: []*mdl.Node{{Name: "flag", Parent: "NULL", AnimMesh: &mdl.AnimMeshData{
+			AnimTVerts: []mdl.Vec3{{X: 7.34e23, Y: 0.5}, {X: 0.5, Y: 0.5}},
+		}}},
+		Animations: []mdl.Animation{{Name: "wave", Nodes: []mdl.AnimNode{{Name: "flag", AnimMesh: &mdl.AnimMeshData{
+			AnimTVerts: []mdl.Vec3{{X: 0.5, Y: float32(math.Inf(1))}},
+		}}}}},
+	}
+	res := checkTvertRange(model, "f.mdl", false)
+	if len(res) != 2 {
+		t.Fatalf("results = %+v", res)
+	}
+	if model.Nodes[0].AnimMesh.AnimTVerts[0].X != 7.34e23 {
+		t.Error("detect-only changed the data")
+	}
+	res = checkTvertRange(model, "f.mdl", true)
+	if len(res) != 2 || !res[0].Fixed {
+		t.Fatalf("fix results = %+v", res)
+	}
+	if got := model.Nodes[0].AnimMesh.AnimTVerts[0]; got.X != 0 || got.Y != 0.5 {
+		t.Errorf("geometry AnimTVerts[0] = %+v", got)
+	}
+	if got := model.Animations[0].Nodes[0].AnimMesh.AnimTVerts[0]; got.X != 0.5 || got.Y != 0 {
+		t.Errorf("animation AnimTVerts[0] = %+v", got)
+	}
+	if !strings.Contains(res[1].Message, `animation "wave"`) {
+		t.Errorf("message does not name the animation: %s", res[1].Message)
+	}
+}
