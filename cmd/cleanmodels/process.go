@@ -19,10 +19,14 @@ import (
 type Result struct {
 	File     string                 `json:"file"`
 	Warnings []mdl.DecompileWarning `json:"warnings,omitempty"`
-	Checks   []mdl.CheckResult      `json:"checks,omitempty"`
-	Repairs  []string               `json:"repairs,omitempty"`
-	Actions  []string               `json:"actions,omitempty"`
-	Error    string                 `json:"error,omitempty"`
+	// ParseWarnings are the ASCII parser's complaints ("line 352: ... set to 0").
+	// They are in the text output; this puts them in JSON and JSON-lines too, so
+	// the GUI and scripts see what the parser had to work around.
+	ParseWarnings []string          `json:"parse_warnings,omitempty"`
+	Checks        []mdl.CheckResult `json:"checks,omitempty"`
+	Repairs       []string          `json:"repairs,omitempty"`
+	Actions       []string          `json:"actions,omitempty"`
+	Error         string            `json:"error,omitempty"`
 }
 
 // Event is a streaming JSON-lines event for real-time GUI consumption.
@@ -603,6 +607,9 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 		}
 		model = pr.Model
 		parseErrs = pr.Errors
+		for _, pe := range parseErrs {
+			res.ParseWarnings = append(res.ParseWarnings, pe.Error())
+		}
 		if model != nil {
 			model.FileType = "ascii"
 		}
