@@ -95,6 +95,7 @@ type procOpts struct {
 	check, forceBin, jsonOut, jsonLines, verbose, quiet, recursive bool
 	decompileOnly, dryRun                                          bool
 	compile                                                        bool
+	overwrite                                                      bool // replace an existing output file
 	workers                                                        int
 	include, exclude                                               map[string]bool
 	colorMode                                                      string // "auto", "always", "never"
@@ -179,26 +180,44 @@ func isBinaryMDL(path string) (bool, error) {
 	return hdr[0] == 0 && hdr[1] == 0 && hdr[2] == 0 && hdr[3] == 0, nil
 }
 
-func dispatch(inputPath, outputPath string, opts procOpts) int {
+// dispatchInputs runs one input as before and several as a batch.
+func dispatchInputs(inputs []string, outputPath string, opts procOpts) int {
+	if len(inputs) == 1 {
+		return dispatch(inputs[0], outputPath, opts)
+	}
+	tw, errTw := newWriters(opts)
+	return runBatch(inputs, outputPath, opts, tw, errTw)
+}
+
+func newWriters(opts procOpts) (tw, errTw *termWriter) {
 	useColor := !opts.jsonOut && !opts.jsonLines && !opts.quiet
-	tw := newTermWriter(os.Stdout, useColor && shouldColorize(os.Stdout.Fd(), opts.colorMode))
+	tw = newTermWriter(os.Stdout, useColor && shouldColorize(os.Stdout.Fd(), opts.colorMode))
 	if isTerminal(int(os.Stdout.Fd())) {
 		tw.cols = terminalWidth(int(os.Stdout.Fd()))
 	}
 	// errTw mirrors the colour decision but targets stderr. Diagnostic
 	// summary lines route here so they never collide with --json data on
 	// stdout, even when the user pipes only stdout to a file.
-	errTw := newTermWriter(os.Stderr, useColor && shouldColorize(os.Stderr.Fd(), opts.colorMode))
+	errTw = newTermWriter(os.Stderr, useColor && shouldColorize(os.Stderr.Fd(), opts.colorMode))
 	if isTerminal(int(os.Stderr.Fd())) {
 		errTw.cols = terminalWidth(int(os.Stderr.Fd()))
 	}
+	return tw, errTw
+}
+
+func dispatch(inputPath, outputPath string, opts procOpts) int {
+	tw, errTw := newWriters(opts)
 	fi, err := os.Stat(inputPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", wrapWithSuggestion(err, inputPath))
 		return exitErrors
 	}
 	if fi.IsDir() {
-		return runBatch(inputPath, outputPath, opts, tw, errTw)
+		return runBatch([]string{inputPath}, outputPath, opts, tw, errTw)
+	}
+	if err := checkOverwrite(inputPath, outputPath, opts.overwrite); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+		return exitUsage
 	}
 	return runSingle(inputPath, outputPath, opts, tw, errTw)
 }
