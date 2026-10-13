@@ -37,6 +37,11 @@ func splitInputs(pos []string, takesOutput bool) (inputs []string, output string
 	return pos[:len(pos)-1], last, nil
 }
 
+// noOutputNote is printed after a repair that was given no output. The run
+// reports what it repaired, which reads as done, but with no output nothing is
+// written; saying so is cheaper than a user finding their models unchanged.
+const noOutputNote = "\nnote: no output was given, so nothing was written. Name an output file or folder, or give the\n      input twice to repair in place (cleanmodels repair --all a.mdl a.mdl).\n"
+
 // checkOverwrite refuses to replace an existing file with the result for a
 // different input unless --overwrite was given. A model fed in as the second
 // argument by mistake (`repair a.mdl b.mdl`, or a shell glob) would otherwise be

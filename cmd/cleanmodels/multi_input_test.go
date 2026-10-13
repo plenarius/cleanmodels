@@ -178,3 +178,23 @@ func TestCheckFixStillWritesItsOutput(t *testing.T) {
 	}
 	unchanged(t, dir, contents, "a.mdl")
 }
+
+// A repair with no output reports repairs but writes nothing; it has to say so.
+func TestRepairWithoutAnOutputSaysNothingWasWritten(t *testing.T) {
+	dir, contents := writeModels(t, "a.mdl")
+	run := func(args ...string) (code int, stderr string) {
+		_, stderr = captureStdio(t, func() { code = cmdRepair(append([]string{"--all", "--color", "never"}, args...)) })
+		return
+	}
+	if _, stderr := run(filepath.Join(dir, "a.mdl")); !strings.Contains(stderr, "nothing was written") {
+		t.Errorf("no note without an output: %q", stderr)
+	}
+	unchanged(t, dir, contents, "a.mdl")
+	if _, stderr := run("--quiet", filepath.Join(dir, "a.mdl")); strings.Contains(stderr, "nothing was written") {
+		t.Errorf("--quiet should stay quiet: %q", stderr)
+	}
+	out := filepath.Join(t.TempDir(), "out.mdl")
+	if _, stderr := run(filepath.Join(dir, "a.mdl"), out); strings.Contains(stderr, "nothing was written") {
+		t.Errorf("note shown although an output was given: %q", stderr)
+	}
+}
