@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
 // cliError wraps an error with an optional suggestion for the user.
@@ -36,6 +39,13 @@ func wrapWithSuggestion(err error, path string) error {
 		return &cliError{
 			err:        fmt.Errorf("cannot access %s", path),
 			suggestion: "check file permissions",
+		}
+	}
+
+	if errors.Is(err, mdl.ErrNotModel) {
+		return &cliError{
+			err:        err,
+			suggestion: "if this is a binary model that was not recognised, try decompile --force; otherwise it is not an MDL file",
 		}
 	}
 

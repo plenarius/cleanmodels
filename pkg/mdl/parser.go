@@ -14,6 +14,7 @@ package mdl
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -90,17 +91,38 @@ func Parse(r io.Reader) (result *ParseResult, err error) {
 	if err := p.scanner.Err(); err != nil {
 		p.errorf("read error: %v", err)
 	}
-	return &ParseResult{
+	result = &ParseResult{
 		Model:  p.model,
 		Errors: p.errors,
-	}, nil
+	}
+	if !p.sawModel {
+		if !p.sawContent {
+			return result, fmt.Errorf("%w: the file is empty (or holds only comments)", ErrNotModel)
+		}
+		return result, fmt.Errorf("%w: no \"newmodel\", \"beginmodelgeom\" or \"node\" line was found (an ASCII model starts with \"newmodel <name>\")", ErrNotModel)
+	}
+	if p.model.Name == "" {
+		p.errorf("no \"newmodel\" line, so the model has no name")
+		result.Errors = p.errors
+	}
+	return result, nil
 }
+
+// ErrNotModel is returned (wrapped, with detail) by Parse when the input shows no
+// sign of being an ASCII MDL at all: no model, geometry, node or animation line.
+// Such a file used to parse "successfully" into an empty model, so check passed
+// it and compile wrote a bogus binary from it.
+var ErrNotModel = errors.New("not an ASCII MDL model")
 
 type parser struct {
 	scanner *bufio.Scanner
-	line    int
-	model   *Model
-	errors  []ParseError
+	// sawContent is set once any non-blank, non-comment line is read; sawModel once
+	// a line that structures an MDL (newmodel, node, ...) is. They tell an empty file
+	// from a file of something else.
+	sawContent, sawModel bool
+	line                 int
+	model                *Model
+	errors               []ParseError
 
 	currentNode     *Node
 	currentAnim     *Animation
@@ -247,8 +269,13 @@ func (p *parser) parse() {
 		if len(tokens) == 0 {
 			continue
 		}
+		p.sawContent = true
 
 		keyword := strings.ToLower(tokens[0])
+		switch keyword {
+		case "newmodel", "donemodel", "beginmodelgeom", "endmodelgeom", "node", "newanim", "setsupermodel":
+			p.sawModel = true
+		}
 
 		switch {
 		case keyword == "newmodel":
