@@ -69,8 +69,11 @@ func TestRepairRefusesToOverwriteAnExistingFile(t *testing.T) {
 	if code != exitUsage {
 		t.Errorf("exit %d, want %d", code, exitUsage)
 	}
-	if !strings.Contains(stderr, "--overwrite") {
-		t.Errorf("message does not say how to proceed: %q", stderr)
+	if !strings.Contains(stderr, "--overwrite") || !strings.Contains(stderr, "\n  hint: ") {
+		t.Errorf("message does not say how to proceed on its own hint line: %q", stderr)
+	}
+	if strings.Count(stderr, "\n") > 3 {
+		t.Errorf("refusal should be a short message plus a hint, got: %q", stderr)
 	}
 	unchanged(t, dir, contents, "a.mdl", "b.mdl")
 }

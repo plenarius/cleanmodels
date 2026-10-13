@@ -29,7 +29,10 @@ func splitInputs(pos []string, takesOutput bool) (inputs []string, output string
 	}
 	last := pos[len(pos)-1]
 	if fi, statErr := os.Stat(last); statErr == nil && !fi.IsDir() {
-		return nil, "", fmt.Errorf("%d inputs need an output directory as the last argument, but %q is a file (it would be overwritten; pass the output directory, or run the files one at a time)", len(pos)-1, last)
+		return nil, "", &cliError{
+			err:        fmt.Errorf("%d inputs need an output directory as the last argument, but %q is a file", len(pos)-1, last),
+			suggestion: "pass an output directory last (a file there would be overwritten), or run the files one at a time",
+		}
 	}
 	return pos[:len(pos)-1], last, nil
 }
@@ -50,5 +53,8 @@ func checkOverwrite(input, output string, overwrite bool) error {
 	if in, err := os.Stat(input); err == nil && os.SameFile(in, out) {
 		return nil
 	}
-	return fmt.Errorf("%q already exists and is not the input; refusing to overwrite it with the result for %q (pass --overwrite to replace it, or give an output directory)", output, input)
+	return &cliError{
+		err:        fmt.Errorf("refusing to overwrite %q with the result for %q", output, input),
+		suggestion: "pass --overwrite to replace it, or give an output directory",
+	}
 }
