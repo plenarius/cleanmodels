@@ -171,7 +171,7 @@ func isBinaryMDL(path string) (bool, error) {
 
 	var hdr [4]byte
 	n, err := io.ReadFull(f, hdr[:])
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return false, err
 	}
 	if n < 4 {
