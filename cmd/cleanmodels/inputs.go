@@ -37,6 +37,20 @@ func splitInputs(pos []string, takesOutput bool) (inputs []string, output string
 	return pos[:len(pos)-1], last, nil
 }
 
+// requireCompileOutput refuses a compile with no output. It used to write the
+// binary over the ASCII source (and, given a folder, every model in it), so
+// `cleanmodels compile model.mdl` silently destroyed the file it was given.
+// Compiling in place is still possible, spelled out: name the input again.
+func requireCompileOutput(o procOpts, output string) error {
+	if !o.compile || output != "" || o.dryRun {
+		return nil
+	}
+	return &cliError{
+		err:        errors.New("compile needs an output, and would otherwise overwrite its input"),
+		suggestion: "name an output file or folder; to compile in place, give the input again (cleanmodels compile a.mdl a.mdl)",
+	}
+}
+
 // checkOverwrite refuses to replace an existing file with the result for a
 // different input unless --overwrite was given. A model fed in as the second
 // argument by mistake (`repair a.mdl b.mdl`, or a shell glob) would otherwise be
