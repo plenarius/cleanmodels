@@ -99,7 +99,7 @@ func Parse(r io.Reader) (result *ParseResult, err error) {
 		if !p.sawContent {
 			return result, fmt.Errorf("%w: the file is empty (or holds only comments)", ErrNotModel)
 		}
-		return result, fmt.Errorf("%w: no \"newmodel\", \"beginmodelgeom\" or \"node\" line was found (an ASCII model starts with \"newmodel <name>\")", ErrNotModel)
+		return result, fmt.Errorf("%w: no \"newmodel\" line (it should start with \"newmodel <name>\")", ErrNotModel)
 	}
 	if p.model.Name == "" {
 		p.errorf("no \"newmodel\" line, so the model has no name")
