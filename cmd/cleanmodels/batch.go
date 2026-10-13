@@ -85,7 +85,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 
 	var (
 		mu           sync.Mutex
-		jsonBuf      []Result
+		jsonSlots    = make([]*Result, total) // --json results by input position, not completion order
 		totalW       int
 		totalE       int
 		totalRepairs int
@@ -142,6 +142,8 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 				procN++
 				if o.jsonLines {
 					emitEvent(Event{Type: "error", File: baseName, Message: mkdirErr.Error(), Index: procN, Total: total})
+				} else if o.jsonOut {
+					jsonSlots[idx] = &Result{File: path, Error: mkdirErr.Error()}
 				} else if lp != nil {
 					lp.update(idx, baseName, Result{Error: mkdirErr.Error()}, nil)
 					lp.render()
@@ -182,7 +184,7 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 					emitEvent(Event{Type: "done", File: baseName, Fixes: fixes, Index: seqIdx, Total: total, Result: &res})
 				}
 			} else if o.jsonOut && !o.jsonLines {
-				jsonBuf = append(jsonBuf, res)
+				jsonSlots[idx] = &res
 			} else if lp != nil {
 				lp.update(idx, baseName, res, parseErrs)
 				lp.render()
@@ -219,6 +221,14 @@ func runBatch(root, outputDir string, o procOpts, tw, errTw *termWriter) int {
 	} else if o.jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		// Workers finish in any order; the array follows the sorted input order
+		// so two runs over the same files print the same thing.
+		jsonBuf := make([]Result, 0, total)
+		for _, r := range jsonSlots {
+			if r != nil {
+				jsonBuf = append(jsonBuf, *r)
+			}
+		}
 		if err := enc.Encode(jsonBuf); err != nil {
 			fmt.Fprintf(os.Stderr, "cleanmodels: json encode: %v\n", err)
 			return exitErrors
