@@ -1483,7 +1483,7 @@ func quaternionToAngleAxis(q []float32) []float32 {
 		return q
 	}
 	x, y, z, w := q[0], q[1], q[2], q[3]
-	sinHalf := float32(math.Sqrt(float64(x*x + y*y + z*z)))
+	sinHalf := float32(math.Sqrt(float64(float32(x*x) + float32(y*y) + float32(z*z))))
 	if sinHalf < 1e-6 {
 		return []float32{0, 0, 1, 0}
 	}

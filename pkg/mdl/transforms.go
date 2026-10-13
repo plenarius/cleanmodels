@@ -16,7 +16,7 @@ func RotateVectorAxisAngle(v Vec3, axis Vec4) Vec3 {
 		return v
 	}
 	ax, ay, az := float64(axis.X), float64(axis.Y), float64(axis.Z)
-	r := math.Sqrt(ax*ax + ay*ay + az*az)
+	r := math.Sqrt(float64(ax*ax) + float64(ay*ay) + float64(az*az))
 	if r == 0 {
 		return v
 	}
@@ -25,10 +25,20 @@ func RotateVectorAxisAngle(v Vec3, axis Vec4) Vec3 {
 	s := math.Sin(angle)
 	t := 1.0 - c
 	ux, uy, uz := float64(v.X), float64(v.Y), float64(v.Z)
+	// Rodrigues matrix entries, each product rounded on its own (no FMA).
+	m00 := float64(t*x*x) + c
+	m01 := float64(t*x*y) - float64(z*s)
+	m02 := float64(t*x*z) + float64(y*s)
+	m10 := float64(t*x*y) + float64(z*s)
+	m11 := float64(t*y*y) + c
+	m12 := float64(t*y*z) - float64(x*s)
+	m20 := float64(t*x*z) - float64(y*s)
+	m21 := float64(t*y*z) + float64(x*s)
+	m22 := float64(t*z*z) + c
 	return Vec3{
-		X: float32((t*x*x+c)*ux + (t*x*y-z*s)*uy + (t*x*z+y*s)*uz),
-		Y: float32((t*x*y+z*s)*ux + (t*y*y+c)*uy + (t*y*z-x*s)*uz),
-		Z: float32((t*x*z-y*s)*ux + (t*y*z+x*s)*uy + (t*z*z+c)*uz),
+		X: float32(float64(m00*ux) + float64(m01*uy) + float64(m02*uz)),
+		Y: float32(float64(m10*ux) + float64(m11*uy) + float64(m12*uz)),
+		Z: float32(float64(m20*ux) + float64(m21*uy) + float64(m22*uz)),
 	}
 }
 
@@ -246,7 +256,7 @@ func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
 	}
 	center := Vec3{X: (bmin.X + bmax.X) / 2, Y: (bmin.Y + bmax.Y) / 2, Z: (bmin.Z + bmax.Z) / 2}
 	corner := Vec3{X: bmax.X - center.X, Y: bmax.Y - center.Y, Z: bmax.Z - center.Z}
-	radius = float32(math.Sqrt(float64(corner.X*corner.X + corner.Y*corner.Y + corner.Z*corner.Z)))
+	radius = float32(math.Sqrt(float64(float32(corner.X*corner.X) + float32(corner.Y*corner.Y) + float32(corner.Z*corner.Z))))
 	return bmin, bmax, radius
 }
 
