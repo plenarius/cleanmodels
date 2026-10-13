@@ -285,10 +285,15 @@ from the structural diff because no compiler choice can make them match.
 pre-compiled binaries whose ASCII source was never re-emitted. We skip
 these in the oracle suite (`hakBinaryOnlySkipList` in `oracle_test.go`)
 because there's no apples-to-apples comparison to make.
-- **Degenerate faces on AABB nodes.** The game's delete loop runs for AABB
-nodes too, but no fixture has an AABB node that lost faces, so we cannot see
-how the game keeps the authored tree's face indices valid afterwards. We keep
-every face on AABB nodes.
+- **Degenerate faces on AABB nodes (a decision, not a gap).** The game's
+delete loop runs for AABB nodes too, but it does not touch the authored tree:
+the `aabb` text is parsed straight into a tree object and nothing re-indexes
+its leaf faces afterwards, so after a delete every later leaf points one face
+too far. (Read in `MdlNodeAABB::InternalGenVertices` and `InternalParseField`;
+see NWMAIN_FINDINGS.md finding 6.) We keep every face on AABB nodes so the
+tree stays valid. This affects real models: 88 of 20,476 Layonara and 33 of
+2,652 NWNCQ walkmesh models have such a face, so a walkmesh compiled here can
+carry a face or two more than the engine's own load of the same ASCII.
 - **Render hint inference needs the materials.** With no `renderhint` on the
 mesh, the game takes the hint from the mesh's `.mtr` material. We do the same
 (`isNormalMapped`), but only when `--resource-dir` or `--game-dir` can reach
