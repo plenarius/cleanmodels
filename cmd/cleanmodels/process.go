@@ -182,6 +182,10 @@ func isBinaryMDL(path string) (bool, error) {
 
 // dispatchInputs runs one input as before and several as a batch.
 func dispatchInputs(inputs []string, outputPath string, opts procOpts) int {
+	if err := requireCompileOutput(opts, outputPath); err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+		return exitUsage
+	}
 	if opts.compile {
 		reportGameInstall(os.Stderr, opts)
 	}
