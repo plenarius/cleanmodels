@@ -198,3 +198,43 @@ func TestRepairWithoutAnOutputSaysNothingWasWritten(t *testing.T) {
 		t.Errorf("note shown although an output was given: %q", stderr)
 	}
 }
+
+// `compile model.mdl` with no output used to overwrite the ASCII source with the
+// binary without a word.
+func TestCompileWithoutAnOutputIsRefused(t *testing.T) {
+	dir, contents := writeModels(t, "a.mdl")
+	var code int
+	_, stderr := captureStdio(t, func() { code = cmdCompile([]string{"--color", "never", filepath.Join(dir, "a.mdl")}) })
+	if code != exitUsage {
+		t.Errorf("exit %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "needs an output") || !strings.Contains(stderr, "\n  hint: ") {
+		t.Errorf("message: %q", stderr)
+	}
+	unchanged(t, dir, contents, "a.mdl")
+}
+
+func TestCompileOfAFolderWithoutAnOutputIsRefused(t *testing.T) {
+	dir, contents := writeModels(t, "a.mdl", "b.mdl")
+	var code int
+	captureStdio(t, func() { code = cmdCompile([]string{"--color", "never", dir}) })
+	if code != exitUsage {
+		t.Errorf("exit %d, want %d", code, exitUsage)
+	}
+	unchanged(t, dir, contents, "a.mdl", "b.mdl")
+}
+
+// Compiling in place stays possible when it is spelled out.
+func TestCompileInPlaceStillWorks(t *testing.T) {
+	dir, contents := writeModels(t, "a.mdl", "b.mdl")
+	p := filepath.Join(dir, "a.mdl")
+	var code int
+	captureStdio(t, func() { code = cmdCompile([]string{"--color", "never", p, p}) })
+	if code != exitOK {
+		t.Errorf("in place: exit %d, want %d", code, exitOK)
+	}
+	if got, _ := os.ReadFile(p); len(got) < 4 || got[0] != 0 || got[1] != 0 || got[2] != 0 || got[3] != 0 {
+		t.Error("in place: a.mdl was not compiled to binary")
+	}
+	unchanged(t, dir, contents, "b.mdl")
+}
