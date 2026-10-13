@@ -17,16 +17,16 @@ import (
 // game merges across both, and the oracle fixtures compiled by EE only match
 // when we do too. Floats are compared by value (-0 == +0), via f32bits.
 type vertKey struct {
-	px, py, pz     uint32 // position bits
-	ux, uy         uint32 // UV0 bits
-	u1x, u1y       uint32 // UV1 bits
-	u2x, u2y       uint32 // UV2 bits
-	u3x, u3y       uint32 // UV3 bits
-	nx, ny, nz     uint32 // normal bits
-	cr, cg, cb     uint32 // color bits
-	mirror         uint8  // face's mirrorlist value (low byte)
-	skin           string // skinmesh: bone names that influence the vertex
-	dangly         uint32 // danglymesh: constraint bits
+	px, py, pz uint32 // position bits
+	ux, uy     uint32 // UV0 bits
+	u1x, u1y   uint32 // UV1 bits
+	u2x, u2y   uint32 // UV2 bits
+	u3x, u3y   uint32 // UV3 bits
+	nx, ny, nz uint32 // normal bits
+	cr, cg, cb uint32 // color bits
+	mirror     uint8  // face's mirrorlist value (low byte)
+	skin       string // skinmesh: bone names that influence the vertex
+	dangly     uint32 // danglymesh: constraint bits
 }
 
 // f32bits maps a float to its dedup-key bits. The game compares vertex
@@ -472,17 +472,17 @@ func clampByte(f float32) byte {
 
 // expandedMesh holds the deduplicated GPU vertex arrays and per-face-corner indices.
 type expandedMesh struct {
-	positions  []Vec3
-	uvs        []Vec3 // UV0: only X,Y used; stored as 2 floats in MDX
-	uvs1       []Vec3 // UV1
-	uvs2       []Vec3 // UV2
-	uvs3       []Vec3 // UV3
-	normals    []Vec3
-	colors     []Vec3
-	texStages  int
-	faceVerts  [][3]uint16 // per-kept-face GPU vertex indices (into the arrays above)
-	faceSrc    []int       // faceVerts[k] came from mesh.Faces[faceSrc[k]]
-	origVert   []int32     // GPU vertex → original mesh vertex index
+	positions []Vec3
+	uvs       []Vec3 // UV0: only X,Y used; stored as 2 floats in MDX
+	uvs1      []Vec3 // UV1
+	uvs2      []Vec3 // UV2
+	uvs3      []Vec3 // UV3
+	normals   []Vec3
+	colors    []Vec3
+	texStages int
+	faceVerts [][3]uint16 // per-kept-face GPU vertex indices (into the arrays above)
+	faceSrc   []int       // faceVerts[k] came from mesh.Faces[faceSrc[k]]
+	origVert  []int32     // GPU vertex → original mesh vertex index
 
 	facesPtrPos int // core buffer position of faces array pointer (for deferred patching)
 
@@ -568,22 +568,30 @@ func skinMergeKeys(skin *SkinData) []string {
 // distinct GPU vertices is dropped. Only the stripped face goes; vertices it
 // introduced stay in the arrays, as in the game.
 func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error) {
-	hasUV      := len(mesh.TVerts) > 0
+	hasUV := len(mesh.TVerts) > 0
 	hasTexIdx0 := len(mesh.TexIndices0) > 0
-	hasUV1     := len(mesh.TVerts1) > 0
-	hasUV2     := len(mesh.TVerts2) > 0
-	hasUV3     := len(mesh.TVerts3) > 0
+	hasUV1 := len(mesh.TVerts1) > 0
+	hasUV2 := len(mesh.TVerts2) > 0
+	hasUV3 := len(mesh.TVerts3) > 0
 	hasNormals := len(mesh.Normals) > 0
-	hasColors  := len(mesh.Colors) > 0
+	hasColors := len(mesh.Colors) > 0
 
 	exp := expandedMesh{
 		faceVerts: make([][3]uint16, 0, len(mesh.Faces)),
 		faceSrc:   make([]int, 0, len(mesh.Faces)),
 	}
-	if hasUV  { exp.texStages = 1 }
-	if hasUV1 { exp.texStages = 2 }
-	if hasUV2 { exp.texStages = 3 }
-	if hasUV3 { exp.texStages = 4 }
+	if hasUV {
+		exp.texStages = 1
+	}
+	if hasUV1 {
+		exp.texStages = 2
+	}
+	if hasUV2 {
+		exp.texStages = 3
+	}
+	if hasUV3 {
+		exp.texStages = 4
+	}
 
 	// expCorner is one face corner with everything needed to add it as a GPU
 	// vertex and to compare it with existing ones.
@@ -603,12 +611,24 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 		vkeys = append(vkeys, c.key)
 		exp.positions = append(exp.positions, c.pos)
 		exp.origVert = append(exp.origVert, int32(c.vertIdx))
-		if hasUV      { exp.uvs  = append(exp.uvs,  c.uv)  }
-		if hasUV1     { exp.uvs1 = append(exp.uvs1, c.uv1) }
-		if hasUV2     { exp.uvs2 = append(exp.uvs2, c.uv2) }
-		if hasUV3     { exp.uvs3 = append(exp.uvs3, c.uv3) }
-		if hasNormals { exp.normals = append(exp.normals, c.nor) }
-		if hasColors  { exp.colors  = append(exp.colors,  c.col) }
+		if hasUV {
+			exp.uvs = append(exp.uvs, c.uv)
+		}
+		if hasUV1 {
+			exp.uvs1 = append(exp.uvs1, c.uv1)
+		}
+		if hasUV2 {
+			exp.uvs2 = append(exp.uvs2, c.uv2)
+		}
+		if hasUV3 {
+			exp.uvs3 = append(exp.uvs3, c.uv3)
+		}
+		if hasNormals {
+			exp.normals = append(exp.normals, c.nor)
+		}
+		if hasColors {
+			exp.colors = append(exp.colors, c.col)
+		}
 		return idx, nil
 	}
 
@@ -618,7 +638,7 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 
 	// AABB merge: see resolveAABB below.
 	var (
-		allFaces [][3]uint16     // GPU indices of every face processed so far
+		allFaces [][3]uint16         // GPU indices of every face processed so far
 		posFaces map[[3]uint32][]int // position bits -> earlier faces touching it, ascending
 	)
 	if opts.aabbMerge {
@@ -635,31 +655,49 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 		var cs [3]expCorner
 		for vi := 0; vi < 3; vi++ {
 			vertIdx := int(face.Verts[vi])
-			uvIdx   := int(face.UVs[vi])
+			uvIdx := int(face.UVs[vi])
 
 			var pos, uv, uv1, uv2, uv3, nor, col Vec3
-			if vertIdx >= 0 && vertIdx < len(mesh.Verts) { pos = mesh.Verts[vertIdx] }
+			if vertIdx >= 0 && vertIdx < len(mesh.Verts) {
+				pos = mesh.Verts[vertIdx]
+			}
 			if hasUV {
 				ti := uvIdx
-				if hasTexIdx0 && fi < len(mesh.TexIndices0) { ti = int(mesh.TexIndices0[fi][vi]) }
-				if ti >= 0 && ti < len(mesh.TVerts) { uv = mesh.TVerts[ti] }
+				if hasTexIdx0 && fi < len(mesh.TexIndices0) {
+					ti = int(mesh.TexIndices0[fi][vi])
+				}
+				if ti >= 0 && ti < len(mesh.TVerts) {
+					uv = mesh.TVerts[ti]
+				}
 			}
 
 			// Extra UV stages use TexIndices if available, else fall back to uvIdx
 			if hasUV1 {
 				ti := uvIdx
-				if fi < len(mesh.TexIndices1) { ti = int(mesh.TexIndices1[fi][vi]) }
-				if ti >= 0 && ti < len(mesh.TVerts1) { uv1 = mesh.TVerts1[ti] }
+				if fi < len(mesh.TexIndices1) {
+					ti = int(mesh.TexIndices1[fi][vi])
+				}
+				if ti >= 0 && ti < len(mesh.TVerts1) {
+					uv1 = mesh.TVerts1[ti]
+				}
 			}
 			if hasUV2 {
 				ti := uvIdx
-				if fi < len(mesh.TexIndices2) { ti = int(mesh.TexIndices2[fi][vi]) }
-				if ti >= 0 && ti < len(mesh.TVerts2) { uv2 = mesh.TVerts2[ti] }
+				if fi < len(mesh.TexIndices2) {
+					ti = int(mesh.TexIndices2[fi][vi])
+				}
+				if ti >= 0 && ti < len(mesh.TVerts2) {
+					uv2 = mesh.TVerts2[ti]
+				}
 			}
 			if hasUV3 {
 				ti := uvIdx
-				if fi < len(mesh.TexIndices3) { ti = int(mesh.TexIndices3[fi][vi]) }
-				if ti >= 0 && ti < len(mesh.TVerts3) { uv3 = mesh.TVerts3[ti] }
+				if fi < len(mesh.TexIndices3) {
+					ti = int(mesh.TexIndices3[fi][vi])
+				}
+				if ti >= 0 && ti < len(mesh.TVerts3) {
+					uv3 = mesh.TVerts3[ti]
+				}
 			}
 
 			if hasNormals {
@@ -669,11 +707,13 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 					nor = mesh.Normals[vertIdx]
 				}
 			}
-			if hasColors && vertIdx >= 0 && vertIdx < len(mesh.Colors) { col = mesh.Colors[vertIdx] }
+			if hasColors && vertIdx >= 0 && vertIdx < len(mesh.Colors) {
+				col = mesh.Colors[vertIdx]
+			}
 
 			key := vertKey{
 				px: f32bits(pos.X), py: f32bits(pos.Y), pz: f32bits(pos.Z),
-				ux: f32bits(uv.X),  uy: f32bits(uv.Y),
+				ux: f32bits(uv.X), uy: f32bits(uv.Y),
 				u1x: f32bits(uv1.X), u1y: f32bits(uv1.Y),
 				u2x: f32bits(uv2.X), u2y: f32bits(uv2.Y),
 				u3x: f32bits(uv3.X), u3y: f32bits(uv3.Y),
@@ -782,12 +822,24 @@ func computeBounds(verts []Vec3) (bmin, bmax, center Vec3, radius float32) {
 	bmin = Vec3{X: math.MaxFloat32, Y: math.MaxFloat32, Z: math.MaxFloat32}
 	bmax = Vec3{X: -math.MaxFloat32, Y: -math.MaxFloat32, Z: -math.MaxFloat32}
 	for _, v := range verts {
-		if v.X < bmin.X { bmin.X = v.X }
-		if v.Y < bmin.Y { bmin.Y = v.Y }
-		if v.Z < bmin.Z { bmin.Z = v.Z }
-		if v.X > bmax.X { bmax.X = v.X }
-		if v.Y > bmax.Y { bmax.Y = v.Y }
-		if v.Z > bmax.Z { bmax.Z = v.Z }
+		if v.X < bmin.X {
+			bmin.X = v.X
+		}
+		if v.Y < bmin.Y {
+			bmin.Y = v.Y
+		}
+		if v.Z < bmin.Z {
+			bmin.Z = v.Z
+		}
+		if v.X > bmax.X {
+			bmax.X = v.X
+		}
+		if v.Y > bmax.Y {
+			bmax.Y = v.Y
+		}
+		if v.Z > bmax.Z {
+			bmax.Z = v.Z
+		}
 	}
 	// Center is vertex centroid average, matching nwnmdlcomp (not AABB midpoint).
 	var sx, sy, sz float64

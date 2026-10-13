@@ -1477,7 +1477,6 @@ func (d *decompiler) detectCompiler(typeID uint32) {
 	}
 }
 
-
 func quaternionToAngleAxis(q []float32) []float32 {
 	if len(q) < 4 {
 		return q
@@ -1646,7 +1645,7 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	d.skip(4)  // inheritColor
 	d.skip(4)  // nodeNumber
 	nodeName, _ := d.readFixedString(32)
-	d.skip(8)  // p_geometry, p_parent_node
+	d.skip(8) // p_geometry, p_parent_node
 
 	childrenDef, _ := d.readArrayDef()
 	ctrlKeysDef, _ := d.readArrayDef()
@@ -1685,13 +1684,13 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	var animPMdxVertex, animPMdxTex0 int32
 	if hasMesh && hasAnim {
 		meshStart := d.pos()
-		d.skip(8)                               // p_func1, p_func2
-		animFacesDef, _ = d.readArrayDef()       // offset 8, 12 bytes
-		d.skip(meshHeaderPMdxVertex - 20)        // skip to pMdxVertex field
-		animPMdxVertex, _ = d.readI32()          // offset meshHeaderPMdxVertex
-		countVerts, _ := d.readU16()             // offset meshHeaderCountVerts
-		d.skip(2)                                // countTextures
-		animPMdxTex0, _ = d.readI32()            // offset meshHeaderPMdxTex0
+		d.skip(8)                          // p_func1, p_func2
+		animFacesDef, _ = d.readArrayDef() // offset 8, 12 bytes
+		d.skip(meshHeaderPMdxVertex - 20)  // skip to pMdxVertex field
+		animPMdxVertex, _ = d.readI32()    // offset meshHeaderPMdxVertex
+		countVerts, _ := d.readU16()       // offset meshHeaderCountVerts
+		d.skip(2)                          // countTextures
+		animPMdxTex0, _ = d.readI32()      // offset meshHeaderPMdxTex0
 		animMeshVerts = int(countVerts)
 		d.seek(meshStart + meshHeaderSize)
 	} else if hasMesh {
@@ -1822,8 +1821,12 @@ func (d *decompiler) addAnimKey(an *AnimNode, name string, time float32, vals []
 	}
 	switch name {
 	case "position":
-		if len(vals) >= 3 { an.PositionKeys = append(an.PositionKeys, PositionKey{Time: time, Value: Vec3{X: vals[0], Y: vals[1], Z: vals[2]}}) }
+		if len(vals) >= 3 {
+			an.PositionKeys = append(an.PositionKeys, PositionKey{Time: time, Value: Vec3{X: vals[0], Y: vals[1], Z: vals[2]}})
+		}
 	case "orientation":
-		if len(vals) >= 4 { an.OrientationKeys = append(an.OrientationKeys, OrientationKey{Time: time, Value: Vec4{X: vals[0], Y: vals[1], Z: vals[2], W: vals[3]}}) }
+		if len(vals) >= 4 {
+			an.OrientationKeys = append(an.OrientationKeys, OrientationKey{Time: time, Value: Vec4{X: vals[0], Y: vals[1], Z: vals[2], W: vals[3]}})
+		}
 	}
 }

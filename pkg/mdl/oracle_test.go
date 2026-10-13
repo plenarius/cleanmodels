@@ -15,14 +15,14 @@
 // it does NOT do a byte-for-byte diff because the game generates tangents,
 // bitangents, and may reorder some data differently. Instead it checks:
 //
-//   • Model/geometry name, classification, supermodel
-//   • Node count and names
-//   • Node hierarchy (parent names)
-//   • Mesh vertex and face counts per node
-//   • Animation count, names, and per-animation event counts
-//   • Light color, radius, multiplier per light node
-//   • Emitter birth rate, life expectancy, velocity per emitter node
-//   • Controller type IDs present per node
+//   - Model/geometry name, classification, supermodel
+//   - Node count and names
+//   - Node hierarchy (parent names)
+//   - Mesh vertex and face counts per node
+//   - Animation count, names, and per-animation event counts
+//   - Light color, radius, multiplier per light node
+//   - Emitter birth rate, life expectancy, velocity per emitter node
+//   - Controller type IDs present per node
 //
 // Any field difference is reported with both values so you can judge whether
 // it is a real bug or a known acceptable divergence (e.g. tangent gen).
@@ -39,7 +39,7 @@ import (
 	"testing"
 )
 
-const oracleAsciiDir  = "../../tests/fixtures/oracle/ascii"
+const oracleAsciiDir = "../../tests/fixtures/oracle/ascii"
 const oracleBinaryDir = "../../tests/fixtures/oracle/game_binary"
 
 // Tangent-only oracle pairs live in their own directory because the
@@ -47,7 +47,7 @@ const oracleBinaryDir = "../../tests/fixtures/oracle/game_binary"
 // the same model — the tile geometry, node names, and face counts
 // differ enough to break TestOracleCompare's structural diff, but the
 // per-vertex tangent comparison only needs matching world positions.
-const tangentOracleAsciiDir  = "../../tests/fixtures/oracle/tangent_pairs/ascii"
+const tangentOracleAsciiDir = "../../tests/fixtures/oracle/tangent_pairs/ascii"
 const tangentOracleBinaryDir = "../../tests/fixtures/oracle/tangent_pairs/game_binary"
 
 // Skip-list: filenames seen in dump folders that we deliberately do
@@ -177,7 +177,7 @@ func oracleDiff(ours, game *Model) []string {
 	}
 
 	// ── Node inventory ────────────────────────────────────────────────────────
-	ourNodes  := nodeNameIndexFromSlice(ours.Nodes)
+	ourNodes := nodeNameIndexFromSlice(ours.Nodes)
 	gameNodes := nodeNameIndexFromSlice(game.Nodes)
 
 	for name, on := range ourNodes {
@@ -199,7 +199,7 @@ func oracleDiff(ours, game *Model) []string {
 		add("animation count: ours=%d game=%d", len(ours.Animations), len(game.Animations))
 	}
 
-	ourAnims  := animNameSet(ours.Animations)
+	ourAnims := animNameSet(ours.Animations)
 	gameAnims := animNameSet(game.Animations)
 	for a := range ourAnims {
 		if !gameAnims[a] {
@@ -235,7 +235,7 @@ func diffNode(name string, ours, game *Node, add func(string, ...any)) {
 	}
 
 	// Mesh geometry counts
-	ourHasMesh  := ours.Mesh != nil
+	ourHasMesh := ours.Mesh != nil
 	gameHasMesh := game.Mesh != nil
 	if ourHasMesh != gameHasMesh {
 		add("node %q: has_mesh ours=%v game=%v", name, ourHasMesh, gameHasMesh)
@@ -329,8 +329,9 @@ func approxEqVec3(a, b Vec3, tol float64) bool {
 // It sources ASCII from the full NWN:EE decompiled stock model folder.
 //
 // Defaults (override with env vars):
-//   DUMP_BINARY_DIR  — folder of game-compiled .mdl binaries  (default: /tmp/modelcompiler_dump/modelcompiler)
-//   DECOMPILED_DIR   — folder of decompiled ASCII .mdl sources (default: ~/Downloads/1.86.8193.34.1 Decompiled Models (One Folder))
+//
+//	DUMP_BINARY_DIR  — folder of game-compiled .mdl binaries  (default: /tmp/modelcompiler_dump/modelcompiler)
+//	DECOMPILED_DIR   — folder of decompiled ASCII .mdl sources (default: ~/Downloads/1.86.8193.34.1 Decompiled Models (One Folder))
 func TestOracleDumpCompare(t *testing.T) {
 	dumpDir := os.Getenv("DUMP_BINARY_DIR")
 	if dumpDir == "" {

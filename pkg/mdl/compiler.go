@@ -4,13 +4,15 @@
 // Every write mirrors the corresponding read in binary.go exactly.
 //
 // Pointer convention (matches binary.go):
-//   Core-relative: p such that file_offset = 12 + p
-//   MDX-relative:  p such that file_offset = 12 + core_len + p
+//
+//	Core-relative: p such that file_offset = 12 + p
+//	MDX-relative:  p such that file_offset = 12 + core_len + p
 //
 // Layout of the output file:
-//   [0-11]   header_file  {0, core_len, mdx_len}
-//   [12 ...]  core block   (model header + node tree + anim headers)
-//   [12+core_len ...] MDX block (vertex/normal/uv data)
+//
+//	[0-11]   header_file  {0, core_len, mdx_len}
+//	[12 ...]  core block   (model header + node tree + anim headers)
+//	[12+core_len ...] MDX block (vertex/normal/uv data)
 package mdl
 
 import (
@@ -38,7 +40,7 @@ func (p *patchBuf) u32le(v uint32) {
 	p.b = append(p.b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24))
 }
 
-func (p *patchBuf) i32le(v int32)  { p.u32le(uint32(v)) }
+func (p *patchBuf) i32le(v int32)   { p.u32le(uint32(v)) }
 func (p *patchBuf) f32le(v float32) { p.u32le(math.Float32bits(v)) }
 
 func (p *patchBuf) vec3(v Vec3) {
@@ -320,15 +322,15 @@ func (c *compiler) writeModel() error {
 	c.core.u32le(2)                       // type = 2 (geometry / model)
 
 	// ---- header_model (120 bytes, offsets 112-231) ----
-	c.core.zeros(2)                        // unknown0, unknown1
+	c.core.zeros(2)                                                          // unknown0, unknown1
 	c.core.u8(byte(ClassificationToCode(strings.ToUpper(m.Classification)))) // class code
 	// fog byte is "affected by fog", the negation of ASCII ignorefog.
 	fog := byte(1)
 	if m.IgnoreFog != 0 {
 		fog = 0
 	}
-	c.core.u8(fog)                         // fog
-	c.core.zeros(4)                        // count_child_model
+	c.core.u8(fog)  // fog
+	c.core.zeros(4) // count_child_model
 
 	// animations ProxyList placeholder (offset 120)
 	animListOff := c.core.placeholder()
@@ -387,20 +389,19 @@ func (c *compiler) writeModel() error {
 	return nil
 }
 
-
 // writeAnimation writes a single Animation to core and returns its core offset.
 func (c *compiler) writeAnimation(anim *Animation) int32 {
 	animOff := int32(c.core.len())
 
 	// ---- header_geometry (112 bytes) ----
-	c.core.zeros(8)              // p_func1, p_func2
-	c.core.fixedStr(anim.Name, 64) // animation name
+	c.core.zeros(8)                       // p_func1, p_func2
+	c.core.fixedStr(anim.Name, 64)        // animation name
 	rootPtrOff := c.core.placeholder()    // root anim node ptr
 	countNodesOff := c.core.placeholder() // count_nodes
-	c.core.zeros(12)             // unknown1
-	c.core.zeros(12)             // unknown2
-	c.core.zeros(4)              // ref_count
-	c.core.u32le(1)              // type = 1 (animation)
+	c.core.zeros(12)                      // unknown1
+	c.core.zeros(12)                      // unknown2
+	c.core.zeros(4)                       // ref_count
+	c.core.u32le(1)                       // type = 1 (animation)
 
 	// ---- header_animation (84 bytes after geometry) ----
 	c.core.f32le(anim.Length)
@@ -489,16 +490,40 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	meshCtrlOnly := false
 	if geomNode != nil {
 		gf := geomNode.NodeTypeFlag()
-		if gf&0x02 != 0 { hasLight = true; contentBits |= 0x02 }
-		if gf&0x04 != 0 { hasEmitter = true; contentBits |= 0x04 }
-		if gf&0x10 != 0 { hasRef = true; contentBits |= 0x10 }
+		if gf&0x02 != 0 {
+			hasLight = true
+			contentBits |= 0x02
+		}
+		if gf&0x04 != 0 {
+			hasEmitter = true
+			contentBits |= 0x04
+		}
+		if gf&0x10 != 0 {
+			hasRef = true
+			contentBits |= 0x10
+		}
 		// Mesh/skin/dangly/aabb only for animmesh animation nodes
 		if gf&0x80 != 0 || (an.AnimMesh != nil) {
-			if gf&0x20 != 0 { hasMesh = true; contentBits |= 0x20 }
-			if gf&0x40 != 0 { hasSkin = true; contentBits |= 0x40 }
-			if gf&0x80 != 0 { hasAnimMesh = true; contentBits |= 0x80 }
-			if gf&0x100 != 0 { hasDangly = true; contentBits |= 0x100 }
-			if gf&0x200 != 0 { hasAABB = true; contentBits |= 0x200 }
+			if gf&0x20 != 0 {
+				hasMesh = true
+				contentBits |= 0x20
+			}
+			if gf&0x40 != 0 {
+				hasSkin = true
+				contentBits |= 0x40
+			}
+			if gf&0x80 != 0 {
+				hasAnimMesh = true
+				contentBits |= 0x80
+			}
+			if gf&0x100 != 0 {
+				hasDangly = true
+				contentBits |= 0x100
+			}
+			if gf&0x200 != 0 {
+				hasAABB = true
+				contentBits |= 0x200
+			}
 		} else if gf&0x20 != 0 && (len(an.AlphaKeys) > 0 || len(an.SelfIllumColorKeys) > 0) {
 			// A plain (non-animmesh) trimesh animation node that carries
 			// mesh controllers — alpha or self-illumination keys — must
@@ -520,18 +545,18 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	*count++
 
 	// ---- header_node (112 bytes) ----
-	c.core.zeros(24)              // p_func1..p_func6
-	c.core.i32le(0)               // inheritColor
+	c.core.zeros(24) // p_func1..p_func6
+	c.core.i32le(0)  // inheritColor
 	partNum := int32(0)
 	if geomNode != nil {
 		if id, ok := c.nodeIDs[geomNode]; ok {
 			partNum = id
 		}
 	}
-	c.core.i32le(partNum) // node_number / m_ID
+	c.core.i32le(partNum)        // node_number / m_ID
 	c.core.fixedStr(an.Name, 32) // node_name
-	c.core.i32le(0)               // p_geometry (tree ptr) — engine fills at load
-	c.core.i32le(parentOff)       // p_parent_node
+	c.core.i32le(0)              // p_geometry (tree ptr) — engine fills at load
+	c.core.i32le(parentOff)      // p_parent_node
 
 	// children ProxyList — will be patched
 	childListOffPos := c.core.placeholder()
@@ -823,9 +848,9 @@ func (c *compiler) writeAnimMeshHeader(geomNode *Node, an *AnimNode) (pAnimVertP
 	}
 
 	c.core.f32le(sp)
-	c.core.proxyListEmpty() // animation_vertices (legacy)
-	c.core.proxyListEmpty() // animation_texcoords (legacy)
-	c.core.proxyListEmpty() // animation_normals (legacy)
+	c.core.proxyListEmpty()              // animation_vertices (legacy)
+	c.core.proxyListEmpty()              // animation_texcoords (legacy)
+	c.core.proxyListEmpty()              // animation_normals (legacy)
 	pAnimVertPos = c.core.placeholder()  // pAnimVerts
 	pAnimTVertPos = c.core.placeholder() // pAnimTVerts
 	c.core.i32le(int32(nVertexSets))

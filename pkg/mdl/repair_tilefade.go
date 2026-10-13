@@ -231,7 +231,6 @@ func readTileFadeVert(mesh *MeshData, skin *SkinData, vi, uvi int32) tileFadeVer
 	return v
 }
 
-
 func worldZOf(idx map[*Node]*Node, n *Node, v tileFadeVert) float32 {
 	return LocalToWorld(idx, n, v.Pos).Z
 }
@@ -548,4 +547,3 @@ func splitOneAbove(idx map[*Node]*Node, n *Node, template *MeshData, sliceZ floa
 }
 
 // --- small vector helpers ---
-

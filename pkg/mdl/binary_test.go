@@ -130,4 +130,3 @@ func findFixtures(t *testing.T, subdirs ...string) []string {
 	}
 	return result
 }
-

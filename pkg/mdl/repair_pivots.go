@@ -597,4 +597,3 @@ func clampToBox(p, minB, maxB Vec3) Vec3 {
 		Z: minF(maxF(p.Z, minB.Z), maxB.Z),
 	}
 }
-

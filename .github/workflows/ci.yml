@@ -23,6 +23,18 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Format
+        # Linux only: Windows checkouts may convert line endings, which gofmt
+        # would flag on every file.
+        if: runner.os == 'Linux'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt -w on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 

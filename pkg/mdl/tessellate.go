@@ -171,4 +171,3 @@ func midUVFor(mesh *MeshData, uA, uB, tvA, tvB, tvMid int32) int32 {
 	mesh.TVerts = append(mesh.TVerts, vecLerp3(mesh.TVerts[uA], mesh.TVerts[uB], 0.5))
 	return out
 }
-

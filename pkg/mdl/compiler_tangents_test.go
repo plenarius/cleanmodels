@@ -415,16 +415,16 @@ func TestCompareNodeTangents(t *testing.T) {
 	tx := func(x, y, z, w float32) Vec4 { return Vec4{X: x, Y: y, Z: z, W: w} }
 
 	cases := []struct {
-		name             string
-		ours             [3]Vec4
-		game             [3]Vec4
-		gamePos          [3]Vec3 // override game positions; zero value = same as ours
-		wantMatched      int
-		wantUnmatched    int
-		wantBadAlign     int
-		wantMeanDotMin   float64
-		wantMeanDotMax   float64
-		wantSkipMeanDot  bool
+		name            string
+		ours            [3]Vec4
+		game            [3]Vec4
+		gamePos         [3]Vec3 // override game positions; zero value = same as ours
+		wantMatched     int
+		wantUnmatched   int
+		wantBadAlign    int
+		wantMeanDotMin  float64
+		wantMeanDotMax  float64
+		wantSkipMeanDot bool
 	}{
 		{
 			name:           "identical tangents",
@@ -466,9 +466,9 @@ func TestCompareNodeTangents(t *testing.T) {
 			wantMeanDotMax: 1.001,
 		},
 		{
-			name:           "no positional match -> all unmatched",
-			ours:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
-			game:           [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			name: "no positional match -> all unmatched",
+			ours: [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game: [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
 			gamePos: [3]Vec3{
 				{99, 99, 99}, {99, 99, 99}, {99, 99, 99},
 			},
@@ -476,9 +476,9 @@ func TestCompareNodeTangents(t *testing.T) {
 			wantSkipMeanDot: true,
 		},
 		{
-			name: "zero-length tangent -> unmatched (degenerate vector skipped)",
-			ours: [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
-			game: [3]Vec4{tx(0, 0, 0, 1), tx(0, 0, 0, 1), tx(0, 0, 0, 1)},
+			name:            "zero-length tangent -> unmatched (degenerate vector skipped)",
+			ours:            [3]Vec4{tx(1, 0, 0, 1), tx(1, 0, 0, 1), tx(1, 0, 0, 1)},
+			game:            [3]Vec4{tx(0, 0, 0, 1), tx(0, 0, 0, 1), tx(0, 0, 0, 1)},
 			wantUnmatched:   3,
 			wantSkipMeanDot: true,
 		},

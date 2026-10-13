@@ -62,33 +62,33 @@ type repairOpts struct {
 
 	pivot pivotOpts
 
-	tvertSnap              string // "256", "512", "1024"
-	placeableTransparency  bool
-	transparencyKey        string
-	remapWalkmeshMaterial  string // "FROM:TO"
-	tilefadeUndo           bool
-	standardizeTexture0    bool
-	stripEEExtras          bool
+	tvertSnap             string // "256", "512", "1024"
+	placeableTransparency bool
+	transparencyKey       string
+	remapWalkmeshMaterial string // "FROM:TO"
+	tilefadeUndo          bool
+	standardizeTexture0   bool
+	stripEEExtras         bool
 }
 
 type tileOpts struct {
-	tilefadeZ     float32
-	water         bool
-	waterKey      string
-	dynamicWater  string // "yes", "no", "wavy"
-	waveHeight    float64
-	rotateWater   string // "0" or "1"
-	retileWater   string // "1", "2", "3"
-	foliage       string // "tilefade", "animate", "de-animate", "ignore"
-	foliageKey    string
-	splotch       string // "animate"
-	splotchKey    string
-	rotateGround  string // "0" or "1"
-	groundKey     string
-	chamfer       string // "add", "delete"
-	retileGround  string // "1", "2", "3"
-	raiseLower    string // "raise", "lower"
-	raiseAmount   float64
+	tilefadeZ    float32
+	water        bool
+	waterKey     string
+	dynamicWater string // "yes", "no", "wavy"
+	waveHeight   float64
+	rotateWater  string // "0" or "1"
+	retileWater  string // "1", "2", "3"
+	foliage      string // "tilefade", "animate", "de-animate", "ignore"
+	foliageKey   string
+	splotch      string // "animate"
+	splotchKey   string
+	rotateGround string // "0" or "1"
+	groundKey    string
+	chamfer      string // "add", "delete"
+	retileGround string // "1", "2", "3"
+	raiseLower   string // "raise", "lower"
+	raiseAmount  float64
 }
 
 type procOpts struct {

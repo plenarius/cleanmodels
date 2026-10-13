@@ -119,8 +119,6 @@ func faceBounds(mesh *MeshData, fi int32) (Vec3, Vec3, error) {
 	return vecMin(vecMin(v0, v1), v2), vecMax(vecMax(v0, v1), v2), nil
 }
 
-
-
 func faceCentroid(mesh *MeshData, fi int32) Vec3 {
 	f := mesh.Faces[fi]
 	nv := int32(len(mesh.Verts))
@@ -161,7 +159,6 @@ func axisExtent(minB, maxB Vec3, axis int) float32 {
 		return maxB.Z - minB.Z
 	}
 }
-
 
 // axesByExtent returns {0,1,2} sorted by bounding-box extent on that axis, descending.
 func axesByExtent(minB, maxB Vec3) []int {

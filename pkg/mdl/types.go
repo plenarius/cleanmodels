@@ -26,17 +26,23 @@ type Vec3 struct {
 
 func (v Vec3) Index(axis int) float32 {
 	switch axis {
-	case 0: return v.X
-	case 1: return v.Y
-	default: return v.Z
+	case 0:
+		return v.X
+	case 1:
+		return v.Y
+	default:
+		return v.Z
 	}
 }
 
 func (v *Vec3) SetIndex(axis int, val float32) {
 	switch axis {
-	case 0: v.X = val
-	case 1: v.Y = val
-	default: v.Z = val
+	case 0:
+		v.X = val
+	case 1:
+		v.Y = val
+	default:
+		v.Z = val
 	}
 }
 
@@ -80,10 +86,10 @@ type MeshData struct {
 	CornerNormals [][3]Vec3 // per-face-corner normals from smoothing groups (compiler-generated)
 	Tangents      []Vec4
 	Colors        []Vec3
-	TVerts   []Vec3
-	TVerts1  []Vec3
-	TVerts2  []Vec3
-	TVerts3  []Vec3
+	TVerts        []Vec3
+	TVerts1       []Vec3
+	TVerts2       []Vec3
+	TVerts3       []Vec3
 
 	TexIndices0 [][3]int32
 	TexIndices1 [][3]int32
@@ -155,69 +161,69 @@ type EmitterData struct {
 	RenderOrder int32
 
 	// Flags from EmitterFlags bitfield (load_binary.pl line 396)
-	P2P          int32
-	P2PSel       int32
+	P2P            int32
+	P2PSel         int32
 	AffectedByWind int32
-	IsTinted     int32 // m_isTinted in Prolog
-	Bounce       int32
-	Random       int32
-	Inherit      int32
-	InheritVel   int32
-	InheritLocal int32
-	Splat        int32
-	InheritPart  int32
+	IsTinted       int32 // m_isTinted in Prolog
+	Bounce         int32
+	Random         int32
+	Inherit        int32
+	InheritVel     int32
+	InheritLocal   int32
+	Splat          int32
+	InheritPart    int32
 
 	// NWMax-only properties (not exported by NWMax but accepted on import)
-	P2PType     string
-	RenderSel   int32
-	BlendSel    int32
-	UpdateSel   int32
+	P2PType      string
+	RenderSel    int32
+	BlendSel     int32
+	UpdateSel    int32
 	SpawnTypeSel int32
-	Opacity     int32
-	IconSize    int32
-	LockAxes    int32
-	Chunky      int32
+	Opacity      int32
+	IconSize     int32
+	LockAxes     int32
+	Chunky       int32
 
 	// Controller-animatable values
-	AlphaStart float32
-	AlphaMid   float32
-	AlphaEnd   float32
-	ColorStart Vec3
-	ColorMid   Vec3
-	ColorEnd   Vec3
-	SizeStart  float32
-	SizeMid    float32
-	SizeEnd    float32
-	SizeStartY float32
-	SizeMidY   float32
-	SizeEndY   float32
-	BirthRate  float32
-	LifeExp    float32
-	Mass       float32
-	Spread     float32
-	ParticleRot float32
-	Velocity   float32
-	RandVel    float32
-	BounceCo   float32
-	BlurLength float32
-	FPS        float32
-	FrameStart float32
-	FrameEnd   float32
-	Grav       float32
-	Drag       float32
-	Threshold  float32
-	CombineTime float32
-	PercentStart float32
-	PercentMid   float32
-	PercentEnd   float32
+	AlphaStart      float32
+	AlphaMid        float32
+	AlphaEnd        float32
+	ColorStart      Vec3
+	ColorMid        Vec3
+	ColorEnd        Vec3
+	SizeStart       float32
+	SizeMid         float32
+	SizeEnd         float32
+	SizeStartY      float32
+	SizeMidY        float32
+	SizeEndY        float32
+	BirthRate       float32
+	LifeExp         float32
+	Mass            float32
+	Spread          float32
+	ParticleRot     float32
+	Velocity        float32
+	RandVel         float32
+	BounceCo        float32
+	BlurLength      float32
+	FPS             float32
+	FrameStart      float32
+	FrameEnd        float32
+	Grav            float32
+	Drag            float32
+	Threshold       float32
+	CombineTime     float32
+	PercentStart    float32
+	PercentMid      float32
+	PercentEnd      float32
 	LightningDelay  float32
 	LightningRadius float32
 	LightningScale  float32
 	LightningSubDiv float32
-	P2PBezier2 float32
-	P2PBezier3 float32
-	XSize      float32
-	YSize      float32
+	P2PBezier2      float32
+	P2PBezier3      float32
+	XSize           float32
+	YSize           float32
 }
 
 // LightData holds light node properties.
@@ -240,12 +246,11 @@ type LightData struct {
 	NegativeLight    int32 // NWMax only, not compiled
 
 	// Controller values
-	Color                 Vec3
-	Radius                float32
-	Multiplier            float32
-	ShadowRadius          float32
-	VerticalDisplacement  float32
-
+	Color                Vec3
+	Radius               float32
+	Multiplier           float32
+	ShadowRadius         float32
+	VerticalDisplacement float32
 }
 
 // ReferenceData holds model reference properties.
@@ -426,10 +431,10 @@ type AnimNode struct {
 	SelfIllumColorKeys []ColorKey
 
 	// Light controllers
-	ColorKeys              []ColorKey
-	RadiusKeys             []FloatKey
-	MultiplierKeys         []FloatKey
-	ShadowRadiusKeys       []FloatKey
+	ColorKeys                []ColorKey
+	RadiusKeys               []FloatKey
+	MultiplierKeys           []FloatKey
+	ShadowRadiusKeys         []FloatKey
 	VerticalDisplacementKeys []FloatKey
 
 	// Emitter controllers
@@ -499,14 +504,14 @@ type Animation struct {
 // Model represents a complete parsed MDL model.
 // Ref: load_binary.pl get_model_header (line 113)
 type Model struct {
-	Name            string
-	SuperModel      string
-	Classification  string
-	AnimationScale  float32
-	IgnoreFog       int32
-	FileDependancy  string
-	FileType        string // "binary" or "ascii"
-	UseTexture0     bool   // emit "texture0" instead of "bitmap" in ASCII output
+	Name           string
+	SuperModel     string
+	Classification string
+	AnimationScale float32
+	IgnoreFog      int32
+	FileDependancy string
+	FileType       string // "binary" or "ascii"
+	UseTexture0    bool   // emit "texture0" instead of "bitmap" in ASCII output
 
 	Nodes      []*Node
 	Animations []Animation
