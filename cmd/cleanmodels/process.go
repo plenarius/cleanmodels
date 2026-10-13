@@ -182,6 +182,9 @@ func isBinaryMDL(path string) (bool, error) {
 
 // dispatchInputs runs one input as before and several as a batch.
 func dispatchInputs(inputs []string, outputPath string, opts procOpts) int {
+	if opts.compile {
+		reportGameInstall(os.Stderr, opts)
+	}
 	if len(inputs) == 1 {
 		return dispatch(inputs[0], outputPath, opts)
 	}
@@ -656,11 +659,8 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			}
 			superDirs := append(append([]string{filepath.Dir(path)}, o.supermodelDirs...), o.resourceDirs...)
 			resDirs := append([]string{filepath.Dir(path)}, o.resourceDirs...)
-			if game := o.gameDir; game != "" || os.Getenv("NWN_ROOT") != "" {
-				if game == "" {
-					game = os.Getenv("NWN_ROOT")
-				}
-				superDirs, resDirs = append(superDirs, game), append(resDirs, game)
+			if g := resolveGameInstall(o.gameDir); g.dir != "" {
+				superDirs, resDirs = append(superDirs, g.dir), append(resDirs, g.dir)
 			}
 			copts := mdl.CompileOptions{
 				SupermodelDirs: superDirs,
