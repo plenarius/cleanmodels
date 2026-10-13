@@ -16,7 +16,7 @@ func cmdCompile(args []string) int {
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels compile [flags] <input>... [output]\n\n")
-		fmt.Fprintf(os.Stderr, "Compile ASCII MDL to binary format.\n\nGive several inputs (files or directories) and the last argument is the output directory.\nAn existing output file is not overwritten unless --overwrite is given.\n\n")
+		fmt.Fprintf(os.Stderr, "Compile ASCII MDL to binary format. An output is required: to compile in place, give the input twice\n(cleanmodels compile a.mdl a.mdl).\n\nGive several inputs (files or directories) and the last argument is the output directory.\nAn existing output file is not overwritten unless --overwrite is given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
