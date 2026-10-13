@@ -166,6 +166,40 @@ func (p *parser) floatAt(tokens []string, i int) float32 {
 	return v
 }
 
+// shortParam reports a line with fewer values than its keyword needs.
+func (p *parser) shortParam(tokens []string, want int) {
+	p.errorf("%q has %d value(s), expected %d; the line is ignored", tokens[0], len(tokens)-1, want)
+}
+
+// vec3Param stores a "keyword x y z" line in dst. A short line or an unusable
+// number leaves dst as it was and is reported with the line number.
+func (p *parser) vec3Param(tokens []string, dst *Vec3) {
+	if len(tokens) < 4 {
+		p.shortParam(tokens, 3)
+		return
+	}
+	v, ok := parseVec3(tokens[1:])
+	if !ok {
+		p.errorf("%q has an unusable number (%s), keeping the default", tokens[0], strings.Join(tokens[1:4], " "))
+		return
+	}
+	*dst = v
+}
+
+// vec4Param is vec3Param for "keyword x y z w" lines.
+func (p *parser) vec4Param(tokens []string, dst *Vec4) {
+	if len(tokens) < 5 {
+		p.shortParam(tokens, 4)
+		return
+	}
+	v, ok := parseVec4(tokens[1:])
+	if !ok {
+		p.errorf("%q has an unusable number (%s), keeping the default", tokens[0], strings.Join(tokens[1:5], " "))
+		return
+	}
+	*dst = v
+}
+
 // countParam reads the entry count that opens a list. When it is unusable the
 // list cannot be read, so say so rather than letting its lines fall through.
 func (p *parser) countParam(tokens []string) (int32, bool) {
@@ -480,13 +514,9 @@ func (p *parser) parseParameter(tokens []string) {
 			p.intParam(tokens, &node.PartNumber)
 		}
 	case "position":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			node.Position = v
-		}
+		p.vec3Param(tokens, &node.Position)
 	case "orientation":
-		if v, ok := parseVec4(tokens[1:]); ok {
-			node.Orientation = v
-		}
+		p.vec4Param(tokens, &node.Orientation)
 	case "scale":
 		if len(tokens) >= 2 {
 			p.floatParam(tokens, &node.Scale)
@@ -496,9 +526,7 @@ func (p *parser) parseParameter(tokens []string) {
 			p.intParam(tokens, &node.InheritColor)
 		}
 	case "wirecolor":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			node.WireColor = v
-		}
+		p.vec3Param(tokens, &node.WireColor)
 	default:
 		p.parseNodeSpecificParam(keyword, tokens)
 	}
@@ -565,17 +593,11 @@ func (p *parser) parseNodeSpecificParam(keyword string, tokens []string) {
 func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "diffuse":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			mesh.Diffuse = v
-		}
+		p.vec3Param(tokens, &mesh.Diffuse)
 	case "ambient":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			mesh.Ambient = v
-		}
+		p.vec3Param(tokens, &mesh.Ambient)
 	case "specular":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			mesh.Specular = v
-		}
+		p.vec3Param(tokens, &mesh.Specular)
 	case "shininess":
 		p.floatParam(tokens, &mesh.Shininess)
 	case "bitmap", "texture0":
@@ -609,9 +631,7 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 	case "alpha":
 		p.floatParam(tokens, &mesh.Alpha)
 	case "selfillumcolor", "setfillumcolor":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			mesh.SelfIllumColor = v
-		}
+		p.vec3Param(tokens, &mesh.SelfIllumColor)
 	case "tilefade":
 		p.intParam(tokens, &mesh.TileFade)
 	case "rotatetexture":
@@ -836,9 +856,7 @@ func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []str
 			return true
 		}
 		if getter, ok := emitterColorFields[keyword]; ok {
-			if v, ok := parseVec3(tokens[1:]); ok {
-				*getter(em) = v
-			}
+			p.vec3Param(tokens, getter(em))
 			return true
 		}
 		return false
@@ -871,9 +889,7 @@ func (p *parser) parseLightParam(light *LightData, keyword string, tokens []stri
 	case "negativelight":
 		p.intParam(tokens, &light.NegativeLight)
 	case "color":
-		if v, ok := parseVec3(tokens[1:]); ok {
-			light.Color = v
-		}
+		p.vec3Param(tokens, &light.Color)
 	case "radius":
 		p.floatParam(tokens, &light.Radius)
 	case "multiplier":
@@ -1122,6 +1138,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if len(an.PositionKeys) == 0 {
 				an.PositionKeys = append(an.PositionKeys, PositionKey{Time: 0, Value: Vec3{X: x, Y: y, Z: z}})
 			}
+		} else {
+			p.shortParam(tokens, 3)
 		}
 	case "orientation":
 		if len(tokens) >= 5 {
@@ -1129,6 +1147,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if len(an.OrientationKeys) == 0 {
 				an.OrientationKeys = append(an.OrientationKeys, OrientationKey{Time: 0, Value: Vec4{X: x, Y: y, Z: z, W: w}})
 			}
+		} else {
+			p.shortParam(tokens, 4)
 		}
 
 	// Controller key lists — handle both counted ("positionkey 2") and
@@ -1285,6 +1305,8 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 				if len(*keys) == 0 {
 					*keys = append(*keys, ColorKey{Time: 0, Value: Vec3{X: r, Y: g, Z: b}})
 				}
+			} else {
+				p.shortParam(tokens, 3)
 			}
 			return
 		}

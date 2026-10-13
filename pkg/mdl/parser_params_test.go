@@ -116,3 +116,56 @@ func TestAnimMeshClipParamsReportBadNumbers(t *testing.T) {
 		t.Errorf("a good value must not warn: %+v", errs)
 	}
 }
+
+// Vector parameters (position, diffuse, ...) used to be skipped silently when the
+// line was short or held an unusable number, leaving the default in place.
+func TestVectorParamsReportShortAndBadLines(t *testing.T) {
+	src := `newmodel vec
+setsupermodel vec NULL
+classification CHARACTER
+setanimationscale 1.0
+beginmodelgeom vec
+  node trimesh m
+    parent NULL
+    position 1 2
+    orientation 0 0 1 q
+    diffuse 0.5 0.5 zz
+    ambient 0.1 0.2 0.3
+    wirecolor 1
+  endnode
+endmodelgeom
+donemodel vec
+`
+	pr, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"position" has 2 value(s), expected 3`,
+		`"orientation" has an unusable number (0 0 1 q)`,
+		`"diffuse" has an unusable number (0.5 0.5 zz)`,
+		`"wirecolor" has 1 value(s), expected 3`,
+	} {
+		if !hasError(pr.Errors, want) {
+			t.Errorf("missing warning %q in %+v", want, pr.Errors)
+		}
+	}
+	if hasError(pr.Errors, `"ambient"`) {
+		t.Errorf("a good line must not warn: %+v", pr.Errors)
+	}
+	n := pr.Model.RootNode()
+	if n == nil || n.Mesh == nil || n.Mesh.Ambient != (Vec3{X: 0.1, Y: 0.2, Z: 0.3}) {
+		t.Errorf("good value should apply: %+v", n)
+	}
+}
+
+func TestAnimNodeShortStaticLinesAreReported(t *testing.T) {
+	_, errs := animNode(t, "dummy", `    position 1 2
+    orientation 0 0 1
+    colorStart 0.1 0.2`)
+	for _, want := range []string{`"position" has 2 value(s), expected 3`, `"orientation" has 3 value(s), expected 4`, `"colorStart" has 2 value(s), expected 3`} {
+		if !hasError(errs, want) {
+			t.Errorf("missing warning %q in %+v", want, errs)
+		}
+	}
+}
