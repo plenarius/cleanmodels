@@ -189,13 +189,15 @@ cleanmodels compile --resource-dir my_haks/ --resource-dir ts_pbr.hak -r tiles/ 
 
 | Flag | Description |
 |---|---|
-| `--game-dir DIR` | NWN install directory (the one with `data/nwn_base.key`). Stock supermodels and materials are read straight from its BIF files. Defaults to `$NWN_ROOT`. |
+| `--game-dir DIR` | NWN install directory (the one with `data/nwn_base.key`). Stock supermodels and materials are read straight from its BIF files. Defaults to `$NWN_ROOT`, then the usual Steam and GOG install locations. |
 | `--resource-dir PATH` | Extra folder, or `.hak`/`.erf`/`.mod` archive, searched for supermodels and for `.mtr` materials (repeatable). The input file's own folder is always searched. |
 | `--supermodel-dir DIR` | Extra folder searched for the model's supermodel (repeatable). |
 
 `compile` always needs an output. `cleanmodels compile plc_torch.mdl` on its own is refused, because it would replace your ASCII source with the binary. To compile in place, name the input twice, as in the first example above.
 
 A model's node numbers follow its supermodel, and a mesh whose material is normal-mapped gets tangents baked in, so the compiler needs to find both. If a supermodel can't be found the compile still succeeds and a warning says so. Without materials in reach, only a mesh's own `renderhint` decides about tangents.
+
+Compile looks for the game's data on its own: `--game-dir`, then `$NWN_ROOT`, then the usual Steam and GOG folders for your system (a folder only counts if it holds `data/nwn_base.key`). `--verbose` shows which one was used, and if none is found a one-line note says that materials and supermodels from the game were not consulted. A copy of NWN in an unusual place, or in a second Steam library, needs `--game-dir` or `NWN_ROOT`. Because of this, the same model can compile differently on a machine with NWN installed and one without, when its tangents or node numbers depend on game data; the compile with the data in reach is the correct one.
 
 ### decompile — binary to ASCII MDL
 

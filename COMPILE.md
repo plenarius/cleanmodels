@@ -296,9 +296,13 @@ tree stays valid. This affects real models: 88 of 20,476 Layonara and 33 of
 carry a face or two more than the engine's own load of the same ASCII.
 - **Render hint inference needs the materials.** With no `renderhint` on the
 mesh, the game takes the hint from the mesh's `.mtr` material. We do the same
-(`isNormalMapped`), but only when `--resource-dir` or `--game-dir` can reach
-that material. Without it only an explicit `renderhint` counts, and the engine
-regenerates tangents at load.
+(`isNormalMapped`), but only when `--resource-dir` or the game's own data can
+reach that material. The game's data is found from `--game-dir`, then
+`$NWN_ROOT`, then the usual Steam and GOG install folders; `--verbose` says which
+was used and one note is printed when none is found. Without any, only an
+explicit `renderhint` counts, and the engine regenerates tangents at load. An
+install in an unusual place still needs `--game-dir` or `NWN_ROOT`, and the same
+model can compile differently on a machine with NWN installed and one without.
 - **No fuzz harness.** Parsing untrusted ASCII is bounded by alloc tracking
 and a max-depth guard, but we haven't exercised the parser/compiler with
 random or adversarial inputs.
