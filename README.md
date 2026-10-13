@@ -4,6 +4,25 @@ Validate, repair, compile, and decompile Neverwinter Nights MDL model files.
 
 A complete rewrite of [OldManBeard's CleanModels](https://neverwintervault.org/project/nwn1/other/tool/cleanmodels-0) in Go — zero dependencies, single static binary, cross-platform.
 
+## Overview
+
+Model files that load in the toolset can still misbehave in game: broken walkmeshes, wrong tile fade data, corrupt texture coordinates, skin weights that do not add up, animations that overrun their length. cleanmodels is the quality gate between your 3D editor (NWMax, Blender) or an inherited hak and the game.
+
+- **Check** a model or a whole folder against 49 rules, with a plain-language explanation of each finding.
+- **Repair** what can be repaired automatically (walkmesh pivots, AABB trees, tilefade, degenerate faces and more). Originals are never touched when you write to a separate folder, and the output lists every change it made.
+- **Compile and decompile** between ASCII and binary MDL. The compiler follows the engine's own mesh pipeline and is checked against models the game's compiler produced.
+- **Script it**: `--json` for one structured result, `--json-lines` for a live event stream. Both are stable and complete, and they are what the GUI uses.
+
+```
+$ cleanmodels check amp01_d01_01.mdl
+amp01_d01_01.mdl  1 warning
+  [WARNING] aabb_fields (Walkmesh_D01): AABB node "Walkmesh_D01" has empty AABB tree (use --fix-aabb to rebuild)
+
+1 file, 1 warning, 0 errors
+```
+
+Prefer a window to a terminal? [cleanmodels-qt](https://github.com/plenarius/cleanmodels-qt) is the desktop GUI: drop in a folder, see per-file results, preview the model in 3D. Its downloads include this CLI, so there is nothing else to install.
+
 ## Download
 
 Grab the latest binary for your platform from the [Releases](https://github.com/plenarius/cleanmodels/releases) page.
@@ -202,6 +221,8 @@ cleanmodels report --command "repair --fix-pivots" --notes "visual artifacts" ti
 | `--command` | The cleanmodels command that was run |
 | `--error` | Error output or description of the problem (optional) |
 | `--notes` | Additional notes or context |
+
+Found something wrong, or a model that cleanmodels handles badly? Run `cleanmodels report` as above, or [open an issue](https://github.com/plenarius/cleanmodels/issues/new/choose). Include the output of `cleanmodels -v` and, if you can share it, the model file.
 
 ### Legacy mode
 
