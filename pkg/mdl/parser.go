@@ -783,7 +783,11 @@ func (p *parser) parseAnimMeshParam(am *AnimMeshData, keyword string, tokens []s
 func (p *parser) parseAabbParam(aabb *AabbData, keyword string, tokens []string) bool {
 	switch keyword {
 	case "aabb":
-		if len(tokens) >= 2 {
+		if len(tokens) >= 7 {
+			// The form the game and NWMax write: the root entry shares the
+			// keyword's line and the preorder tree follows, with no count.
+			p.readInlineAabb(&aabb.Entries, tokens[1:])
+		} else if len(tokens) >= 2 {
 			count, ok := p.countParam(tokens)
 			if ok && count > 0 {
 				p.readAabbList(&aabb.Entries, int(count))
@@ -793,6 +797,49 @@ func (p *parser) parseAabbParam(aabb *AabbData, keyword string, tokens []string)
 		return false
 	}
 	return true
+}
+
+// readInlineAabb reads a tree written without a count. Entries are in preorder
+// and an entry with a negative face has two children, so the tree ends when
+// every branch has reached a leaf.
+func (p *parser) readInlineAabb(out *[]AabbEntry, first []string) {
+	pending := 1
+	tokens := first
+	for pending > 0 {
+		if len(tokens) < 7 {
+			p.errorf("aabb entry needs 7 values, found %d", len(tokens))
+			return
+		}
+		if !p.trackAlloc(32) {
+			p.errorf("allocation limit exceeded reading aabb entries")
+			return
+		}
+		w := p.newListWarn()
+		var f [6]float32
+		for k := range f {
+			f[k] = w.float(tokens[k])
+		}
+		face := w.int(tokens[6])
+		w.done()
+		*out = append(*out, AabbEntry{
+			BoundMin: Vec3{X: f[0], Y: f[1], Z: f[2]},
+			BoundMax: Vec3{X: f[3], Y: f[4], Z: f[5]},
+			LeafFace: face,
+		})
+		pending--
+		if face < 0 {
+			pending += 2
+		}
+		if pending == 0 {
+			return
+		}
+		line, ok := p.nextLine()
+		if !ok {
+			p.errorf("aabb tree ends early: %d entries still expected", pending)
+			return
+		}
+		tokens = tokenize(line)
+	}
 }
 
 func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []string) bool {

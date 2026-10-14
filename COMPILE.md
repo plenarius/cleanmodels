@@ -155,9 +155,20 @@ their authored tree indexes faces by position; see "Known gaps".
 - **AABB walkmesh** trees are authored data. The game parses the tree from
 the ASCII as written (`Parse(char const*, AABB*&)`) and never builds one;
 across all 20 AABB nodes in the oracle fixtures the game's tree equals the
-authored tree entry for entry. We read it the same way. `RebuildAABB` (in
+authored tree entry for entry. We read it the same way: the parser accepts
+the game's inline form (`aabb minX minY minZ maxX maxY maxZ face` with the
+rest of the preorder tree on the lines below, no count) as well as the older
+`aabb N` form, and the writer emits the inline form. The only thing the game
+adds is each internal node's `plane`, derived from its two children's box
+centres (x if `|dx|` is strictly the largest, else y if `|dy| > |dz|`, else z;
+negative when the right child is on the lower side; a tie is -z). We derive it
+the same way, and `TestOracleAabbTreeMatchesGame` checks every walkmesh tree in
+the oracle fixtures against the game's, plane included. A model with no tree,
+or a tree that is not a complete preorder tree over the mesh's faces, gets one
+built by `buildAABBTree` instead. `RebuildAABB` (in
 `pkg/mdl/repair_walkmesh.go`) is a repair the user asks for and has no
-game equivalent.
+game equivalent. Repairs that move a walkmesh's vertices (pivots, scale,
+raise/lower, snap) move its tree's boxes with them.
 - **Skin** writes per-bone weights into MDX after positions/UVs/normals;
 bone references are resolved through the part-number map populated in
 the pre-pass.

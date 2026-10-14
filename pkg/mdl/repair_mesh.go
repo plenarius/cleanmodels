@@ -297,6 +297,14 @@ func SnapVertices(model *Model, mode string) {
 		for i := range n.Mesh.Verts {
 			n.Mesh.Verts[i] = snapVec3(n.Mesh.Verts[i], grid)
 		}
+		if n.Aabb != nil {
+			// Keep the walkmesh tree's boxes on the same grid as its vertices.
+			for i := range n.Aabb.Entries {
+				e := &n.Aabb.Entries[i]
+				e.BoundMin = snapVec3(e.BoundMin, grid)
+				e.BoundMax = snapVec3(e.BoundMax, grid)
+			}
+		}
 	}
 }
 
