@@ -13,6 +13,8 @@ Model files that load in the toolset can still misbehave in game: broken walkmes
 - **Compile and decompile** between ASCII and binary MDL. The compiler follows the engine's own mesh pipeline and is checked against models the game's compiler produced.
 - **Script it**: `--json` for one structured result, `--json-lines` for a live event stream. Both are stable and complete, and they are what the GUI uses.
 
+![cleanmodels check on a folder of 16 models: one line per file with its result, then a summary](docs/screenshots/check-folder.png)
+
 ```
 $ cleanmodels check amp01_d01_01.mdl
 amp01_d01_01.mdl  1 warning
@@ -71,6 +73,12 @@ cleanmodels repair -a -r tiles/ repaired/
 cleanmodels decompile plc_torch.mdl plc_torch.mdl
 ```
 
+A repair lists every change it made, and compile and decompile work in both directions:
+
+![cleanmodels repair --all --check on two models, listing each fix](docs/screenshots/repair.png)
+
+![cleanmodels compile to binary, then decompile the result back to ASCII](docs/screenshots/compile-decompile.png)
+
 ### Batch processing
 
 Point any subcommand at a directory to process all `.mdl` files inside it. No shell loops or scripts needed.
@@ -106,6 +114,16 @@ cleanmodels repair -a plc_torch.mdl plc_chest.mdl cleaned/
 ```
 
 cleanmodels will not replace an existing file with the result for a different input: `cleanmodels repair -a a.mdl b.mdl` stops with an error if `b.mdl` exists, instead of overwriting it. Pass `--overwrite` if that is what you mean. Writing a model over itself (`repair -a a.mdl a.mdl`) and writing into an output folder are always allowed.
+
+![repair refusing to overwrite an existing file, with a hint line](docs/screenshots/overwrite-refused.png)
+
+`compile` is the same: it needs an output, because with none it would replace your ASCII source with the binary.
+
+![compile refusing to run without an output](docs/screenshots/compile-needs-output.png)
+
+A file that is not a model is an error for that file only; the rest of the batch carries on:
+
+![check on a folder with a notes file among the models: that file is reported as an error](docs/screenshots/not-a-model-batch.png)
 
 A live progress bar is shown automatically when output is a terminal.
 
