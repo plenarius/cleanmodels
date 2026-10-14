@@ -9,6 +9,7 @@ package mdl
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -57,6 +58,7 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 		nodeAbove := cloneNodeForTileFadeSplit(n, name1, above, skAbove, 1)
 
 		reparentNodes(model, baseName, name0)
+		copied := splitAnimationNodes(model, baseName, name0, name1)
 
 		model.Nodes[i] = nodeBelow
 		model.Nodes = append(model.Nodes[:i+1], append([]*Node{nodeAbove}, model.Nodes[i+1:]...)...)
@@ -65,6 +67,12 @@ func SliceTileFade(model *Model, sliceZ float32) []string {
 			"slice tilefade: node %q split at z=%g into %q (tilefade=0, %d faces) and %q (tilefade=1, %d faces)",
 			baseName, sliceZ, name0, len(below.Faces), name1, len(above.Faces),
 		))
+		if copied > 0 {
+			msgs = append(msgs, fmt.Sprintf(
+				"slice tilefade: animation nodes for %q copied to %q and %q in %d animation(s), so both halves keep animating",
+				baseName, name0, name1, copied,
+			))
+		}
 		// reparentNodes + cloned nodes invalidate idx for any remaining
 		// children whose Parent now points at the freshly-renamed node.
 		idx = nodeIndex(model)
@@ -100,6 +108,72 @@ func UndoTileFade(model *Model) []string {
 	}
 	model.Nodes = kept
 	return msgs
+}
+
+// splitAnimationNodes gives both halves of a split node the animation nodes the
+// original had. Animations name nodes, not geometry: once "object02" is replaced by
+// "object02__tf0" and "object02__tf1" a node still called "object02" in an animation
+// points at nothing, and its keys (alpha, position, ...) stop animating the mesh.
+// Both halves were one mesh with one transform, so each gets a copy of the same keys
+// (copies, not shared slices, so editing one cannot change the other). Returns how
+// many animations had such a node.
+func splitAnimationNodes(m *Model, baseName, name0, name1 string) int {
+	n := 0
+	for ai := range m.Animations {
+		anim := &m.Animations[ai]
+		for ni := range anim.Nodes {
+			if !strings.EqualFold(anim.Nodes[ni].Name, baseName) {
+				continue
+			}
+			first := cloneAnimNode(anim.Nodes[ni], name0)
+			second := cloneAnimNode(anim.Nodes[ni], name1)
+			anim.Nodes[ni] = first
+			anim.Nodes = append(anim.Nodes[:ni+1], append([]AnimNode{second}, anim.Nodes[ni+1:]...)...)
+			n++
+			break
+		}
+	}
+	return n
+}
+
+// cloneAnimNode copies an animation node under a new name. AnimNode holds dozens of
+// key slices (one per controller) that are added to over time, so they are copied by
+// walking the struct instead of listing them.
+func cloneAnimNode(src AnimNode, name string) AnimNode {
+	dst := src
+	deepCopyValue(reflect.ValueOf(&dst).Elem())
+	dst.Name = name
+	return dst
+}
+
+// deepCopyValue replaces every slice and pointer reachable from v with a copy.
+func deepCopyValue(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if v.Field(i).CanSet() {
+				deepCopyValue(v.Field(i))
+			}
+		}
+	case reflect.Slice:
+		if v.IsNil() {
+			return
+		}
+		c := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		reflect.Copy(c, v)
+		v.Set(c)
+		for i := 0; i < v.Len(); i++ {
+			deepCopyValue(v.Index(i))
+		}
+	case reflect.Ptr:
+		if v.IsNil() {
+			return
+		}
+		c := reflect.New(v.Elem().Type())
+		c.Elem().Set(v.Elem())
+		deepCopyValue(c.Elem())
+		v.Set(c)
+	}
 }
 
 func uniqueMeshNodeName(m *Model, base string) string {
