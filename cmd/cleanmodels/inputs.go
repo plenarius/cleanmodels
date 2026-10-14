@@ -42,6 +42,23 @@ func splitInputs(pos []string, takesOutput bool) (inputs []string, output string
 // written; saying so is cheaper than a user finding their models unchanged.
 const noOutputNote = "\nnote: no output was given, so nothing was written. Name an output file or folder, or give the\n      input twice to repair in place (cleanmodels repair --all a.mdl a.mdl).\n"
 
+// noOutputNoteLegacy is the same note for the flat-flag mode.
+const noOutputNoteLegacy = "\nnote: no output was given, so nothing was written. Name an output file or folder, or give the\n      input twice to repair in place (cleanmodels --fix a.mdl a.mdl).\n"
+
+// wantsRepairs reports whether the options ask for anything that changes a model,
+// so a run with no output can say it wrote nothing. Check-only runs do not.
+func (o procOpts) wantsRepairs() bool {
+	r, t := o.repairOpts, o.tileOpts
+	return r.fixPivots || r.fixAABB || r.fixTilefade || r.stripDegenerate || r.fixAnimations ||
+		r.reparentChildren || r.wrapRoot || r.splitMultiEdge || r.forceWhite || r.mergeByBitmap ||
+		r.cullInvisible || r.placeableTransparency || r.tilefadeUndo || r.standardizeTexture0 ||
+		r.stripEEExtras || r.scale != 0 || r.scaleX != 0 || r.scaleY != 0 || r.scaleZ != 0 ||
+		r.classification != "" || r.snapMode != "" || r.renderOverride != "" || r.shadowOverride != "" ||
+		r.tvertSnap != "" || r.remapWalkmeshMaterial != "" ||
+		t.water || t.rotateWater != "" || t.retileWater != "" || t.foliage != "" || t.splotch != "" ||
+		t.rotateGround != "" || t.chamfer != "" || t.retileGround != "" || t.raiseLower != ""
+}
+
 // requireCompileOutput refuses a compile with no output. It used to write the
 // binary over the ASCII source (and, given a folder, every model in it), so
 // `cleanmodels compile model.mdl` silently destroyed the file it was given.

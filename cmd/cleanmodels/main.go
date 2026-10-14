@@ -290,5 +290,9 @@ func runLegacy(args []string) int {
 		},
 	}
 
-	return dispatchInputs(inputs, outputPath, opts)
+	code := dispatchInputs(inputs, outputPath, opts)
+	if outputPath == "" && opts.wantsRepairs() && !opts.compile && !opts.decompileOnly && !opts.dryRun && !opts.quiet && code != exitUsage {
+		fmt.Fprint(os.Stderr, noOutputNoteLegacy)
+	}
+	return code
 }
