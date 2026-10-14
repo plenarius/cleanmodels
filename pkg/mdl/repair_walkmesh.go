@@ -6,9 +6,11 @@ import (
 	"sort"
 )
 
-// ErrDegenerateAABBTree is returned when face centroids cannot be partitioned
-// along any axis (overlapping or collinear in a way that leaves one side empty).
-// Ref: rebuild_wok.pl w_rebuild_aabb/4 (failure branch when no split axis works).
+// ErrDegenerateAABBTree is returned when a set of faces cannot be partitioned at
+// all, which now only happens for fewer than two faces. Faces whose centroids
+// coincide on every axis (so no spatial split separates them) are halved by
+// index instead, which gives a valid tree.
+// Ref: rebuild_wok.pl w_rebuild_aabb/4 (its failure branch when no split axis works).
 var ErrDegenerateAABBTree = errors.New("mdl: cannot rebuild AABB tree: degenerate centroid arrangement")
 
 // RebuildAABB rebuilds the AABB tree for a walkmesh node from its face geometry.
@@ -183,7 +185,17 @@ func partitionFaces(mesh *MeshData, faces []int32, minB, maxB Vec3) (left, right
 			return left, right, ax, nil
 		}
 	}
-	return nil, nil, 0, ErrDegenerateAABBTree
+	// No axis separates the faces: their centroids coincide on all three (stacked
+	// or duplicated faces, which real walkmeshes have). Every node's box is the
+	// union of its faces' boxes, so any partition is a valid tree; halve the list.
+	// The recorded plane is the longest axis, as for a spatial split.
+	mid := len(faces) / 2
+	left = append([]int32(nil), faces[:mid]...)
+	right = append([]int32(nil), faces[mid:]...)
+	if len(left) == 0 || len(right) == 0 {
+		return nil, nil, 0, ErrDegenerateAABBTree
+	}
+	return left, right, axesByExtent(minB, maxB)[0], nil
 }
 
 // RemapAABBMaterial swaps face Material IDs on all AABB (walkmesh) nodes.

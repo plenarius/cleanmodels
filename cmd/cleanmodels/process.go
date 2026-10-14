@@ -229,6 +229,17 @@ func dispatch(inputPath, outputPath string, opts procOpts) int {
 	return runSingle(inputPath, outputPath, opts, tw, errTw)
 }
 
+// addError records a failure in the result without stopping the run: the other
+// repairs are kept and the file is still written, but the result carries the error
+// (so the exit code is non-zero and JSON has it in "error").
+func addError(res *Result, msg string) {
+	if res.Error == "" {
+		res.Error = msg
+		return
+	}
+	res.Error += "; " + msg
+}
+
 func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 	if o.classification != "" {
 		old := model.Classification
@@ -329,7 +340,9 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 				continue
 			}
 			if err := mdl.RebuildAABB(n); err != nil {
-				res.Repairs = append(res.Repairs, fmt.Sprintf("aabb rebuild %s: %v", n.Name, err))
+				// A repair that failed is an error, not a line in the list of repairs:
+				// the tree is left as it was, and the run must not exit 0.
+				addError(res, fmt.Sprintf("aabb rebuild %s: %v", n.Name, err))
 			} else {
 				res.Repairs = append(res.Repairs, fmt.Sprintf("aabb rebuilt for %s (%d entries)", n.Name, len(n.Aabb.Entries)))
 			}
