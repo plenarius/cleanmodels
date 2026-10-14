@@ -52,7 +52,7 @@ func requireCompileOutput(o procOpts, output string) error {
 	}
 	return &cliError{
 		err:        errors.New("compile needs an output, and would otherwise overwrite its input"),
-		suggestion: "name an output file or folder; to compile in place, give the input again (cleanmodels compile a.mdl a.mdl)",
+		suggestion: "name an output, or the input twice to compile in place (compile a.mdl a.mdl)",
 	}
 }
 
