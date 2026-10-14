@@ -120,36 +120,83 @@ func ReparentToModela(model *Model, key string, nodeType string) []string {
 	return out
 }
 
-// RaiseLowerTile shifts tile geometry vertically. direction is "raise" or "lower".
-// amount is always positive; negative shift is applied for "lower".
-// Adjusts node Position.Z, AABB vertex Z coordinates, and animation position keys.
+// RaiseLowerTile moves a tile up or down by amount, in the model's units
+// (metres). direction is "raise" or "lower"; amount is always positive.
+//
+// Every vertex of the tile must end up exactly amount higher (or lower) in world
+// space, so each piece of geometry is moved once, in the one place that moves it,
+// as the original CleanModels did:
+//
+//   - nodes hanging directly off the root (the tile's meshes, lights, emitters)
+//     get their position shifted; whatever hangs below them follows its parent;
+//   - the walkmesh (aabb) has its vertices and its tree's bounding boxes shifted,
+//     and its own position left alone;
+//   - the children of the animation parent "<model>a" are shifted the same way,
+//     with their animation position keys; an animmesh has no position of its own
+//     to move, so its vertices and animation vertices are shifted instead.
+//
+// This used to add the amount to every node's position and to every vertex, so a
+// vertex under a root and a mesh node moved by three times the amount (5 m
+// became 15 m).
 func RaiseLowerTile(model *Model, direction string, amount float32) []string {
 	var out []string
-	if amount == 0 {
+	root := model.RootNode()
+	if amount == 0 || root == nil {
 		return out
 	}
 	dz := amount
 	if strings.EqualFold(direction, "lower") {
 		dz = -amount
 	}
+	modela := root.Name + "a"
 
-	for _, n := range model.Nodes {
-		if n == nil {
-			continue
-		}
-		n.Position.Z += dz
-		if n.Mesh != nil {
-			for i := range n.Mesh.Verts {
-				n.Mesh.Verts[i].Z += dz
-			}
+	shiftVerts := func(vs []Vec3) {
+		for i := range vs {
+			vs[i].Z += dz
 		}
 	}
-
-	for ai := range model.Animations {
-		for ni := range model.Animations[ai].Nodes {
-			an := &model.Animations[ai].Nodes[ni]
-			for ki := range an.PositionKeys {
-				an.PositionKeys[ki].Value.Z += dz
+	for _, n := range model.Nodes {
+		if n == nil || n == root {
+			continue
+		}
+		switch {
+		case n.Aabb != nil || n.NodeType() == "aabb":
+			if n.Mesh != nil {
+				shiftVerts(n.Mesh.Verts)
+			}
+			if n.Aabb != nil {
+				for i := range n.Aabb.Entries {
+					n.Aabb.Entries[i].BoundMin.Z += dz
+					n.Aabb.Entries[i].BoundMax.Z += dz
+				}
+			}
+		case strings.EqualFold(n.Parent, root.Name) && !strings.EqualFold(n.Name, modela):
+			n.Position.Z += dz
+		case strings.EqualFold(n.Parent, modela):
+			if n.AnimMesh != nil {
+				if n.Mesh != nil {
+					shiftVerts(n.Mesh.Verts)
+				}
+				shiftVerts(n.AnimMesh.AnimVerts)
+			} else {
+				n.Position.Z += dz
+			}
+			for ai := range model.Animations {
+				for ni := range model.Animations[ai].Nodes {
+					an := &model.Animations[ai].Nodes[ni]
+					if !strings.EqualFold(an.Name, n.Name) {
+						continue
+					}
+					if n.AnimMesh != nil {
+						if an.AnimMesh != nil {
+							shiftVerts(an.AnimMesh.AnimVerts)
+						}
+						continue
+					}
+					for ki := range an.PositionKeys {
+						an.PositionKeys[ki].Value.Z += dz
+					}
+				}
 			}
 		}
 	}
