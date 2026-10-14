@@ -29,7 +29,7 @@ func WriteFile(model *Model, path string) error {
 func Write(model *Model, w io.Writer) error {
 	wr := &writer{w: w, useTexture0: model.UseTexture0}
 
-	wr.printf("# Rewritten by cleanmodels-go\n")
+	wr.printf("# Rewritten by cleanmodels\n")
 	if model.FileDependancy != "" {
 		wr.printf("filedependancy %s\n", model.FileDependancy)
 	}

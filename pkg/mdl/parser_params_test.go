@@ -1,6 +1,7 @@
 package mdl
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -167,5 +168,19 @@ func TestAnimNodeShortStaticLinesAreReported(t *testing.T) {
 		if !hasError(errs, want) {
 			t.Errorf("missing warning %q in %+v", want, errs)
 		}
+	}
+}
+
+// The first line of every file we write names the tool. It used to say
+// "cleanmodels-go", the name of the rewrite's branch, not of the product.
+func TestWriterHeaderNamesTheTool(t *testing.T) {
+	m := mustParseASCII(t, aabbDegenerateSrc)
+	var buf bytes.Buffer
+	if err := Write(m, &buf); err != nil {
+		t.Fatal(err)
+	}
+	first, _, _ := strings.Cut(buf.String(), "\n")
+	if first != "# Rewritten by cleanmodels" {
+		t.Errorf("first line = %q", first)
 	}
 }
