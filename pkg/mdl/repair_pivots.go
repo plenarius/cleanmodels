@@ -52,6 +52,7 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 		return nil
 	}
 	var out []string
+	idx := nodeIndex(model)
 	for _, node := range model.Nodes {
 		if node == nil || node.Aabb == nil {
 			continue
@@ -60,20 +61,24 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 			out = append(out, fmt.Sprintf("node %q: skipped (no walkmesh geometry)", node.Name))
 			continue
 		}
-		mesh := node.Mesh
+		// The tile's planes and its neighbours' edges are in the tile's frame,
+		// so the search runs on the mesh as placed in it. Moving the pivot
+		// does not move that geometry, so the constraints are the same before
+		// and after a repair and a second run finds nothing to do.
+		mesh := tileFrameMesh(idx, node)
 		allowBelow := opts.BelowZ0 == "allow" || opts.BelowZ0 == "slice"
 		cons := buildPivotConstraints(mesh, allowBelow)
 
-		// Gate: if the authored position already satisfies the
-		// half-spaces, treat the pivot as good and skip the search.
+		// Gate: if the node's origin already satisfies the half-spaces,
+		// treat the pivot as good and skip the search.
 		// The Prolog port reached this code path via a bad-pivot
 		// check; without that gate the search runs against the
 		// authored position's constraints, declares it "doesn't
 		// satisfy" (often because tile-edge faces produce constraints
 		// the current point happens not to satisfy from the wrong
 		// frame), and overwrites a valid position with the
-		// constraint-satisfying fallback. See issue #6.
-		if pivotSatisfies(node.Position, cons) {
+		// constraint-satisfying fallback. See issues #6 and #74.
+		if pivotSatisfies(LocalToWorld(idx, node, Vec3{}), cons) {
 			continue
 		}
 
@@ -102,7 +107,7 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 				pivot, method = p, "constraint relaxation"
 			} else if opts.MoveBad != "" && opts.MoveBad != "no" {
 				pivot, method = pivotMoveBadFallback(mesh, opts.MoveBad)
-				applyPivotShift(model, node, pivot)
+				applyPivotShift(model, node, WorldToLocal(idx, node, pivot))
 				out = append(out, fmt.Sprintf(
 					"node %q: pivot set to [%.4f, %.4f, %.4f] via %s (move-bad=%s)",
 					node.Name, pivot.X, pivot.Y, pivot.Z, method, opts.MoveBad))
@@ -122,12 +127,30 @@ func RepairPivots(model *Model, opts PivotOptions) []string {
 			}
 		}
 
-		applyPivotShift(model, node, pivot)
+		applyPivotShift(model, node, WorldToLocal(idx, node, pivot))
 		out = append(out, fmt.Sprintf(
 			"node %q: pivot set to [%.4f, %.4f, %.4f] via %s",
 			node.Name, pivot.X, pivot.Y, pivot.Z, method))
 	}
 	return out
+}
+
+// tileFrameMesh is a copy of the node's walkmesh, vertices and face normals
+// carried through the node's transform chain into the tile's frame. Only what
+// the pivot search reads is copied.
+func tileFrameMesh(idx map[*Node]*Node, node *Node) *MeshData {
+	src := node.Mesh
+	m := NewMeshData()
+	m.Verts = make([]Vec3, len(src.Verts))
+	for i, v := range src.Verts {
+		m.Verts[i] = LocalToWorld(idx, node, v)
+	}
+	m.Faces = make([]Face, len(src.Faces))
+	for i, f := range src.Faces {
+		f.Normal = LocalNormalToWorld(idx, node, f.Normal)
+		m.Faces[i] = f
+	}
+	return m
 }
 
 // applyPivotShift moves an AABB node's local origin to `pivot` (expressed
