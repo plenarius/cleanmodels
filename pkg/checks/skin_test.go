@@ -1,0 +1,131 @@
+package checks
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/plenarius/cleanmodels/pkg/mdl"
+)
+
+// skinModel is a three-bone tree with a skin node under the last bone. The
+// weights are the caller's, one entry per vertex.
+func skinModel(weights []mdl.VertexWeight) *mdl.Model {
+	mesh := mdl.NewMeshData()
+	for range weights {
+		mesh.Verts = append(mesh.Verts, mdl.Vec3{})
+	}
+	return &mdl.Model{
+		Name: "t",
+		Nodes: []*mdl.Node{
+			{Name: "t", Parent: "NULL"},
+			{Name: "torso_g", Parent: "t"},
+			{Name: "neck_g", Parent: "torso_g"},
+			{Name: "head_g", Parent: "neck_g"},
+			{Name: "skin_head", Parent: "head_g", Mesh: mesh, Skin: &mdl.SkinData{Weights: weights}},
+		},
+	}
+}
+
+func TestSkinUnknownBoneNamesTheBoneAndItsVertices(t *testing.T) {
+	m := skinModel([]mdl.VertexWeight{
+		{Bones: []string{"head_g", "Spine_X"}, Weights: []float32{0.6, 0.4}},
+		{Bones: []string{"head_g", "spine_x"}, Weights: []float32{0.9, 0.1}},
+		{Bones: []string{"head_g"}, Weights: []float32{1}},
+	})
+	r := findCheck(RunAll(m, "t.mdl", false), "skin_unknown_bone")
+	if r == nil {
+		t.Fatal("weights naming a bone that is not a node were not reported")
+	}
+	if r.Severity != mdl.SevWarning || r.Node != "skin_head" {
+		t.Errorf("severity %v node %q", r.Severity, r.Node)
+	}
+	for _, want := range []string{"Spine_X (2 vertices)", "1 bone(s)"} {
+		if !strings.Contains(r.Message, want) {
+			t.Errorf("message lacks %q: %s", want, r.Message)
+		}
+	}
+}
+
+func TestSkinUnknownBoneIgnoresBonesThatAreNodesAndZeroWeights(t *testing.T) {
+	m := skinModel([]mdl.VertexWeight{
+		{Bones: []string{"HEAD_G", "torso_g"}, Weights: []float32{0.7, 0.3}},
+		{Bones: []string{"head_g", "ghost"}, Weights: []float32{1, 0}},
+	})
+	if r := findCheck(RunAll(m, "t.mdl", false), "skin_unknown_bone"); r != nil {
+		t.Errorf("reported a clean skin: %s", r.Message)
+	}
+}
+
+func TestSkinInfluenceCountReportsMoreThanFour(t *testing.T) {
+	m := skinModel([]mdl.VertexWeight{
+		{Bones: []string{"t", "torso_g", "neck_g", "head_g", "skin_head"}, Weights: []float32{.2, .2, .2, .2, .2}},
+		{Bones: []string{"head_g"}, Weights: []float32{1}},
+	})
+	r := findCheck(RunAll(m, "t.mdl", false), "skin_influence_count")
+	if r == nil {
+		t.Fatal("five influences on a vertex were not reported")
+	}
+	if !strings.Contains(r.Message, "1 of 2 vertices") || !strings.Contains(r.Message, "most: 5") {
+		t.Errorf("message: %s", r.Message)
+	}
+	clean := skinModel([]mdl.VertexWeight{{Bones: []string{"t", "torso_g", "neck_g", "head_g"}, Weights: []float32{.25, .25, .25, .25}}})
+	if r := findCheck(RunAll(clean, "t.mdl", false), "skin_influence_count"); r != nil {
+		t.Errorf("four influences were reported: %s", r.Message)
+	}
+}
+
+func TestSkinSummaryHasStructureAndNoCoordinates(t *testing.T) {
+	m := skinModel([]mdl.VertexWeight{
+		{Bones: []string{"head_g", "torso_g"}, Weights: []float32{0.905, 0.095}},
+		{Bones: []string{"head_g", "ghost"}, Weights: []float32{0.5, 0.5}},
+	})
+	m.Nodes[4].Mesh.Verts[0] = mdl.Vec3{X: 12.3456, Y: 7.891, Z: -4.5}
+	r := findCheck(RunAll(m, "t.mdl", false), "skin_summary")
+	if r == nil {
+		t.Fatal("no summary")
+	}
+	if r.Severity != mdl.SevInfo {
+		t.Errorf("severity %v, want info", r.Severity)
+	}
+	for _, want := range []string{
+		`skin "skin_head" @4`,
+		"under [t > torso_g > neck_g > head_g]",
+		"2 vertices", "3 bone(s)",
+		"torso_g@1 (ancestor)", "head_g@3 (ancestor)", "ghost (NOT IN MODEL)",
+		"influences per vertex 2-2", "weight sum 1.000-1.000",
+	} {
+		if !strings.Contains(r.Message, want) {
+			t.Errorf("summary lacks %q:\n%s", want, r.Message)
+		}
+	}
+	for _, leak := range []string{"12.3456", "7.891", "-4.5"} {
+		if strings.Contains(r.Message, leak) {
+			t.Errorf("summary leaks a coordinate %q", leak)
+		}
+	}
+}
+
+func TestSkinSummaryFlagsWeightCountMismatch(t *testing.T) {
+	m := skinModel([]mdl.VertexWeight{{Bones: []string{"head_g"}, Weights: []float32{1}}})
+	m.Nodes[4].Mesh.Verts = append(m.Nodes[4].Mesh.Verts, mdl.Vec3{}, mdl.Vec3{})
+	r := findCheck(RunAll(m, "t.mdl", false), "skin_summary")
+	if r == nil || !strings.Contains(r.Message, "WEIGHT COUNT DIFFERS FROM VERTEX COUNT (1 vs 3)") {
+		t.Errorf("mismatch not flagged: %+v", r)
+	}
+}
+
+// c_marilith2's tail is a real skin compiled by the engine: its bones are all
+// nodes and its weights are tidy, so only the summary speaks.
+func TestSkinChecksOnARealSkin(t *testing.T) {
+	m := decompileFixture(t, "oracle/game_binary", "c_marilith2.mdl")
+	results := RunAll(m, "c_marilith2.mdl", false)
+	for _, name := range []string{"skin_unknown_bone", "skin_influence_count"} {
+		if r := findCheck(results, name); r != nil {
+			t.Errorf("%s reported on the engine's own skin: %s", name, r.Message)
+		}
+	}
+	r := findCheck(results, "skin_summary")
+	if r == nil || !strings.Contains(r.Message, `skin "tailmesh"`) || strings.Contains(r.Message, "NOT IN MODEL") {
+		t.Errorf("summary: %+v", r)
+	}
+}
