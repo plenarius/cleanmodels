@@ -41,7 +41,7 @@ Compiling models that share a skeleton is faster too: each supermodel is parsed 
 
 **New repairs.** Chamfer add/delete, dynamic water (flat/wavy/untouched), additional tilefade slicing/undo work, plus two EE-cleanup flags: `--standardize-texture0` (emit `texture0` instead of `bitmap`) and `--strip-ee-extras` (drop `wirecolor`/`specular`/`shininess` on output).
 
-**New validation checks.** Resref-length warning (16-char engine cap on bitmap, texture, and material names — catches missing-texture bugs before they ship), PLT bitmap matching for character models, and a node-type field validation matrix (danglymesh, skin, emitter, light, aabb, misplaced-tile, and misplaced-dangly checks). Total registry is now 48 checks across structure, geometry, parameters, node types, animations, and tiles.
+**New validation checks.** Resref-length warning (16-char engine cap on bitmap, texture, and material names — catches missing-texture bugs before they ship), PLT bitmap matching for character models, and a node-type field validation matrix (danglymesh, skin, emitter, light, aabb, misplaced-tile, and misplaced-dangly checks). Total registry was 48 checks at this release (49 since v4.1.0 added `tvert_range`) across structure, geometry, parameters, node types, animations, and tiles.
 
 **`cleanmodels report`.** Uploads the file plus log and opens a tracked GitHub issue without requiring the user to have an account. Available in the GUI too.
 

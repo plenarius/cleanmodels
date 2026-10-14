@@ -238,3 +238,25 @@ func TestCompileInPlaceStillWorks(t *testing.T) {
 	}
 	unchanged(t, dir, contents, "b.mdl")
 }
+
+// The flat-flag mode has the same no-output behaviour and says so too, but only
+// when the run asked for repairs (a check-only run is expected to write nothing).
+func TestLegacyModeSaysNothingWasWritten(t *testing.T) {
+	dir, contents := writeModels(t, "a.mdl")
+	p := filepath.Join(dir, "a.mdl")
+	run := func(args ...string) string {
+		var stderr string
+		_, stderr = captureStdio(t, func() { runLegacy(append(args, "--color", "never")) })
+		return stderr
+	}
+	if got := run("--fix", p); !strings.Contains(got, "nothing was written") || !strings.Contains(got, "cleanmodels --fix a.mdl a.mdl") {
+		t.Errorf("--fix without an output: %q", got)
+	}
+	if got := run("--check", p); strings.Contains(got, "nothing was written") {
+		t.Errorf("a check-only run should not get the note: %q", got)
+	}
+	if got := run("--fix", "--quiet", p); strings.Contains(got, "nothing was written") {
+		t.Errorf("--quiet should stay quiet: %q", got)
+	}
+	unchanged(t, dir, contents, "a.mdl")
+}
