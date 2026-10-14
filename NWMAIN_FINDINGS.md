@@ -44,4 +44,22 @@ AnimMesh, DanglyMesh and Skin have their own variants of the same chain.
 - Colors: bytes / 255. Matches the engine's byte encoding. OK
 - Face adjacency and plane distance are skipped on read. The compiler writes 0xFFFF adjacency, but game binaries carry real values (finding 15). The engine recomputes them at load, so this is probably fine.
 - Smoothing group is not stored in binaries, so it decompiles to 0 and the stored normals carry the smoothing. Expected.
-- Skin, dangly, controllers and animations were not examined in this pass.
+- Controllers and animations were not examined in this pass. Skin and dangly are compared in the sections below.
+
+## Skin compared with the engine's compile (2026-10-14)
+
+Method: the Witcher 1 "corpulent commoner" models (seven skin nodes: body, hands, buckle, eyes, a skinned head with a dangly hair child) and four variants of one head (`tw1_skn_a` the full 39-node tree, `_b` only the root, `rootdummy`, `torso_g`, `neck_g`, `head_g` and the head skin, `_c` the same with an extra dummy before `torso_g`, `_d` with `torso_g` removed while the weights still name it, `_e` with a weight naming a bone that exists nowhere) were compiled by the engine (console `compilemodel`, with a creature using the model on screen) and by cleanmodels, then compared. Nothing here is in the test suite except where noted: the models are third-party.
+
+| What | Result |
+|---|---|
+| Vertex positions and bone weights, per face corner, by bone name | Identical on every skin of every variant (4,308 corners on the head). Vertex counts match the engine exactly once the materials (`--resource-dir`) are supplied; without them we omit the tangent-driven vertex splits (808 vs 826 on the head). |
+| `tbone_ref_inv` | Identical. |
+| `qbone_ref_inv` | Equal up to sign: every entry of every skin has the opposite sign (the engine writes w = -1 for an identity). Seen on the TW1 models (their eye skin nodes, the ones checked, have `orientation 0 0 0 0`); `c_marilith2` matches exactly (`TestSkinBindListsMatchEngine`). A quaternion and its negative rotate identically and both rendered correctly; the cause of the sign was not read from the engine. |
+| Partial trees (`_b`, `_c`) | The bind lists have one entry per node of the file's own tree (6 and 7), as ours do. Bone positions match, and shift by one when a dummy is inserted before them. Skinned parts bind to the skeleton by tree position, so anything that changes the node order shifts every later bone. |
+| Bone map | Equal in the used slots. Unused slots hold 0 in the engine and 0xFFFF in ours. Bone indices are numbered in a different order from the tenth bone on (engine 30, 29, 18, 19, 9, 13; ours 18, 9, 30, 29, 19, 13); each file's per-vertex references agree with its own map, and the decoded weights match by name. |
+| A weight naming a bone that is not a node (`_d`, `_e`) | The engine drops the influence: the slot reads bone 0 with a near-zero uninitialised weight, so a vertex keeps only its valid bones and shrinks (a red neck patch showed on the head). We keep the weight and point it at an unmapped (0xFFFF) bone entry: 272 such slots in `_d`, none in the engine's file. In game both builds drew an intact head (ours without the patch), so the compiler was left alone; `cleanmodels check` now warns (`skin_unknown_bone`). |
+| Dangly hair (`tw1_big_hair_xtra`) | Displacement, tightness, period, all 72 constraints and positions identical. 456 danglymesh heads in the Layonara haks round-trip through our decompile and compile with no corner, constraint or parameter difference; four lose 7 degenerate faces, as the engine does (finding 5). |
+| File size | The engine's file is 1.9 MB larger on the full model: its animation blocks are about 2.4 times larger (median 21 KB against 9 KB per animation) and it omits about 1,200 animation nodes we keep (5,263 against 6,435). The game loads and animates ours. Not investigated further. |
+| `compilemodel` | Refuses a model with skin meshes unless a creature using it is in view ("contains skinmeshes not yet initialized"). |
+| Beamdog HD parts (`bdhd_pheno_*`) | Engine-compiled binaries, but stripped afterwards: a neck has 3 nodes and bind lists of 56 entries (the full skeleton). They cannot serve as compile ground truth. None of the 228 HD heads is a skin. |
+

@@ -236,7 +236,10 @@ Coverage spans:
 
 - Static placeables and UI assets (perfect-parity baselines)
 - Tileset tiles with AABB walkmeshes
-- Character body parts (head, neck, torso) — exercises skin
+- Character body parts (head, neck, torso): plain trimeshes. The only skin
+  with an engine-compiled binary in the fixtures is `c_marilith2`'s tail
+  (384 vertices, weights compared); more skins were compared by hand, see
+  NWMAIN_FINDINGS.md "Skin compared with the engine's compile"
 - Dangly meshes (`squid`, `c_marilithe`, `plc_guillo2`, `c_marilith2`)
 - Emitters (`zlc_o23`, `c_elemashm`, `PLC_D01`, `c_marilith2`)
 - Lights (`plc_dd27`, `plc_nc03`)
