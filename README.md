@@ -163,6 +163,14 @@ cleanmodels check --exclude-checks emitter_spread,missing_bitmap models/
 | `--include-checks` | | Comma-separated check names to run exclusively |
 | `--exclude-checks` | | Comma-separated check names to skip |
 
+To see how a skinned model is put together, without sharing the model, run the skin checks verbosely:
+
+```bash
+cleanmodels check --verbose --include-checks skin_summary,skin_unknown_bone,skin_influence_count model.mdl
+```
+
+`skin_summary` prints, for each skin node, only names, counts and tree positions: the chain of nodes above it, how many vertices and bones it has, where each bone sits in the node tree (`head_g@4`, marked `(ancestor)` when it is above the skin), and the range of influences and weight sums per vertex. No coordinates are included, so the text can be pasted into a bug report. `skin_unknown_bone` warns when weights name a bone that is not a node of the model, and `skin_influence_count` when a vertex has more than four influences.
+
 ### repair — fix and transform models
 
 ```bash

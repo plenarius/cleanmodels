@@ -82,6 +82,8 @@ func (tw *termWriter) printSingleResult(path string, res Result, model *mdl.Mode
 		countCheckErrors(res.Checks) == 0 && countCheckBySeverity(res.Checks, mdl.SevWarning) == 0 {
 		if verbose {
 			fmt.Fprintf(tw.w, "%s %s\n", tw.bold(baseName), tw.green("clean"))
+			// A clean file can still have info lines (a skin's summary, say).
+			tw.printResultDetail(res, nil, true)
 		}
 		return
 	}
