@@ -29,6 +29,8 @@ Prefer a window to a terminal? [cleanmodels-qt](https://github.com/plenarius/cle
 
 Grab the latest binary for your platform from the [Releases](https://github.com/plenarius/cleanmodels/releases) page.
 
+The builds are also on the [Neverwinter Vault](https://neverwintervault.org/project/nwnee/other/tool/clean-models-extended-edition-model-decompile-repair-and-compile). GitHub always has the latest.
+
 | Platform | File |
 |---|---|
 | Linux (x86_64) | `cleanmodels-linux-amd64.zip` |
