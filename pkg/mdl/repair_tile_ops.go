@@ -8,8 +8,12 @@ import (
 // RetileUVs remaps UV coordinates for mesh nodes whose bitmap contains key.
 // The tile coordinate system spans -5 to 5 in X and Y (10x10 units).
 // tileSize controls the repetition factor: U = (vertX + 5) * tileSize * 0.1,
-// V = (vertY + 5) * tileSize * 0.1, W = 0. Face UV indices are set to match
-// vertex indices (1:1 mapping).
+// V = (vertY + 5) * tileSize * 0.1, W = 0, where vertX and vertY are the
+// vertex's position in the tile (through the node's position and orientation and
+// its parents'), as the original CleanModels used (abs_vertex), not the mesh's
+// local coordinates: a ground mesh that is offset or rotated in the tile would
+// otherwise get UVs that do not line up with its neighbours. Face UV indices
+// are set to match vertex indices (1:1 mapping).
 func RetileUVs(model *Model, key string, tileSize int) []string {
 	var out []string
 	if key == "" || tileSize <= 0 {
@@ -17,6 +21,7 @@ func RetileUVs(model *Model, key string, tileSize int) []string {
 	}
 	lk := strings.ToLower(key)
 	n := float32(tileSize)
+	idx := nodeIndex(model)
 	for _, nd := range model.Nodes {
 		if nd == nil || nd.Mesh == nil {
 			continue
@@ -28,8 +33,12 @@ func RetileUVs(model *Model, key string, tileSize int) []string {
 		if len(mesh.Verts) == 0 {
 			continue
 		}
+		world := WorldVerticesCached(idx, nd)
+		if len(world) != len(mesh.Verts) {
+			continue
+		}
 		mesh.TVerts = make([]Vec3, len(mesh.Verts))
-		for i, v := range mesh.Verts {
+		for i, v := range world {
 			mesh.TVerts[i] = Vec3{
 				X: (v.X + 5) * n * 0.1,
 				Y: (v.Y + 5) * n * 0.1,
