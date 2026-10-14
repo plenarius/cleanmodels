@@ -38,15 +38,19 @@ selectable items — same registry on both sides, no separate wiring.
 
 ## What runs in the registry
 
-48 checks live in [pkg/checks/](pkg/checks/), grouped by file:
+52 checks live in [pkg/checks/](pkg/checks/), grouped by file:
 
 - **structural.go** (9 checks) — root/dummy invariants, parent links, name
 uniqueness, name length, supermodel reference, classification.
-- **geometry.go** (9 checks) — vertex/face counts, degenerate faces,
+- **geometry.go** (10 checks) — vertex/face counts, degenerate faces,
 multi-edges, normals, AABB tree shape, walkmesh material clamping.
 - **parameters.go** (9 checks) — alpha/diffuse/specular ranges, tex slot
 counts, materialname / texture resref length validation, render hint
 validity.
+- **skin.go** (3 checks) — skin weights that name bones the model does not
+contain, vertices with more than four influences, and a names-and-counts
+summary of each skin (its node chain, bones and their tree positions, no
+coordinates) that can be shared without sharing the model.
 - **node_types.go** (7 checks) — node-type-specific field validation
 (rotatetexture only on tiles, danglymesh-required fields, etc.).
 - **emitters.go** (7 checks) — emitter percent ranges, blend/render/update
