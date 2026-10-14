@@ -568,8 +568,12 @@ func (c *compiler) writeAABBHeader(n *Node) int32 {
 
 	aabbRootPtrPos := c.core.placeholder() // pAABB
 
-	// Build and write AABB tree.
-	tree := buildAABBTree(n.Mesh)
+	// The game keeps the tree as authored. We build one only when the model
+	// has none, or when the authored one does not describe this mesh.
+	tree := authoredAABBTree(aabb.Entries, len(n.Mesh.Faces))
+	if tree == nil {
+		tree = buildAABBTree(n.Mesh)
+	}
 	if len(tree) == 0 {
 		return 0
 	}
@@ -611,6 +615,77 @@ type aabbTreeEntry struct {
 	Plane    uint32
 	Left     int // index into tree slice, -1 if absent
 	Right    int
+}
+
+// authoredAABBTree turns the preorder entries of an authored tree into linked
+// tree entries, or returns nil when they are not a complete tree over faceCount
+// faces. Planes are set the way the engine's parser sets them: an internal node
+// takes its own plane when it has one, otherwise the plane is derived from its
+// two children; leaves have none.
+func authoredAABBTree(entries []AabbEntry, faceCount int) []aabbTreeEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	tree := make([]aabbTreeEntry, len(entries))
+	next := 0
+	var build func() int
+	valid := true
+	build = func() int {
+		if !valid || next >= len(entries) {
+			valid = false
+			return -1
+		}
+		i := next
+		next++
+		e := entries[i]
+		tree[i] = aabbTreeEntry{BoundMin: e.BoundMin, BoundMax: e.BoundMax, LeafFace: int(e.LeafFace), Left: -1, Right: -1}
+		if e.LeafFace >= 0 {
+			if int(e.LeafFace) >= faceCount {
+				valid = false
+			}
+			return i
+		}
+		tree[i].Left = build()
+		tree[i].Right = build()
+		if !valid {
+			return i
+		}
+		tree[i].Plane = e.Plane
+		if tree[i].Plane == 0 {
+			tree[i].Plane = aabbSplitPlane(tree[tree[i].Left], tree[tree[i].Right])
+		}
+		return i
+	}
+	build()
+	if !valid || next != len(entries) {
+		return nil
+	}
+	return tree
+}
+
+// aabbSplitPlane is the engine's rule for an internal node's plane: the axis
+// on which the children's box centres are furthest apart (x, then y, win ties
+// only when strictly larger; z takes the rest), positive when the right child
+// lies on the higher side. 1/2/4 are +x/+y/+z and 8/16/32 are -x/-y/-z.
+func aabbSplitPlane(l, r aabbTreeEntry) uint32 {
+	dx := float32(r.BoundMin.X+r.BoundMax.X) - float32(l.BoundMin.X+l.BoundMax.X)
+	dy := float32(r.BoundMin.Y+r.BoundMax.Y) - float32(l.BoundMin.Y+l.BoundMax.Y)
+	dz := float32(r.BoundMin.Z+r.BoundMax.Z) - float32(l.BoundMin.Z+l.BoundMax.Z)
+	pick := func(d float32, pos, neg uint32) uint32 {
+		if d > 0 {
+			return pos
+		}
+		return neg
+	}
+	ax, ay, az := absF32(dx), absF32(dy), absF32(dz)
+	switch {
+	case ax > ay && ax > az:
+		return pick(dx, 1, 8)
+	case ay > az:
+		return pick(dy, 2, 16)
+	default:
+		return pick(dz, 4, 32)
+	}
 }
 
 // buildAABBTree builds a simple median-split AABB tree from mesh faces.

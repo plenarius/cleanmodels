@@ -196,8 +196,9 @@ func (w *writer) writeFloatFloatLine(level int, t, v float32) {
 
 // writeAabbEntryLine emits "<indent>minX minY minZ maxX maxY maxZ leaf\n".
 // Used for AABB walkmesh entries — typically thousands per tile.
-func (w *writer) writeAabbEntryLine(level int, e AabbEntry) {
+func (w *writer) writeAabbEntryLine(level int, lead string, e AabbEntry) {
 	b := appendIndent(w.scratch[:0], level)
+	b = append(b, lead...)
 	b = appendVec3(b, e.BoundMin)
 	b = append(b, ' ')
 	b = appendVec3(b, e.BoundMax)
@@ -470,9 +471,11 @@ func (w *writer) writeAnimMeshData(am *AnimMeshData) {
 
 func (w *writer) writeAabbData(a *AabbData) {
 	if len(a.Entries) > 0 {
-		w.indent(4, "aabb %d", len(a.Entries))
-		for _, e := range a.Entries {
-			w.writeAabbEntryLine(6, e)
+		// The game's own form: the root entry follows the keyword on its
+		// line and the rest of the preorder tree on the lines below, no count.
+		w.writeAabbEntryLine(4, "aabb ", a.Entries[0])
+		for _, e := range a.Entries[1:] {
+			w.writeAabbEntryLine(6, "", e)
 		}
 	}
 }

@@ -170,6 +170,15 @@ func applyPivotShift(model *Model, node *Node, pivot Vec3) {
 			node.Mesh.Verts[i].Z -= pivot.Z
 		}
 	}
+	// The walkmesh tree's boxes are in the same local frame as the
+	// vertices, and the compiler keeps the authored tree.
+	if node.Aabb != nil {
+		for i := range node.Aabb.Entries {
+			e := &node.Aabb.Entries[i]
+			e.BoundMin = Vec3{X: e.BoundMin.X - pivot.X, Y: e.BoundMin.Y - pivot.Y, Z: e.BoundMin.Z - pivot.Z}
+			e.BoundMax = Vec3{X: e.BoundMax.X - pivot.X, Y: e.BoundMax.Y - pivot.Y, Z: e.BoundMax.Z - pivot.Z}
+		}
+	}
 
 	for _, child := range model.Nodes {
 		if child == nil || child == node {

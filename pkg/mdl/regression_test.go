@@ -79,12 +79,15 @@ func TestRegression_SnapFloatNegative(t *testing.T) {
 	}
 }
 
+// When a rebuild fails the tree the node had is put back. The failure is forced with
+// a face that names a vertex that does not exist; colocated faces used to do it, but
+// they are a valid tree now (see TestRebuildAABBHandlesFacesWithTheSameCentroid).
 func TestRegression_AABBRestoreOnError(t *testing.T) {
 	mesh := NewMeshData()
-	mesh.Verts = []Vec3{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}
+	mesh.Verts = []Vec3{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}
 	mesh.Faces = []Face{
 		{Verts: [3]int32{0, 1, 2}},
-		{Verts: [3]int32{0, 2, 1}},
+		{Verts: [3]int32{0, 1, 9}},
 	}
 	original := []AabbEntry{
 		{BoundMin: Vec3{-1, -1, -1}, BoundMax: Vec3{1, 1, 1}, LeafFace: 0},
@@ -98,7 +101,7 @@ func TestRegression_AABBRestoreOnError(t *testing.T) {
 
 	err := RebuildAABB(node)
 	if err == nil {
-		t.Fatal("expected RebuildAABB to fail on degenerate colocated faces")
+		t.Fatal("expected RebuildAABB to fail on a face that names a missing vertex")
 	}
 
 	if len(node.Aabb.Entries) != len(original) {
