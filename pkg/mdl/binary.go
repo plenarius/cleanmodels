@@ -19,6 +19,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -38,15 +39,36 @@ const (
 // does many small (4-byte) random-access reads via binary.Read, so reading
 // once and parsing in-memory avoids ~one syscall per field.
 func DecompileFile(path string) (*Model, error) {
+	return DecompileFileWithOptions(path, DecompileOptions{})
+}
+
+// DecompileOptions tunes a decompile. The zero value reproduces Decompile.
+type DecompileOptions struct {
+	// SkeletonDirs are searched, in order, for the creature skeleton a skinned
+	// body part is bound to (pmh0.mdl for pmh0_neck001; any location
+	// findModelResource accepts, including the game install). The engine
+	// stores such a skin's bones as skeleton tree positions, so their names
+	// can only be recovered from the skeleton. Without it, those bones are
+	// left unnamed and a warning says so.
+	SkeletonDirs []string
+}
+
+// DecompileFileWithOptions is DecompileFile with options.
+func DecompileFileWithOptions(path string, opts DecompileOptions) (*Model, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return Decompile(bytes.NewReader(data), int64(len(data)))
+	return DecompileWithOptions(bytes.NewReader(data), int64(len(data)), opts)
 }
 
 // Decompile reads a binary MDL from a ReadSeeker.
 func Decompile(r io.ReadSeeker, fileSize int64) (*Model, error) {
+	return DecompileWithOptions(r, fileSize, DecompileOptions{})
+}
+
+// DecompileWithOptions is Decompile with options.
+func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, error) {
 	d := &decompiler{
 		r:           r,
 		fileSize:    fileSize,
@@ -54,6 +76,7 @@ func Decompile(r io.ReadSeeker, fileSize int64) (*Model, error) {
 		compiler:    CompilerUnknown,
 		visitedPtrs: make(map[uint32]bool),
 		maxAlloc:    fileSize * 16,
+		opts:        opts,
 	}
 
 	if err := d.readFileHeader(); err != nil {
@@ -107,6 +130,8 @@ type decompiler struct {
 	maxAlloc   int64
 
 	readErr error // first read error encountered, for truncation detection
+
+	opts DecompileOptions
 }
 
 type nodeInfo struct {
@@ -117,6 +142,7 @@ type nodeInfo struct {
 type pendingSkin struct {
 	node         *Node
 	bonePartNums []int16
+	bindCount    int // length of the boneindexarray
 	skinWeights  [][4]float32
 	skinBoneRefs [][4]int16
 }
@@ -914,8 +940,10 @@ func (d *decompiler) readSkinHeader(node *Node) {
 	pWeightVertex, _ := d.readI32()
 	pBoneRefIndex, _ := d.readI32()
 
-	// int32 p_bone_mapping, count_bone_mapping
-	d.skip(8)
+	// int32 p_bone_mapping, count_bone_mapping (boneindexarray: one entry per
+	// tree position of the tree the skin is bound to)
+	d.skip(4)
+	bindCount, _ := d.readI32()
 
 	// array_definition bone_quats (12), bone_vertex (12), bone_constants (12)
 	d.skip(36)
@@ -971,6 +999,7 @@ func (d *decompiler) readSkinHeader(node *Node) {
 	d.pendingSkins = append(d.pendingSkins, pendingSkin{
 		node:         node,
 		bonePartNums: bonePartNums,
+		bindCount:    int(bindCount),
 		skinWeights:  skinWeights,
 		skinBoneRefs: skinBoneRefs,
 	})
@@ -1276,6 +1305,14 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 	}
 	ps.node.Skin.Weights = make([]VertexWeight, nVerts)
 
+	names := make([]string, len(d.nodeOrder))
+	for i, n := range d.nodeOrder {
+		names[i] = n.name
+	}
+	if bound, used := d.skinBoundElsewhere(ps); bound {
+		names = d.skeletonBoneNames(ps, used)
+	}
+
 	for i := 0; i < nVerts; i++ {
 		w := VertexWeight{}
 		for j := 0; j < 4; j++ {
@@ -1289,13 +1326,77 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 				continue
 			}
 			idx := int(partNum)
-			if idx >= 0 && idx < len(d.nodeOrder) {
-				w.Bones = append(w.Bones, d.nodeOrder[idx].name)
+			if idx >= 0 && idx < len(names) && names[idx] != "" {
+				w.Bones = append(w.Bones, names[idx])
 				w.Weights = append(w.Weights, weight)
 			}
 		}
 		ps.node.Skin.Weights[i] = w
 	}
+}
+
+// skinBoundElsewhere reports whether a skin's bone positions belong to a tree
+// other than this file's own: its boneindexarray is longer than the file's
+// node count, or a weighted bone sits past the file's last node. That is how
+// the engine stores a skinned body part, bound to the creature skeleton
+// (finding 22). It also returns the tree positions the weights use, in order.
+func (d *decompiler) skinBoundElsewhere(ps pendingSkin) (bool, []int) {
+	seen := map[int]bool{}
+	var used []int
+	for i := range ps.skinWeights {
+		for j := 0; j < 4; j++ {
+			ref := ps.skinBoneRefs[i][j]
+			if ps.skinWeights[i][j] == 0 || ref < 0 || int(ref) >= len(ps.bonePartNums) {
+				continue
+			}
+			if p := int(ps.bonePartNums[ref]); p >= 0 && !seen[p] {
+				seen[p] = true
+				used = append(used, p)
+			}
+		}
+	}
+	sort.Ints(used)
+	own := len(d.nodeOrder)
+	bound := ps.bindCount > own || (len(used) > 0 && used[len(used)-1] >= own)
+	return bound, used
+}
+
+// skeletonBoneNames names a skeleton-bound skin's tree positions from the
+// creature skeleton, or returns nil (every bone left unnamed) with a warning
+// when the skeleton cannot be found. Naming them from the part's own tree, as
+// we used to, gave wrong names: pmh0_neck001's torso_g came out as its own
+// shadow mesh and neck_g and head_g were dropped.
+func (d *decompiler) skeletonBoneNames(ps pendingSkin, used []int) []string {
+	node := ps.node.Name
+	positions := make([]string, len(used))
+	for i, p := range used {
+		positions[i] = fmt.Sprint(p)
+	}
+	where := fmt.Sprintf("skin %q is bound to a creature skeleton: its bones are tree positions %s of a %d-node tree, and this file has %d nodes",
+		node, strings.Join(positions, ", "), ps.bindCount, len(d.nodeOrder))
+
+	skelName := partSkeletonName(d.model.Name)
+	if skelName == "" {
+		d.warn(WarnGeneral, 0, node, "%s. The model name %q has no body-part prefix (such as pmh0_) to find the skeleton by, so the bones are left unnamed", where, d.model.Name)
+		return nil
+	}
+	sk, err := loadSkeleton(skelName, d.opts.SkeletonDirs)
+	if err != nil {
+		d.warn(WarnGeneral, 0, node, "%s. Reading the skeleton %s.mdl failed (%v), so the bones are left unnamed", where, skelName, err)
+		return nil
+	}
+	if sk == nil {
+		d.warn(WarnGeneral, 0, node, "%s. Its bone names need the skeleton %s.mdl: give --game-dir (stock skeletons) or a --supermodel-dir or --resource-dir that holds it. The bones are left unnamed", where, skelName)
+		return nil
+	}
+	names := make([]string, len(sk.order))
+	for i, n := range sk.order {
+		names[i] = n.Name
+	}
+	if ps.bindCount != len(names) {
+		d.warn(WarnGeneral, 0, node, "%s, but the skeleton %s has %d nodes; the bone names read from it may be wrong", where, sk.path, len(names))
+	}
+	return names
 }
 
 // binControllerKey holds one parsed controller struct entry from the binary file.

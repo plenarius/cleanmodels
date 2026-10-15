@@ -18,6 +18,7 @@ func init() {
 	Register("skin_unknown_bone", "geometry", false, "Detect skin weights that name bones the model does not contain", checkSkinUnknownBone)
 	Register("skin_influence_count", "geometry", false, "Detect skin vertices with more than four bone influences", checkSkinInfluenceCount)
 	Register("skin_summary", "geometry", false, "Summarise each skin: its bones, their tree positions and the node chain above it", checkSkinSummary)
+	Register("skin_part_binding", "geometry", false, "Detect skinned body parts whose weights name the part's own nodes, which the game cannot bind", checkSkinPartBinding)
 }
 
 // skinBones counts, per bone name (lower case), the vertices of skin whose
@@ -57,6 +58,11 @@ func nodeNameSet(model *mdl.Model) map[string]bool {
 
 func checkSkinUnknownBone(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
+		return nil
+	}
+	if skel, _ := mdl.BodyPartSkeleton(model.Name); skel != "" {
+		// A body part's bones are the creature skeleton's nodes, which the
+		// part file does not contain; skin_part_binding covers parts.
 		return nil
 	}
 	nodes := nodeNameSet(model)
@@ -311,6 +317,80 @@ func checkSkinSummary(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 			Check:    "skin_summary",
 			Node:     n.Name,
 			Severity: mdl.SevInfo,
+			Message:  msg,
+		})
+	}
+	return out
+}
+
+// checkSkinPartBinding covers skinned body parts (pmh0_neck001, pfe0_head003,
+// ...). The game binds such a skin to the creature skeleton (pmh0), not to the
+// part's own nodes: bones are looked up by name among the skeleton's nodes, and
+// a binary stores them as skeleton tree positions (NWMAIN_FINDINGS.md findings
+// 20-22). A weight that names one of the part's own nodes other than a dummy
+// (its root, a mesh) can never be a skeleton node, so in game that influence
+// is lost; a vertex left with none is drawn at the origin of clip space and
+// tears its triangles into sheets.
+func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil {
+		return nil
+	}
+	skel, attach := mdl.BodyPartSkeleton(model.Name)
+	if skel == "" {
+		return nil
+	}
+	root := model.RootNode()
+	own := map[string]bool{} // lower-case names of the part's nodes no skeleton has
+	for _, n := range model.Nodes {
+		if n == nil || n.Name == "" {
+			continue
+		}
+		if n == root || n.NodeType() != "dummy" {
+			own[strings.ToLower(n.Name)] = true
+		}
+	}
+	var out []mdl.CheckResult
+	for _, n := range model.Nodes {
+		if n == nil || n.Skin == nil {
+			continue
+		}
+		count, spelling := skinBones(n.Skin)
+		var bad []string
+		for k := range count {
+			if own[k] {
+				bad = append(bad, k)
+			}
+		}
+		if len(bad) == 0 {
+			continue
+		}
+		sort.Strings(bad)
+		stranded := 0
+		for _, vw := range n.Skin.Weights {
+			kept := false
+			for i, b := range vw.Bones {
+				if b != "" && !own[strings.ToLower(b)] && (i >= len(vw.Weights) || vw.Weights[i] > 0) {
+					kept = true
+				}
+			}
+			if !kept {
+				stranded++
+			}
+		}
+		names := make([]string, len(bad))
+		for i, k := range bad {
+			names[i] = fmt.Sprintf("%s (%d vertices)", spelling[k], count[k])
+		}
+		msg := fmt.Sprintf(
+			"%s: body part skin %q has weights for %s, which are this part's own nodes. In game a body part's skin is bound to the creature skeleton %s (the part hangs from %s), so only skeleton nodes can be bones and these influences are lost",
+			file, n.Name, strings.Join(names, ", "), skel, attach)
+		if stranded > 0 {
+			msg += fmt.Sprintf("; %d vertices have no other bone and will tear the mesh", stranded)
+		}
+		out = append(out, mdl.CheckResult{
+			Check:    "skin_part_binding",
+			Node:     n.Name,
+			Severity: mdl.SevWarning,
 			Message:  msg,
 		})
 	}

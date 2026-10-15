@@ -129,3 +129,55 @@ func TestSkinChecksOnARealSkin(t *testing.T) {
 		t.Errorf("summary: %+v", r)
 	}
 }
+
+// neckPart is a body part shaped like Beamdog's HD neck: a root dummy, the
+// skin and a shadow mesh. Its bones belong to the pmh0 skeleton, not to it.
+func neckPart(weights []mdl.VertexWeight) *mdl.Model {
+	mesh := mdl.NewMeshData()
+	for range weights {
+		mesh.Verts = append(mesh.Verts, mdl.Vec3{})
+	}
+	return &mdl.Model{
+		Name: "pmh0_neck001",
+		Nodes: []*mdl.Node{
+			{Name: "pmh0_neck001", Parent: "NULL"},
+			{Name: "pmh0_neck001g", Parent: "pmh0_neck001", Mesh: mesh, Skin: &mdl.SkinData{Weights: weights}},
+			{Name: "pmh0_neck001gs", Parent: "pmh0_neck001", Mesh: mdl.NewMeshData()},
+		},
+	}
+}
+
+func TestSkinPartBindingAcceptsSkeletonBones(t *testing.T) {
+	m := neckPart([]mdl.VertexWeight{
+		{Bones: []string{"neck_g", "torso_g"}, Weights: []float32{0.6, 0.4}},
+		{Bones: []string{"head_g"}, Weights: []float32{1}},
+	})
+	res := RunAll(m, "pmh0_neck001.mdl", false)
+	for _, check := range []string{"skin_part_binding", "skin_unknown_bone"} {
+		if r := findCheck(res, check); r != nil {
+			t.Errorf("%s reported a part bound to skeleton bones: %s", check, r.Message)
+		}
+	}
+}
+
+// What the decompiler used to make of the engine's HD neck: torso_g named
+// after the part's shadow mesh, neck_g and head_g lost.
+func TestSkinPartBindingReportsThePartsOwnNodes(t *testing.T) {
+	m := neckPart([]mdl.VertexWeight{
+		{Bones: []string{"pmh0_neck001gs"}, Weights: []float32{1}},
+		{Bones: []string{"neck_g", "pmh0_neck001gs"}, Weights: []float32{0.9, 0.1}},
+		{Bones: []string{"neck_g"}, Weights: []float32{1}},
+	})
+	r := findCheck(RunAll(m, "pmh0_neck001.mdl", false), "skin_part_binding")
+	if r == nil {
+		t.Fatal("a body part weighted to its own shadow mesh was not reported")
+	}
+	if r.Severity != mdl.SevWarning || r.Node != "pmh0_neck001g" {
+		t.Errorf("severity %v node %q", r.Severity, r.Node)
+	}
+	for _, want := range []string{"pmh0_neck001gs (2 vertices)", "skeleton pmh0", "from neck_g", "1 vertices have no other bone"} {
+		if !strings.Contains(r.Message, want) {
+			t.Errorf("message lacks %q: %s", want, r.Message)
+		}
+	}
+}

@@ -36,11 +36,11 @@ func (d *dirList) Set(v string) error {
 	return nil
 }
 
-const resourceDirUsage = "extra directory, or .hak/.erf/.mod archive, to search for supermodels and for materials (.mtr, directories searched recursively) when compiling (repeatable); the input file's own directory is always searched. Materials decide which normal-mapped meshes get tangents baked in"
+const resourceDirUsage = "extra directory, or .hak/.erf/.mod archive, to search for supermodels, body-part skeletons and materials (.mtr, directories searched recursively) (repeatable); the input file's own directory is always searched. Materials decide which normal-mapped meshes get tangents baked in"
 
-const gameDirUsage = "NWN install directory (the one holding data/nwn_base.key); stock supermodels and materials are read straight from its BIF files. Defaults to $NWN_ROOT, then the usual Steam and GOG install locations"
+const gameDirUsage = "NWN install directory (the one holding data/nwn_base.key); stock supermodels, skeletons and materials are read straight from its BIF files. Defaults to $NWN_ROOT, then the usual Steam and GOG install locations"
 
-const supermodelDirUsage = "extra directory to search for the model's supermodel when compiling (repeatable); the input file's own directory is always searched"
+const supermodelDirUsage = "extra directory to search for the model's supermodel, or a skinned body part's skeleton (repeatable); the input file's own directory is always searched"
 
 func (cf *commonFlags) register(fs *flag.FlagSet) {
 	cf.jsonOut = fs.Bool("json", false, "output results as JSON")

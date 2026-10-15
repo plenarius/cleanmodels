@@ -406,6 +406,13 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		if i >= 64 {
 			break
 		}
+		if c.partSkel != nil {
+			// A body part's bones are skeleton tree positions (finding 22).
+			if p, ok := c.partSkel.index[strings.ToLower(name)]; ok {
+				bonePartNums[i] = int16(p)
+			}
+			continue
+		}
 		// Skin bones are referenced by name in the format, so a duplicate name
 		// resolves to the first node with it — the same node this lookup has
 		// always returned.
