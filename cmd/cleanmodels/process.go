@@ -552,11 +552,11 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 	}
 }
 
-func runChecks(model *mdl.Model, path string, include, exclude map[string]bool, fix bool) []mdl.CheckResult {
-	if len(include) == 0 && len(exclude) == 0 {
-		return checks.RunAll(model, path, fix)
-	}
-	return checks.RunFiltered(model, path, include, exclude, fix)
+// runChecks runs the selected checks. Checks that resolve a body part's
+// skeleton search where compile would (lookupDirs).
+func runChecks(model *mdl.Model, path string, o procOpts, include, exclude map[string]bool, fix bool) []mdl.CheckResult {
+	locs, _ := lookupDirs(path, o)
+	return checks.RunFilteredContext(model, path, include, exclude, fix, checks.Context{Locations: locs})
 }
 
 func severityString(s mdl.Severity) string {
@@ -677,7 +677,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 
 	if o.check && !o.decompileOnly && model != nil {
 		fix := !o.dryRun
-		res.Checks = runChecks(model, path, o.include, o.exclude, fix)
+		res.Checks = runChecks(model, path, o, o.include, o.exclude, fix)
 	}
 
 	if model != nil && !o.dryRun {

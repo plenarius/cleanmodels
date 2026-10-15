@@ -339,7 +339,7 @@ beginmodelgeom pcx0
 endmodelgeom
 donemodel pcx0
 `
-	capart := "2DA V2.0\n\n    NAME    MDLNAME    NODENAME\n0   0       FOOTR      j_kao\n1   0       \"NECK\"     neck_g\n"
+	capart := "2DA V2.0\n\n    NAME    MDLNAME    NODENAME\n0   0       FOOTR      J_Kao\n1   0       \"NECK\"     neck_g\n"
 	for name, body := range map[string]string{"pcx0.mdl": skel, "capart.2da": capart} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)

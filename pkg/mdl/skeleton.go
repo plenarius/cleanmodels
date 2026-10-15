@@ -84,8 +84,10 @@ func BodyPartSkeleton(modelName string) (skeleton, attach string) {
 }
 
 // attachIndex returns the tree position of a part's attach node: a node
-// name, or "root" for the skeleton's root.
+// name (any letter case, as the engine matches names), or "root" for the
+// skeleton's root.
 func (sk *skeleton) attachIndex(node string) (int, bool) {
+	node = strings.ToLower(node)
 	if node == "root" {
 		return 0, len(sk.order) > 0
 	}
@@ -231,4 +233,55 @@ func (c *compiler) resolvePartSkeleton(opts CompileOptions) {
 		warn("body part %q: skin bones %s are not nodes of the skeleton %s; the game binds a part's skin to the skeleton only, so their influence is lost in game",
 			c.model.Name, strings.Join(missing, ", "), sk.path)
 	}
+}
+
+// PartSlot reports a body part model's skeleton and part type ("pmh0",
+// "neck" for pmh0_neck001), including the head and the robe, or "", "" when
+// the name is not a body part's. Unlike BodyPartSkeleton it does not say how
+// the part binds: see BodyPartSkeleton for that.
+func PartSlot(modelName string) (skeleton, kind string) {
+	skeleton = partSkeletonName(modelName)
+	if skeleton == "" {
+		return "", ""
+	}
+	return skeleton, partKind(modelName)
+}
+
+// PartBinding is what a body part is bound to in game, as compile resolves it.
+type PartBinding struct {
+	Skeleton     string          // skeleton model name (pmh0)
+	SkeletonPath string          // where it was found; "" when not found
+	Attach       string          // attach node name
+	AttachFrom   string          // capart.2da it came from, or "" for the stock table
+	AttachFound  bool            // the skeleton has the attach node
+	Bones        map[string]bool // lower-case node names of the skeleton
+}
+
+// ResolvePartBinding finds a body part's skeleton and attach node in locs the
+// way compile does (findCapart, loadSkeleton). It returns nil when the model
+// is not a body part bound to a skeleton (heads and robes bind to their own
+// tree), and a PartBinding with an empty SkeletonPath when the skeleton is not
+// found.
+func ResolvePartBinding(modelName string, locs []string) (*PartBinding, error) {
+	skel, attach := BodyPartSkeleton(modelName)
+	if skel == "" {
+		return nil, nil
+	}
+	b := &PartBinding{Skeleton: skel, Attach: attach}
+	if table, path := findCapart(locs); table != nil {
+		if node, ok := table[partKind(modelName)]; ok {
+			b.Attach, b.AttachFrom = node, path
+		}
+	}
+	sk, err := loadSkeleton(skel, locs)
+	if err != nil || sk == nil {
+		return b, err
+	}
+	b.SkeletonPath = sk.path
+	_, b.AttachFound = sk.attachIndex(b.Attach)
+	b.Bones = make(map[string]bool, len(sk.index))
+	for name := range sk.index {
+		b.Bones[name] = true
+	}
+	return b, nil
 }
