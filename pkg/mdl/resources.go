@@ -20,10 +20,12 @@ import (
 //     resources are read out of the BIF files the key files list, which is where
 //     the stock body-part skeletons (pmh0, pfh0, ...) live.
 //
-// Only models (.mdl) and materials (.mtr) are indexed from archives.
+// Only models (.mdl), materials (.mtr) and tables (.2da, for capart.2da) are
+// indexed from archives.
 
 const (
 	resTypeMDL uint16 = 2002
+	resType2DA uint16 = 2017
 	resTypeMTR uint16 = 2072
 )
 
@@ -70,7 +72,7 @@ func openArchive(loc string) *archive {
 	return l.a
 }
 
-func wantedType(t uint16) bool { return t == resTypeMDL || t == resTypeMTR }
+func wantedType(t uint16) bool { return t == resTypeMDL || t == resTypeMTR || t == resType2DA }
 
 func readAt(path string, off, size int64) ([]byte, error) {
 	f, err := os.Open(path)
@@ -231,11 +233,16 @@ func resolveCase(root, rel string) string {
 
 // findModelResource looks for <name>.mdl in locs, first match wins.
 func findModelResource(name string, locs []string) *resourceRef {
+	return findResource(name, resTypeMDL, ".mdl", locs)
+}
+
+// findResource looks for <name><ext> of type typ in locs, first match wins.
+func findResource(name string, typ uint16, ext string, locs []string) *resourceRef {
 	name = strings.ToLower(name)
 	for _, loc := range locs {
 		if a := openArchive(loc); a != nil {
-			if read, ok := a.entries[archiveKey{name, resTypeMDL}]; ok {
-				return &resourceRef{id: loc + "#" + name + ".mdl", read: read}
+			if read, ok := a.entries[archiveKey{name, typ}]; ok {
+				return &resourceRef{id: loc + "#" + name + ext, read: read}
 			}
 			continue
 		}
@@ -244,7 +251,7 @@ func findModelResource(name string, locs []string) *resourceRef {
 			continue
 		}
 		for _, e := range entries {
-			if !e.IsDir() && strings.ToLower(e.Name()) == name+".mdl" {
+			if !e.IsDir() && strings.ToLower(e.Name()) == name+ext {
 				p := filepath.Join(loc, e.Name())
 				stamp := ""
 				if info, err := e.Info(); err == nil {

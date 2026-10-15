@@ -31,9 +31,11 @@ type skeleton struct {
 	rot [][4]float64
 }
 
-// partAttachNodes is where the game hangs each body part on the skeleton:
-// capart.2da (MDLNAME -> NODENAME) plus the head, which the engine attaches to
-// head_g in code. Keys are the part type as it appears in the model name
+// partAttachNodes is where the game hangs each body part on the skeleton by
+// default: the stock capart.2da (MDLNAME -> NODENAME) plus the head, which the
+// engine attaches to head_g in code. A custom skeleton can rename the nodes in
+// its own capart.2da (FOOTR -> j_kao); compile reads that table when it finds
+// one (findCapart) and falls back to these only when it finds none. Keys are the part type as it appears in the model name
 // (pmh0_neck001 -> neck). Confirmed for the neck: binding pmh0_neck001 at
 // neck_g reproduces all 56 of the engine's bind entries. ROBE's "root" is read
 // as the skeleton's root (not checked against an engine compile).
@@ -56,14 +58,20 @@ func partAttachNode(modelName string) string {
 	if partSkeletonName(modelName) == "" {
 		return ""
 	}
+	return partAttachNodes[partKind(modelName)]
+}
+
+// partKind returns a body part model's type as capart.2da's MDLNAME spells it,
+// lower case (footr for pmv0_footr010).
+func partKind(modelName string) string {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	kind := strings.TrimRight(name[strings.IndexByte(name, '_')+1:], "0123456789")
-	return partAttachNodes[kind]
+	return strings.TrimRight(name[strings.IndexByte(name, '_')+1:], "0123456789")
 }
 
 // BodyPartSkeleton reports the creature skeleton a body part model is bound to
-// in game and the skeleton node it hangs from ("pmh0", "neck_g" for
-// pmh0_neck001), or "", "" when the name is not a body part's.
+// in game and the node the stock capart.2da hangs it from ("pmh0", "neck_g"
+// for pmh0_neck001), or "", "" when the name is not a body part's. A custom
+// skeleton's own capart.2da can name a different node.
 func BodyPartSkeleton(modelName string) (skeleton, attach string) {
 	attach = partAttachNode(modelName)
 	if attach == "" {
@@ -183,9 +191,15 @@ func (c *compiler) resolvePartSkeleton(opts CompileOptions) {
 		warn("body part %q: skeleton %s.mdl not found; %s", c.model.Name, skelName, consequence)
 		return
 	}
+	from := "the stock capart.2da (no capart.2da was found; put yours next to the model or give the hak or folder holding it with --resource-dir)"
+	if table, path := findCapart(opts.SupermodelDirs); table != nil {
+		if node, ok := table[partKind(c.model.Name)]; ok {
+			attach, from = node, path
+		}
+	}
 	at, ok := sk.attachIndex(attach)
 	if !ok {
-		warn("body part %q: skeleton %s has no node %s to attach the part to; %s", c.model.Name, sk.path, attach, consequence)
+		warn("body part %q: skeleton %s has no node %s to attach the part to (attach node from %s); %s", c.model.Name, sk.path, attach, from, consequence)
 		return
 	}
 	c.partSkel, c.partAttach = sk, at

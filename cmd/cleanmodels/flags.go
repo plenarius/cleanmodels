@@ -36,7 +36,7 @@ func (d *dirList) Set(v string) error {
 	return nil
 }
 
-const resourceDirUsage = "extra directory, or .hak/.erf/.mod archive, to search for supermodels, body-part skeletons and materials (.mtr, directories searched recursively) (repeatable); the input file's own directory is always searched. Materials decide which normal-mapped meshes get tangents baked in"
+const resourceDirUsage = "extra directory, or .hak/.erf/.mod archive, to search for supermodels, body-part skeletons and their capart.2da, and materials (.mtr, directories searched recursively) (repeatable); the input file's own directory is always searched. Materials decide which normal-mapped meshes get tangents baked in"
 
 const gameDirUsage = "NWN install directory (the one holding data/nwn_base.key); stock supermodels, skeletons and materials are read straight from its BIF files. Defaults to $NWN_ROOT, then the usual Steam and GOG install locations"
 

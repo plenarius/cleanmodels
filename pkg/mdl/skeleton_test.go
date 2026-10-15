@@ -315,3 +315,76 @@ func TestHDNeckBindMatchesEngine(t *testing.T) {
 		}
 	}
 }
+
+// A custom skeleton can rename the attach nodes in its own capart.2da: the
+// report that found this had FOOTR -> j_kao on a custom skeleton, and compile
+// looked for the stock rfoot_g, warned and bound the foot to its own tree.
+// Tree positions: pcx0 0, rootdummy 1, j_kao 2 (at 0.2 0 0.1).
+func TestPartAttachNodeFromCapart(t *testing.T) {
+	dir := t.TempDir()
+	skel := `newmodel pcx0
+setsupermodel pcx0 NULL
+classification CHARACTER
+beginmodelgeom pcx0
+  node dummy pcx0
+    parent NULL
+  endnode
+  node dummy rootdummy
+    parent pcx0
+  endnode
+  node dummy j_kao
+    parent rootdummy
+    position 0.2 0 0.1
+  endnode
+endmodelgeom
+donemodel pcx0
+`
+	capart := "2DA V2.0\n\n    NAME    MDLNAME    NODENAME\n0   0       FOOTR      j_kao\n1   0       \"NECK\"     neck_g\n"
+	for name, body := range map[string]string{"pcx0.mdl": skel, "capart.2da": capart} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	part := mustParseASCII(t, strings.NewReplacer("ptx0_neck001", "pcx0_footr010", "neck_g 0.5 head_g 0.5", "j_kao 1.0", "head_g 0.6 torso_g 0.4", "j_kao 1.0", "neck_g 1.0", "j_kao 1.0").Replace(testNeckPartASCII))
+
+	var warns []string
+	var buf bytes.Buffer
+	if err := CompileWithOptions(part, &buf, CompileOptions{SupermodelDirs: []string{dir}, Warn: func(m string) { warns = append(warns, m) }}); err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) > 0 {
+		t.Fatalf("warnings: %q", warns)
+	}
+	data := buf.Bytes()
+	hdr := skinHeaderBones(t, data)["pcx0_footr010g"]
+	if hdr.bindCount != 3 || hdr.boneMap[0] != 2 {
+		t.Errorf("boneindexarray %d, bone map[0] %d; want 3 and 2 (j_kao)", hdr.bindCount, hdr.boneMap[0])
+	}
+	// Hung from j_kao, the skin sits in j_kao's own space.
+	tl := skinBindLists(t, data)["pcx0_footr010g"][1]
+	if len(tl) != 3 || math.Abs(float64(tl[2][0])) > 1e-6 || math.Abs(float64(tl[2][2])) > 1e-6 {
+		t.Errorf("tbone_ref_inv %v, want j_kao's entry (index 2) at the origin", tl)
+	}
+
+	// Without a capart.2da the stock table is used, and the warning names it.
+	if err := os.Remove(filepath.Join(dir, "capart.2da")); err != nil {
+		t.Fatal(err)
+	}
+	warns = nil
+	if err := CompileWithOptions(part, &buf, CompileOptions{SupermodelDirs: []string{dir}, Warn: func(m string) { warns = append(warns, m) }}); err != nil {
+		t.Fatal(err)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "rfoot_g") || !strings.Contains(warns[0], "stock capart.2da") {
+		t.Errorf("warnings %q, want one naming rfoot_g and the stock capart.2da", warns)
+	}
+}
+
+func TestParse2DA(t *testing.T) {
+	rows, err := parse2DA([]byte("2DA V2.0\r\nDEFAULT: ****\r\n\r\n  NAME MDLNAME NODENAME\r\n0 0 FOOTR rfoot_g\r\n1 \"a b\" ROBE ****\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0]["nodename"] != "rfoot_g" || rows[1]["name"] != "a b" || rows[1]["nodename"] != "****" {
+		t.Errorf("rows %v", rows)
+	}
+}
