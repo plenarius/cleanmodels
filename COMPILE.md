@@ -173,12 +173,15 @@ raise/lower, snap) move its tree's boxes with them.
 Bones are addressed by tree position, and the bind lists (`qbone_ref_inv`,
 `tbone_ref_inv`) have one entry per node of the tree the skin is bound to.
 For a whole creature that is the model's own tree. A skinned **body part**
-(`pmh0_neck001`, `pfe0_head003`, ...) is bound in game to the creature
+(`pmh0_neck001`, `pfe0_chest003`, ...) is bound in game to the creature
 skeleton (`pmh0`), hung from the node `capart.2da` names for its part type
-(the head from `head_g`), so the compiler finds that skeleton like a
+so the compiler finds that skeleton like a
 supermodel (game install included) and numbers and binds against it. The
 `capart.2da` is looked up in the same places, first found wins, so a custom
-skeleton's own table is used; the stock table is only the fallback. See
+skeleton's own table is used; the stock table is only the fallback. Heads and
+robes are the exception: the engine loads them as separate objects attached to
+the creature (`AttachToObject`), so their skins bind to their own tree and they
+compile like whole models. See
 NWMAIN_FINDINGS.md findings 20-22. Without the skeleton it warns that the
 part will render torn. `TestHDNeckBindMatchesEngine` matches the engine's
 compile of the HD neck entry for entry.
