@@ -78,7 +78,8 @@ top-down:
    reuses geometry node IDs.
 5. **Skin resolution** — bone references in skin meshes are stored as part
   numbers in the binary; after the geometry tree is read, we walk
-   `pendingSkins` and resolve them to node names.
+   `pendingSkins` and resolve them to node names (from the creature
+   skeleton for a skinned body part; see "Skin meshes").
 
 The decompiler is **non-fatal on errors**. Truncated data, out-of-bounds
 pointers, and unknown controller types are recorded as
@@ -148,6 +149,15 @@ bone references resolve to node names that may not have been read yet
 `pendingSkin` record. After the whole geometry tree has been walked,
 `resolveSkinWeights` matches part numbers back to node names and fills out
 the in-memory skin's `BoneRefs` field.
+
+A skinned body part (`pmh0_neck001`) stores its bones as tree positions in
+the creature skeleton (`pmh0`), not in its own file: the engine's HD neck has
+3 nodes, a `boneindexarray` of 56 entries and the bone map `4 5 2`. When a
+skin's `boneindexarray` is longer than the file's tree, or a weighted bone
+sits past its last node, the decompiler names the bones from the skeleton
+(`DecompileOptions.SkeletonDirs`; the CLI searches the same places as
+compile, game install included). Without the skeleton it leaves those bones
+unnamed and warns, rather than naming them after the part's own nodes.
 
 ## AABB walkmeshes
 
