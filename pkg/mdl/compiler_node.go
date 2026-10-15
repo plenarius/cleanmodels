@@ -314,6 +314,25 @@ func (c *compiler) writeReferenceHeader(n *Node) {
 // happens, so callers can mutate without aliasing the source Skin.Weights
 // slot, which is shared across every GPU vert that derives from the same
 // original ASCII vert via UV-driven expansion.
+// boundInfluences keeps the influences of vw whose bone has a bone slot, in
+// order: the engine drops the others when it binds the skin (finding 26) and
+// does not renormalise what is left.
+func boundInfluences(vw VertexWeight, slots map[string]int) VertexWeight {
+	out := VertexWeight{}
+	for i, b := range vw.Bones {
+		if _, ok := slots[strings.ToLower(b)]; !ok || b == "" {
+			continue
+		}
+		out.Bones = append(out.Bones, b)
+		if i < len(vw.Weights) {
+			out.Weights = append(out.Weights, vw.Weights[i])
+		} else {
+			out.Weights = append(out.Weights, 0)
+		}
+	}
+	return out
+}
+
 func pickTopBoneInfluences(vw VertexWeight, maxBones int) VertexWeight {
 	if maxBones <= 0 {
 		return vw
@@ -375,6 +394,27 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		return
 	}
 
+	// treePos is the tree position a bone name binds to: in the creature
+	// skeleton for a body part (finding 22), else in the model's own tree.
+	// Skin bones are referenced by name in the format, so a duplicate name
+	// resolves to the first node with it.
+	treePos := func(name string) (int16, bool) {
+		if c.partSkel != nil {
+			p, ok := c.partSkel.index[strings.ToLower(name)]
+			return int16(p), ok
+		}
+		if bone := c.geomNodeByName(name); bone != nil {
+			if id, ok := c.treeIndex[bone]; ok {
+				return int16(id), true
+			}
+		}
+		return -1, false
+	}
+
+	// Only bones that bind get a bone slot. The engine drops an influence whose
+	// bone does not resolve when it binds a skin (finding 26); we used to keep
+	// it on a slot with no tree position, which the renderer skips, so the
+	// vertex read whatever matrix the previous skin had left in that slot.
 	boneIndexMap := make(map[string]int)
 	var boneNames []string
 	addBone := func(name string) int {
@@ -392,7 +432,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 	}
 	for _, vw := range skin.Weights {
 		for _, b := range vw.Bones {
-			if b != "" {
+			if _, ok := treePos(b); b != "" && ok {
 				addBone(b)
 			}
 		}
@@ -403,24 +443,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 		bonePartNums[i] = -1
 	}
 	for i, name := range boneNames {
-		if i >= 64 {
-			break
-		}
-		if c.partSkel != nil {
-			// A body part's bones are skeleton tree positions (finding 22).
-			if p, ok := c.partSkel.index[strings.ToLower(name)]; ok {
-				bonePartNums[i] = int16(p)
-			}
-			continue
-		}
-		// Skin bones are referenced by name in the format, so a duplicate name
-		// resolves to the first node with it — the same node this lookup has
-		// always returned.
-		if bone := c.geomNodeByName(name); bone != nil {
-			if id, ok := c.treeIndex[bone]; ok {
-				bonePartNums[i] = int16(id)
-			}
-		}
+		bonePartNums[i], _ = treePos(name)
 	}
 
 	// GPU vertex count matches the deduplicated count from buildExpandedMesh.
@@ -461,7 +484,7 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 			origIdx = int(mesh.Faces[gpuIdx/3].Verts[gpuIdx%3])
 		}
 		if origIdx >= 0 && origIdx < len(skin.Weights) {
-			vw := pickTopBoneInfluences(skin.Weights[origIdx], 4)
+			vw := pickTopBoneInfluences(boundInfluences(skin.Weights[origIdx], boneIndexMap), 4)
 			for bi := 0; bi < 4 && bi < len(vw.Bones); bi++ {
 				w := float32(0)
 				if bi < len(vw.Weights) {

@@ -537,3 +537,35 @@ func TestDecompileWarnsOnUnboundSkinVertices(t *testing.T) {
 		t.Errorf("warnings %v, want one about 1 of 3 unbound vertices", m.Warnings)
 	}
 }
+
+// TestUnknownBoneInfluenceDropped: a weight on a bone that is not a node is
+// dropped when compiling, as the engine drops it when it binds the skin
+// (NWMAIN_FINDINGS.md finding 26). It used to keep a bone slot with no tree
+// position, which the renderer skips, leaving the vertex on another skin's
+// leftover matrix. The remaining weights are not renormalised.
+func TestUnknownBoneInfluenceDropped(t *testing.T) {
+	src := strings.NewReplacer("ptx0_neck001", "tst_drop", "neck_g 0.5 head_g 0.5", "neck_g 0.5 ghost_g 0.5").Replace(testNeckPartASCII)
+	src = strings.Replace(src, "  endnode\n  node skin", "  endnode\n  node dummy neck_g\n    parent tst_drop\n  endnode\n  node dummy head_g\n    parent tst_drop\n  endnode\n  node dummy torso_g\n    parent tst_drop\n  endnode\n  node skin", 1)
+	data := mustCompile(t, mustParseASCII(t, src))
+	hdr := skinHeaderBones(t, data)["tst_dropg"]
+	for i, p := range hdr.boneMap[:4] {
+		if p < 0 && i < 3 {
+			t.Errorf("bone slot %d has no tree position: %v", i, hdr.boneMap[:4])
+		}
+	}
+	m := mustDecompile(t, data)
+	found := false
+	for _, vw := range m.FindNode("tst_dropg").Skin.Weights {
+		for i, b := range vw.Bones {
+			if strings.EqualFold(b, "ghost_g") {
+				t.Errorf("ghost_g influence kept: %v", vw)
+			}
+			if strings.EqualFold(b, "neck_g") && len(vw.Bones) == 1 && math.Abs(float64(vw.Weights[i])-0.5) < 1e-6 {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("the vertex weighted neck_g 0.5 + ghost_g 0.5 should keep neck_g at 0.5, unnormalised")
+	}
+}
