@@ -181,7 +181,10 @@ supermodel (game install included) and numbers and binds against it. The
 skeleton's own table is used; the stock table is only the fallback. Heads and
 robes are the exception: the engine loads them as separate objects attached to
 the creature (`AttachToObject`), so their skins bind to their own tree and they
-compile like whole models. See
+compile like whole models. A weight on a bone that does not bind (not a node,
+or for a body part not a node of the skeleton) is dropped before the strongest
+four influences are kept, as the engine drops it when binding; the rest are not
+renormalised. See
 NWMAIN_FINDINGS.md findings 20-22. Without the skeleton it warns that the
 part will render torn. `TestHDNeckBindMatchesEngine` matches the engine's
 compile of the HD neck entry for entry.
