@@ -608,6 +608,18 @@ func countFixes(res Result) int {
 	return fixes
 }
 
+// lookupDirs returns where to look for supermodels and skeletons, and for
+// materials, when processing path: its own directory, the flags' directories,
+// then the game install if one is found.
+func lookupDirs(path string, o procOpts) (superDirs, resDirs []string) {
+	superDirs = append(append([]string{filepath.Dir(path)}, o.supermodelDirs...), o.resourceDirs...)
+	resDirs = append([]string{filepath.Dir(path)}, o.resourceDirs...)
+	if g := resolveGameInstall(o.gameDir); g.dir != "" {
+		superDirs, resDirs = append(superDirs, g.dir), append(resDirs, g.dir)
+	}
+	return superDirs, resDirs
+}
+
 // processOne loads an MDL, optionally writes output, runs checks, returns a Result.
 func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Model, pErrs []mdl.ParseError, retErr error) {
 	res = Result{File: path}
@@ -632,7 +644,8 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	var err error
 
 	if o.forceBin || binMode {
-		model, err = mdl.DecompileFile(path)
+		superDirs, _ := lookupDirs(path, o)
+		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs})
 		if err != nil {
 			res.Error = wrapWithSuggestion(err, path).Error()
 			return res, nil, nil, err
@@ -674,11 +687,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			if outPath == "" {
 				outPath = path
 			}
-			superDirs := append(append([]string{filepath.Dir(path)}, o.supermodelDirs...), o.resourceDirs...)
-			resDirs := append([]string{filepath.Dir(path)}, o.resourceDirs...)
-			if g := resolveGameInstall(o.gameDir); g.dir != "" {
-				superDirs, resDirs = append(superDirs, g.dir), append(resDirs, g.dir)
-			}
+			superDirs, resDirs := lookupDirs(path, o)
 			copts := mdl.CompileOptions{
 				SupermodelDirs: superDirs,
 				ResourceDirs:   resDirs,

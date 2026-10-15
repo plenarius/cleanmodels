@@ -138,6 +138,12 @@ type compiler struct {
 	// writeSkinBindData to fill.
 	skinBind skinBindPatch
 
+	// partSkel is set when the model is a skinned body part whose creature
+	// skeleton was found: its skins are bound to that skeleton, attached at
+	// tree position partAttach, the way the engine binds them in game.
+	partSkel   *skeleton
+	partAttach int
+
 	// worldPos and worldRot are each geometry node's accumulated position and
 	// orientation (x, y, z, w), computed once on first use.
 	worldPos map[*Node][3]float64
@@ -244,6 +250,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 			c.assignNodeIDs(root)
 		}
 		c.warnDroppedGeometry()
+		c.resolvePartSkeleton(opts)
 	}
 
 	if err := c.writeModel(); err != nil {

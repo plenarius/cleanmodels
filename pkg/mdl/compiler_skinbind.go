@@ -24,19 +24,37 @@ type skinBindPatch struct {
 // access violation as soon as the skin is drawn. Layout and maths were checked
 // against the in-game compiler's output for five skins (wemic pmw0, centaur
 // pmh9); every entry of both lists matched.
+//
+// A body part (c.partSkel set) is bound to the creature skeleton instead: one
+// entry per skeleton node, with the skin placed where the part hangs (its
+// attach node's transform, then the skin's own transform within the part).
+// That reproduces all 56 entries of the engine's compile of the HD neck
+// pmh0_neck001.
 func (c *compiler) writeSkinBindData(n *Node) {
-	order := make([]*Node, len(c.treeIndex))
-	for node, idx := range c.treeIndex {
-		if int(idx) < len(order) {
-			order[idx] = node
-		}
-	}
-	count := len(order)
-	if count == 0 {
-		return
-	}
 	if c.worldRot == nil {
 		c.computeWorldTransforms()
+	}
+	var bonePos [][3]float64
+	var boneRot [][4]float64
+	skinPos, skinRot := c.worldPos[n], c.worldRot[n]
+	if sk := c.partSkel; sk != nil {
+		bonePos, boneRot = sk.pos, sk.rot
+		ap, aq := sk.pos[c.partAttach], sk.rot[c.partAttach]
+		r := quatRotate(aq, skinPos)
+		skinPos = [3]float64{ap[0] + r[0], ap[1] + r[1], ap[2] + r[2]}
+		skinRot = quatNormalize(quatMul(aq, skinRot))
+	} else {
+		bonePos = make([][3]float64, len(c.treeIndex))
+		boneRot = make([][4]float64, len(c.treeIndex))
+		for node, idx := range c.treeIndex {
+			if int(idx) < len(bonePos) {
+				bonePos[idx], boneRot[idx] = c.worldPos[node], c.worldRot[node]
+			}
+		}
+	}
+	count := len(bonePos)
+	if count == 0 {
+		return
 	}
 
 	boneOf := make([]int16, count)
@@ -62,26 +80,23 @@ func (c *compiler) writeSkinBindData(n *Node) {
 		c.core.patchU32(c.skinBind.lists[i][1], uint32(count))
 		c.core.patchU32(c.skinBind.lists[i][2], uint32(count))
 	}
-	skinPos, skinRot := c.worldPos[n], c.worldRot[n]
-
 	startList(0)
-	for _, node := range order {
-		q := quatMul(quatConj(c.worldRot[node]), skinRot)
+	for i := range boneRot {
+		q := quatMul(quatConj(boneRot[i]), skinRot)
 		c.core.f32le(float32(q[3]))
 		c.core.f32le(float32(q[0]))
 		c.core.f32le(float32(q[1]))
 		c.core.f32le(float32(q[2]))
 	}
 	startList(1)
-	for _, node := range order {
-		p := c.worldPos[node]
-		t := quatRotate(quatConj(c.worldRot[node]), [3]float64{skinPos[0] - p[0], skinPos[1] - p[1], skinPos[2] - p[2]})
+	for i, p := range bonePos {
+		t := quatRotate(quatConj(boneRot[i]), [3]float64{skinPos[0] - p[0], skinPos[1] - p[1], skinPos[2] - p[2]})
 		c.core.f32le(float32(t[0]))
 		c.core.f32le(float32(t[1]))
 		c.core.f32le(float32(t[2]))
 	}
 	startList(2)
-	for range order {
+	for range bonePos {
 		c.core.i32le(0)
 	}
 }

@@ -1,0 +1,217 @@
+package mdl
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+)
+
+// A skinned body part (pmh0_neck001, pfe0_head003, ...) is not bound to its
+// own node tree. The engine attaches the part to the creature, walks up to the
+// creature's skeleton and binds the skin there, so the skin's bone map holds
+// tree positions in the skeleton (pmh0), not in the part file. The engine's
+// compile of the HD neck pmh0_neck001 (3 nodes) has the bone map 4 5 2
+// (neck_g, head_g, torso_g in pmh0) and bind lists of 56 entries, one per pmh0
+// node. See NWMAIN_FINDINGS.md, findings 20-22.
+
+// skeleton is a creature skeleton numbered the way the engine walks it when it
+// binds a skin: depth first from the root, children in file order.
+type skeleton struct {
+	path  string
+	model *Model
+	order []*Node        // tree position -> node
+	index map[string]int // lower-case node name -> first tree position
+
+	// pos and rot are each tree position's rest transform in the skeleton's
+	// space (rotations x, y, z, w).
+	pos [][3]float64
+	rot [][4]float64
+}
+
+// partAttachNodes is where the game hangs each body part on the skeleton:
+// capart.2da (MDLNAME -> NODENAME) plus the head, which the engine attaches to
+// head_g in code. Keys are the part type as it appears in the model name
+// (pmh0_neck001 -> neck). Confirmed for the neck: binding pmh0_neck001 at
+// neck_g reproduces all 56 of the engine's bind entries. ROBE's "root" is read
+// as the skeleton's root (not checked against an engine compile).
+var partAttachNodes = map[string]string{
+	"footr": "rfoot_g", "footl": "lfoot_g",
+	"shinr": "rshin_g", "shinl": "lshin_g",
+	"legl": "lthigh_g", "legr": "rthigh_g",
+	"pelvis": "pelvis_g", "chest": "torso_g", "belt": "belt_g",
+	"neck": "neck_g", "head": "head_g",
+	"forer": "rforearm_g", "forel": "lforearm_g",
+	"bicepr": "rbicep_g", "bicepl": "lbicep_g",
+	"shor": "rshoulder_g", "shol": "lshoulder_g",
+	"handr": "rhand_g", "handl": "lhand_g",
+	"robe": "root",
+}
+
+// partAttachNode returns the skeleton node a body part model hangs from
+// (neck_g for pmh0_neck001), or "" when the name is not a body part's.
+func partAttachNode(modelName string) string {
+	if partSkeletonName(modelName) == "" {
+		return ""
+	}
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	kind := strings.TrimRight(name[strings.IndexByte(name, '_')+1:], "0123456789")
+	return partAttachNodes[kind]
+}
+
+// BodyPartSkeleton reports the creature skeleton a body part model is bound to
+// in game and the skeleton node it hangs from ("pmh0", "neck_g" for
+// pmh0_neck001), or "", "" when the name is not a body part's.
+func BodyPartSkeleton(modelName string) (skeleton, attach string) {
+	attach = partAttachNode(modelName)
+	if attach == "" {
+		return "", ""
+	}
+	return partSkeletonName(modelName), attach
+}
+
+// attachIndex returns the tree position of a part's attach node: a node
+// name, or "root" for the skeleton's root.
+func (sk *skeleton) attachIndex(node string) (int, bool) {
+	if node == "root" {
+		return 0, len(sk.order) > 0
+	}
+	i, ok := sk.index[node]
+	return i, ok
+}
+
+// partSkeletonName returns the skeleton a body part model is attached to: the
+// part prefix before the first underscore (pmh0 for pmh0_neck001), which the
+// game builds from gender, race and phenotype. It returns "" for a name that
+// does not look like a body part.
+func partSkeletonName(modelName string) string {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	i := strings.IndexByte(name, '_')
+	if i < 3 || name[0] != 'p' || i == len(name)-1 {
+		return ""
+	}
+	return name[:i]
+}
+
+// skeletonCache holds loaded skeletons for the life of the process, keyed like
+// supermodelCache. Entries are read-only once stored.
+var skeletonCache sync.Map
+
+// loadSkeleton finds <name>.mdl in locs and numbers its nodes in tree order.
+// It returns nil, nil when the model is not found.
+func loadSkeleton(name string, locs []string) (*skeleton, error) {
+	ref := findModelResource(name, locs)
+	if ref == nil {
+		return nil, nil
+	}
+	key := ref.id + "\x00" + ref.stamp
+	if v, ok := skeletonCache.Load(key); ok {
+		return v.(*skeleton), nil
+	}
+	data, err := ref.read()
+	if err != nil {
+		return nil, err
+	}
+	var model *Model
+	if len(data) >= 12 && binary.LittleEndian.Uint32(data[0:4]) == 0 {
+		model, err = Decompile(bytes.NewReader(data), int64(len(data)))
+	} else {
+		var res *ParseResult
+		res, err = Parse(bytes.NewReader(data))
+		if res != nil {
+			model = res.Model
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", ref.id, err)
+	}
+	if model == nil || model.RootNode() == nil {
+		return nil, fmt.Errorf("%s: no node tree", ref.id)
+	}
+	c := newCompiler(model)
+	c.assignNodeIDs(model.RootNode())
+	sk := &skeleton{path: ref.id, model: model, order: make([]*Node, len(c.treeIndex)), index: map[string]int{}}
+	for n, i := range c.treeIndex {
+		sk.order[i] = n
+	}
+	c.computeWorldTransforms()
+	sk.pos = make([][3]float64, len(sk.order))
+	sk.rot = make([][4]float64, len(sk.order))
+	for i, n := range sk.order {
+		if _, dup := sk.index[strings.ToLower(n.Name)]; !dup {
+			sk.index[strings.ToLower(n.Name)] = i
+		}
+		sk.pos[i], sk.rot[i] = c.worldPos[n], c.worldRot[n]
+	}
+	skeletonCache.Store(key, sk)
+	return sk, nil
+}
+
+// resolvePartSkeleton binds a skinned body part to its creature skeleton when
+// the skeleton is found in opts.SupermodelDirs. Without it the part's skins
+// are numbered against the part's own tree, which the game reads as skeleton
+// positions: each bone then takes the transform of whichever skeleton node
+// has its number and the part renders torn. That is reported through
+// opts.Warn.
+func (c *compiler) resolvePartSkeleton(opts CompileOptions) {
+	var skin *Node
+	for _, n := range c.model.Nodes {
+		if n != nil && n.Skin != nil {
+			skin = n
+			break
+		}
+	}
+	attach := partAttachNode(c.model.Name)
+	if skin == nil || attach == "" {
+		return
+	}
+	warn := func(format string, args ...any) {
+		if opts.Warn != nil {
+			opts.Warn(fmt.Sprintf(format, args...))
+		}
+	}
+	skelName := partSkeletonName(c.model.Name)
+	const consequence = "its skins are bound to the part's own node tree, but the game binds a body part's skin to the creature skeleton by tree position, so the compiled part will render torn in game. Give --game-dir (stock skeletons) or a --supermodel-dir holding the skeleton, or ship the part as ASCII"
+	sk, err := loadSkeleton(skelName, opts.SupermodelDirs)
+	switch {
+	case err != nil:
+		warn("body part %q: skeleton %s.mdl could not be read (%v); %s", c.model.Name, skelName, err, consequence)
+		return
+	case sk == nil:
+		warn("body part %q: skeleton %s.mdl not found; %s", c.model.Name, skelName, consequence)
+		return
+	}
+	at, ok := sk.attachIndex(attach)
+	if !ok {
+		warn("body part %q: skeleton %s has no node %s to attach the part to; %s", c.model.Name, sk.path, attach, consequence)
+		return
+	}
+	c.partSkel, c.partAttach = sk, at
+
+	var missing []string
+	seen := map[string]bool{}
+	for _, n := range c.model.Nodes {
+		if n == nil || n.Skin == nil {
+			continue
+		}
+		for _, vw := range n.Skin.Weights {
+			for _, b := range vw.Bones {
+				k := strings.ToLower(b)
+				if b == "" || seen[k] {
+					continue
+				}
+				seen[k] = true
+				if _, ok := sk.index[k]; !ok {
+					missing = append(missing, b)
+				}
+			}
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		warn("body part %q: skin bones %s are not nodes of the skeleton %s; the game binds a part's skin to the skeleton only, so their influence is lost in game",
+			c.model.Name, strings.Join(missing, ", "), sk.path)
+	}
+}
