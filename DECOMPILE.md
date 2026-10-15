@@ -157,7 +157,10 @@ skin's `boneindexarray` is longer than the file's tree, or a weighted bone
 sits past its last node, the decompiler names the bones from the skeleton
 (`DecompileOptions.SkeletonDirs`; the CLI searches the same places as
 compile, game install included). Without the skeleton it leaves those bones
-unnamed and warns, rather than naming them after the part's own nodes.
+unnamed and warns, rather than naming them after the part's own nodes. It also warns when a skin has vertices with no valid bone influence
+(all weights zero, or references the file does not map, such as the
+uninitialised slots an engine compile can leave): in game such a vertex is
+drawn at the origin.
 
 ## AABB walkmeshes
 

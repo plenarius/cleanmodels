@@ -388,3 +388,152 @@ func TestParse2DA(t *testing.T) {
 		t.Errorf("rows %v", rows)
 	}
 }
+
+// TestHDPartsBindMatchEngine recompiles every skinned part in Beamdog's
+// bdhd_pheno_*.hak (engine compiles, bound in game: chests, necks, arms, legs,
+// hands, feet, robes, cloaks, every phenotype) from its decompile and requires both bind lists
+// to match the engine's. It pins the attach table and that robes bind to their
+// own tree (capart.2da's ROBE -> root notwithstanding). Needs the game install
+// and the haks; skipped without them.
+func TestHDPartsBindMatchEngine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: recompiles every skinned HD part")
+	}
+	game := os.Getenv("NWN_ROOT")
+	home, _ := os.UserHomeDir()
+	if game == "" {
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	haks, _ := filepath.Glob(filepath.Join(home, ".local", "share", "Neverwinter Nights", "patch", "bdhd_pheno_*.hak"))
+	if len(haks) == 0 {
+		t.Skip("bdhd_pheno_*.hak not available")
+	}
+	if sk, _ := loadSkeleton("pmh0", []string{game}); sk == nil {
+		t.Skip("game install not available")
+	}
+	checked, bad := 0, 0
+	for _, hak := range haks {
+		a := openArchive(hak)
+		if a == nil {
+			continue
+		}
+		for key, read := range a.entries {
+			if key.typ != resTypeMDL {
+				continue
+			}
+			engine, err := read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := skinBindLists(t, engine)
+			if len(want) == 0 {
+				continue
+			}
+			m, err := DecompileWithOptions(bytes.NewReader(engine), int64(len(engine)), DecompileOptions{SkeletonDirs: []string{game}})
+			if err != nil {
+				t.Fatalf("%s: %v", key.name, err)
+			}
+			var buf bytes.Buffer
+			if err := CompileWithOptions(m, &buf, CompileOptions{SupermodelDirs: []string{game}}); err != nil {
+				t.Fatalf("%s: %v", key.name, err)
+			}
+			got := skinBindLists(t, buf.Bytes())
+			checked++
+			for skin, w := range want {
+				g := got[skin]
+				for li := 0; li < 2; li++ {
+					ok := len(g[li]) == len(w[li])
+					for i := 0; ok && i < len(w[li]); i++ {
+						same, negated := true, li == 0
+						for k := range w[li][i] {
+							if math.Abs(float64(w[li][i][k]-g[li][i][k])) > 2e-3 {
+								same = false
+							}
+							if math.Abs(float64(w[li][i][k]+g[li][i][k])) > 2e-3 {
+								negated = false
+							}
+						}
+						ok = same || negated
+					}
+					if !ok {
+						bad++
+						if bad <= 5 {
+							t.Errorf("%s skin %s: list %d differs from the engine's (%d vs %d entries)", key.name, skin, li, len(g[li]), len(w[li]))
+						}
+					}
+				}
+			}
+		}
+	}
+	if checked < 1000 {
+		t.Errorf("only %d skinned parts checked", checked)
+	}
+	t.Logf("%d skinned parts match the engine's bind lists", checked-bad)
+}
+
+// TestHeadAndRobeBindToOwnTree: the engine loads a head (CNWCAnimBaseHead,
+// attached at head_g) and a robe (capart row 18) as separate objects with
+// AttachToObject, not appended into the skeleton, so their skins bind to their
+// own tree even when the skeleton is at hand. v4.4.0 and v4.4.1 bound them to
+// the skeleton.
+func TestHeadAndRobeBindToOwnTree(t *testing.T) {
+	dir := writeTestSkeleton(t)
+	for _, name := range []string{"ptx0_head001", "ptx0_robe001"} {
+		part := mustParseASCII(t, strings.ReplaceAll(testNeckPartASCII, "ptx0_neck001", name))
+		var warns []string
+		var buf bytes.Buffer
+		if err := CompileWithOptions(part, &buf, CompileOptions{SupermodelDirs: []string{dir}, Warn: func(m string) { warns = append(warns, m) }}); err != nil {
+			t.Fatal(err)
+		}
+		if len(warns) > 0 {
+			t.Errorf("%s: warnings %q", name, warns)
+		}
+		if hdr := skinHeaderBones(t, buf.Bytes())[name+"g"]; hdr.bindCount != 2 {
+			t.Errorf("%s: boneindexarray has %d entries, want 2 (the file's own nodes)", name, hdr.bindCount)
+		}
+	}
+}
+
+// The game install's ovr/ folder overrides its key files' resources.
+func TestGameInstallOvrOverridesKeys(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "ovr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// An empty key file: no BIFs, no resources.
+	key := make([]byte, 64)
+	copy(key, "KEY V1  ")
+	binary.LittleEndian.PutUint32(key[16:], 64)
+	binary.LittleEndian.PutUint32(key[20:], 64)
+	if err := os.WriteFile(filepath.Join(root, "data", "nwn_base.key"), key, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ovr", "CAPART.2da"), []byte("2DA V2.0\n\n NAME MDLNAME NODENAME\n0 0 NECK my_neck\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	table, from := findCapart([]string{root})
+	if table["neck"] != "my_neck" || !strings.Contains(from, "capart") {
+		t.Errorf("capart from %q: %v", from, table)
+	}
+}
+
+// A skin vertex with no bone influence is drawn at the origin in game; the
+// decompiler says so (Beamdog's pmo0_neck003 has ten, left uninitialised by
+// the engine's compile).
+func TestDecompileWarnsOnUnboundSkinVertices(t *testing.T) {
+	src := strings.NewReplacer("ptx0_neck001", "tst_skin", "neck_g 1.0", "_ 0").Replace(testNeckPartASCII)
+	src = strings.Replace(src, "  endnode\n  node skin", "  endnode\n  node dummy neck_g\n    parent tst_skin\n  endnode\n  node dummy head_g\n    parent tst_skin\n  endnode\n  node dummy torso_g\n    parent tst_skin\n  endnode\n  node skin", 1)
+	m := mustDecompile(t, mustCompile(t, mustParseASCII(t, src)))
+	n := 0
+	for _, w := range m.Warnings {
+		if strings.Contains(w.Message, "1 of 3 vertices with no valid bone influence") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("warnings %v, want one about 1 of 3 unbound vertices", m.Warnings)
+	}
+}

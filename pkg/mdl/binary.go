@@ -1313,6 +1313,7 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 		names = d.skeletonBoneNames(ps, used)
 	}
 
+	unbound := 0
 	for i := 0; i < nVerts; i++ {
 		w := VertexWeight{}
 		for j := 0; j < 4; j++ {
@@ -1332,6 +1333,13 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 			}
 		}
 		ps.node.Skin.Weights[i] = w
+		if len(w.Bones) == 0 {
+			unbound++
+		}
+	}
+	if unbound > 0 && names != nil { // nil: the skeleton warning already covers it
+		d.warn(WarnGeneral, 0, ps.node.Name, "skin %q has %d of %d vertices with no valid bone influence (all weights zero, or bone references the file does not map, such as the uninitialised slots an engine compile can leave). In game such a vertex is drawn at the origin and tears the mesh; give it weights before compiling",
+			ps.node.Name, unbound, nVerts)
 	}
 }
 

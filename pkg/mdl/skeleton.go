@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// A skinned body part (pmh0_neck001, pfe0_head003, ...) is not bound to its
+// A skinned body part (pmh0_neck001, pfe0_chest003, ...) is not bound to its
 // own node tree. The engine attaches the part to the creature, walks up to the
 // creature's skeleton and binds the skin there, so the skin's bone map holds
 // tree positions in the skeleton (pmh0), not in the part file. The engine's
@@ -32,24 +32,27 @@ type skeleton struct {
 }
 
 // partAttachNodes is where the game hangs each body part on the skeleton by
-// default: the stock capart.2da (MDLNAME -> NODENAME) plus the head, which the
-// engine attaches to head_g in code. A custom skeleton can rename the nodes in
+// default: the stock capart.2da (MDLNAME -> NODENAME). A custom skeleton can rename the nodes in
 // its own capart.2da (FOOTR -> j_kao); compile reads that table when it finds
 // one (findCapart) and falls back to these only when it finds none. Keys are the part type as it appears in the model name
 // (pmh0_neck001 -> neck). Confirmed for the neck: binding pmh0_neck001 at
-// neck_g reproduces all 56 of the engine's bind entries. ROBE's "root" is read
-// as the skeleton's root (not checked against an engine compile).
+// neck_g reproduces all 56 of the engine's bind entries, and recompiling every
+// skinned Beamdog HD part (2,700 of them, every type here) reproduces the
+// engine's bind lists. Heads and robes are not here. CNWCAnimBaseParts::
+// LoadModel (0x9db550) Appends rows 0-17 into the skeleton's tree, but loads
+// the robe (row 18) and the head (via CNWCAnimBaseHead::LoadModel, at head_g)
+// as separate objects with AttachToObject, so their skins bind to their own
+// tree (all 132 HD robes confirm it) and they compile like whole models.
 var partAttachNodes = map[string]string{
 	"footr": "rfoot_g", "footl": "lfoot_g",
 	"shinr": "rshin_g", "shinl": "lshin_g",
 	"legl": "lthigh_g", "legr": "rthigh_g",
 	"pelvis": "pelvis_g", "chest": "torso_g", "belt": "belt_g",
-	"neck": "neck_g", "head": "head_g",
+	"neck":  "neck_g",
 	"forer": "rforearm_g", "forel": "lforearm_g",
 	"bicepr": "rbicep_g", "bicepl": "lbicep_g",
 	"shor": "rshoulder_g", "shol": "lshoulder_g",
 	"handr": "rhand_g", "handl": "lhand_g",
-	"robe": "root",
 }
 
 // partAttachNode returns the skeleton node a body part model hangs from

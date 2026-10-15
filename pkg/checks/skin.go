@@ -323,7 +323,7 @@ func checkSkinSummary(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	return out
 }
 
-// checkSkinPartBinding covers skinned body parts (pmh0_neck001, pfe0_head003,
+// checkSkinPartBinding covers skinned body parts (pmh0_neck001, pfe0_chest003,
 // ...). The game binds such a skin to the creature skeleton (pmh0), not to the
 // part's own nodes: bones are looked up by name among the skeleton's nodes, and
 // a binary stores them as skeleton tree positions (NWMAIN_FINDINGS.md findings

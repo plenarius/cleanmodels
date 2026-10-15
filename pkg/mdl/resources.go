@@ -136,6 +136,18 @@ func readGameInstall(root string) (*archive, error) {
 	dataDir := filepath.Join(root, "data")
 	keyFiles, _ := filepath.Glob(filepath.Join(dataDir, "*.key"))
 	a := &archive{entries: make(map[archiveKey]func() ([]byte, error))}
+	// Loose files in ovr/ override the key files' resources, as in the game.
+	if entries, err := os.ReadDir(filepath.Join(root, "ovr")); err == nil {
+		for _, e := range entries {
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			typ, ok := map[string]uint16{".mdl": resTypeMDL, ".mtr": resTypeMTR, ".2da": resType2DA}[ext]
+			if e.IsDir() || !ok {
+				continue
+			}
+			p := filepath.Join(root, "ovr", e.Name())
+			a.entries[archiveKey{strings.ToLower(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))), typ}] = func() ([]byte, error) { return os.ReadFile(p) }
+		}
+	}
 	for _, kf := range keyFiles {
 		if err := indexKeyFile(a, root, kf); err != nil {
 			return nil, err
