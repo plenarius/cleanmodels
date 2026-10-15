@@ -337,7 +337,7 @@ func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 	if model == nil {
 		return nil
 	}
-	skel, attach := mdl.BodyPartSkeleton(model.Name)
+	skel, _ := mdl.BodyPartSkeleton(model.Name)
 	if skel == "" {
 		return nil
 	}
@@ -381,8 +381,8 @@ func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 			names[i] = fmt.Sprintf("%s (%d vertices)", spelling[k], count[k])
 		}
 		msg := fmt.Sprintf(
-			"%s: body part skin %q has weights for %s, which are this part's own nodes. In game a body part's skin is bound to the creature skeleton %s (the part hangs from %s), so only skeleton nodes can be bones and these influences are lost",
-			file, n.Name, strings.Join(names, ", "), skel, attach)
+			"%s: body part skin %q has weights for %s, which are this part's own nodes. In game a body part's skin is bound to the creature skeleton %s, so only skeleton nodes can be bones and these influences are lost",
+			file, n.Name, strings.Join(names, ", "), skel)
 		if stranded > 0 {
 			msg += fmt.Sprintf("; %d vertices have no other bone and will tear the mesh", stranded)
 		}

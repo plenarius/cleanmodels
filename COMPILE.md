@@ -176,7 +176,9 @@ For a whole creature that is the model's own tree. A skinned **body part**
 (`pmh0_neck001`, `pfe0_head003`, ...) is bound in game to the creature
 skeleton (`pmh0`), hung from the node `capart.2da` names for its part type
 (the head from `head_g`), so the compiler finds that skeleton like a
-supermodel (game install included) and numbers and binds against it; see
+supermodel (game install included) and numbers and binds against it. The
+`capart.2da` is looked up in the same places, first found wins, so a custom
+skeleton's own table is used; the stock table is only the fallback. See
 NWMAIN_FINDINGS.md findings 20-22. Without the skeleton it warns that the
 part will render torn. `TestHDNeckBindMatchesEngine` matches the engine's
 compile of the HD neck entry for entry.

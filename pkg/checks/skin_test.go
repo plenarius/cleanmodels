@@ -175,7 +175,7 @@ func TestSkinPartBindingReportsThePartsOwnNodes(t *testing.T) {
 	if r.Severity != mdl.SevWarning || r.Node != "pmh0_neck001g" {
 		t.Errorf("severity %v node %q", r.Severity, r.Node)
 	}
-	for _, want := range []string{"pmh0_neck001gs (2 vertices)", "skeleton pmh0", "from neck_g", "1 vertices have no other bone"} {
+	for _, want := range []string{"pmh0_neck001gs (2 vertices)", "skeleton pmh0", "1 vertices have no other bone"} {
 		if !strings.Contains(r.Message, want) {
 			t.Errorf("message lacks %q: %s", want, r.Message)
 		}
