@@ -181,3 +181,27 @@ func TestSkinPartBindingReportsThePartsOwnNodes(t *testing.T) {
 		}
 	}
 }
+
+// Beamdog's HD robes carry trimeshes named like skeleton nodes (torso_g,
+// pelvis_g). The game binds bones by name, so weights on them are skeleton
+// bones, not the part's own nodes; an earlier version of the check flagged
+// every robe.
+func TestSkinPartBindingAcceptsMeshesNamedLikeSkeletonNodes(t *testing.T) {
+	mesh := mdl.NewMeshData()
+	mesh.Verts = []mdl.Vec3{{}}
+	m := &mdl.Model{
+		Name: "pfa0_robe003",
+		Nodes: []*mdl.Node{
+			{Name: "pfa0_robe003", Parent: "NULL"},
+			{Name: "pfa0_robe003g", Parent: "pfa0_robe003", Mesh: mesh, Skin: &mdl.SkinData{Weights: []mdl.VertexWeight{
+				{Bones: []string{"torso_g", "pelvis_g"}, Weights: []float32{0.5, 0.5}},
+			}}},
+			{Name: "rootdummy", Parent: "pfa0_robe003"},
+			{Name: "torso_g", Parent: "rootdummy", Mesh: mdl.NewMeshData()},
+			{Name: "pelvis_g", Parent: "rootdummy", Mesh: mdl.NewMeshData()},
+		},
+	}
+	if r := findCheck(RunAll(m, "pfa0_robe003.mdl", false), "skin_part_binding"); r != nil {
+		t.Errorf("reported a robe weighted to skeleton-named meshes: %s", r.Message)
+	}
+}

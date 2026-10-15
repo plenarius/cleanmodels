@@ -169,9 +169,17 @@ built by `buildAABBTree` instead. `RebuildAABB` (in
 `pkg/mdl/repair_walkmesh.go`) is a repair the user asks for and has no
 game equivalent. Repairs that move a walkmesh's vertices (pivots, scale,
 raise/lower, snap) move its tree's boxes with them.
-- **Skin** writes per-bone weights into MDX after positions/UVs/normals;
-bone references are resolved through the part-number map populated in
-the pre-pass.
+- **Skin** writes per-bone weights into MDX after positions/UVs/normals.
+Bones are addressed by tree position, and the bind lists (`qbone_ref_inv`,
+`tbone_ref_inv`) have one entry per node of the tree the skin is bound to.
+For a whole creature that is the model's own tree. A skinned **body part**
+(`pmh0_neck001`, `pfe0_head003`, ...) is bound in game to the creature
+skeleton (`pmh0`), hung from the node `capart.2da` names for its part type
+(the head from `head_g`), so the compiler finds that skeleton like a
+supermodel (game install included) and numbers and binds against it; see
+NWMAIN_FINDINGS.md findings 20-22. Without the skeleton it warns that the
+part will render torn. `TestHDNeckBindMatchesEngine` matches the engine's
+compile of the HD neck entry for entry.
 - **Danglymesh** constraints are written after the mesh header so they sit at
 the offset the decompiler expects.
 

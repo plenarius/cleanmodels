@@ -18,7 +18,7 @@ func init() {
 	Register("skin_unknown_bone", "geometry", false, "Detect skin weights that name bones the model does not contain", checkSkinUnknownBone)
 	Register("skin_influence_count", "geometry", false, "Detect skin vertices with more than four bone influences", checkSkinInfluenceCount)
 	Register("skin_summary", "geometry", false, "Summarise each skin: its bones, their tree positions and the node chain above it", checkSkinSummary)
-	Register("skin_part_binding", "geometry", false, "Detect skinned body parts whose weights name the part's own nodes, which the game cannot bind", checkSkinPartBinding)
+	Register("skin_part_binding", "geometry", false, "Detect skinned body parts whose weights name nodes called after the part, which the game cannot bind", checkSkinPartBinding)
 }
 
 // skinBones counts, per bone name (lower case), the vertices of skin whose
@@ -327,10 +327,12 @@ func checkSkinSummary(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 // ...). The game binds such a skin to the creature skeleton (pmh0), not to the
 // part's own nodes: bones are looked up by name among the skeleton's nodes, and
 // a binary stores them as skeleton tree positions (NWMAIN_FINDINGS.md findings
-// 20-22). A weight that names one of the part's own nodes other than a dummy
-// (its root, a mesh) can never be a skeleton node, so in game that influence
-// is lost; a vertex left with none is drawn at the origin of clip space and
-// tears its triangles into sheets.
+// 20-22). A weight that names a node called after the part itself (its root
+// pmh0_neck001, its meshes pmh0_neck001g, pmh0_neck001gs) can never be a
+// skeleton node, so in game that influence is lost; a vertex left with none is
+// drawn at the origin of clip space and tears its triangles into sheets. Nodes
+// named like skeleton nodes are fine whatever their type: robes carry trimeshes
+// called torso_g and pelvis_g, and the game binds bones by name.
 func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -339,13 +341,10 @@ func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 	if skel == "" {
 		return nil
 	}
-	root := model.RootNode()
+	prefix := strings.ToLower(strings.TrimSpace(model.Name))
 	own := map[string]bool{} // lower-case names of the part's nodes no skeleton has
 	for _, n := range model.Nodes {
-		if n == nil || n.Name == "" {
-			continue
-		}
-		if n == root || n.NodeType() != "dummy" {
+		if n != nil && strings.HasPrefix(strings.ToLower(n.Name), prefix) {
 			own[strings.ToLower(n.Name)] = true
 		}
 	}
