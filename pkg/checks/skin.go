@@ -18,6 +18,7 @@ func init() {
 	Register("skin_unknown_bone", "geometry", false, "Detect skin weights that name bones the model does not contain", checkSkinUnknownBone)
 	Register("skin_influence_count", "geometry", false, "Detect skin vertices with more than four bone influences", checkSkinInfluenceCount)
 	Register("skin_summary", "geometry", false, "Summarise each skin: its bones, their tree positions and the node chain above it", checkSkinSummary)
+	Register("skin_unbound_vertex", "geometry", false, "Detect skin vertices with no usable bone influence, which the game draws at the origin", checkSkinUnboundVertex)
 	Register("skin_part_binding", "geometry", false, "Detect skinned body parts whose weights name nodes called after the part, which the game cannot bind", checkSkinPartBinding)
 }
 
@@ -97,13 +98,17 @@ func checkSkinUnknownBone(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 			}
 			names = append(names, fmt.Sprintf("%s (%d vertices)", spelling[k], count[k]))
 		}
+		msg := fmt.Sprintf(
+			"%s: skin %q has weights for %d bone(s) that are not nodes of this model: %s. The engine's compiler discards these influences, so a vertex weighted to them loses that share of its weight",
+			file, n.Name, len(missing), strings.Join(names, ", "))
+		if skel, kind := mdl.PartSlot(model.Name); kind == "head" || kind == "robe" {
+			msg += fmt.Sprintf(". A %s is loaded as a separate object, not into the skeleton %s, so its skin can only use its own nodes; to drive a mesh with skeleton bones, put it in a regular body-part slot (neck, chest, ...) instead", kind, skel)
+		}
 		out = append(out, mdl.CheckResult{
 			Check:    "skin_unknown_bone",
 			Node:     n.Name,
 			Severity: mdl.SevWarning,
-			Message: fmt.Sprintf(
-				"%s: skin %q has weights for %d bone(s) that are not nodes of this model: %s. The engine's compiler discards these influences, so a vertex weighted to them loses that share of its weight",
-				file, n.Name, len(missing), strings.Join(names, ", ")),
+			Message:  msg,
 		})
 	}
 	return out
@@ -212,6 +217,8 @@ func checkSkinSummary(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 		}
 	}
 	pos := treePositions(model)
+	// A body part's bones live in the creature skeleton, not in the part file.
+	partSkel, _ := mdl.BodyPartSkeleton(model.Name)
 	var out []mdl.CheckResult
 	for _, n := range model.Nodes {
 		if n == nil || n.Skin == nil {
@@ -261,6 +268,8 @@ func checkSkinSummary(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 				if ancestors[k] {
 					label += " (ancestor)"
 				}
+			} else if partSkel != "" {
+				label += " (skeleton " + partSkel + ")"
 			} else {
 				label += " (NOT IN MODEL)"
 			}
@@ -391,6 +400,168 @@ func checkSkinPartBinding(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 			Node:     n.Name,
 			Severity: mdl.SevWarning,
 			Message:  msg,
+		})
+	}
+	return out
+}
+
+// checkSkinUnboundVertex reports skin vertices left with no usable bone: no
+// weight entry, all weights zero, or every weighted bone one the game cannot
+// bind. The shader sums weight times bone matrix with no normalisation, so such
+// a vertex ends up at (0,0,0,0) in clip space and every triangle touching it is
+// drawn as a sliver or sheet (NWMAIN_FINDINGS.md finding 25). Usable means a
+// node of the model; for a body part bound to the creature skeleton, which this
+// check cannot see, any bone not named after the part itself.
+func checkSkinUnboundVertex(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil {
+		return nil
+	}
+	usable := func(string) bool { return true }
+	if skel, _ := mdl.BodyPartSkeleton(model.Name); skel != "" {
+		prefix := strings.ToLower(strings.TrimSpace(model.Name))
+		usable = func(b string) bool { return !strings.HasPrefix(b, prefix) }
+	} else {
+		nodes := nodeNameSet(model)
+		usable = func(b string) bool { return nodes[b] }
+	}
+	var out []mdl.CheckResult
+	for _, n := range model.Nodes {
+		if n == nil || n.Skin == nil || n.Mesh == nil {
+			continue
+		}
+		unbound := 0
+		for vi := range n.Mesh.Verts {
+			ok := false
+			if vi < len(n.Skin.Weights) {
+				vw := n.Skin.Weights[vi]
+				for i, b := range vw.Bones {
+					if b != "" && (i >= len(vw.Weights) || vw.Weights[i] > 0) && usable(strings.ToLower(b)) {
+						ok = true
+						break
+					}
+				}
+			}
+			if !ok {
+				unbound++
+			}
+		}
+		if unbound == 0 {
+			continue
+		}
+		out = append(out, mdl.CheckResult{
+			Check:    "skin_unbound_vertex",
+			Node:     n.Name,
+			Severity: mdl.SevWarning,
+			Message: fmt.Sprintf(
+				"%s: skin %q has %d of %d vertices with no usable bone influence (no weights, all weights zero, or only bones the game cannot bind). In game such a vertex is drawn at the origin and tears every triangle that uses it; weight it to a bone",
+				file, n.Name, unbound, len(n.Mesh.Verts)),
+		})
+	}
+	return out
+}
+
+func init() {
+	RegisterWithContext("skin_skeleton_bone", "geometry", false, "Detect skinned body part bones that are not nodes of the creature skeleton (needs the skeleton: game install, --supermodel-dir or --resource-dir)", checkSkinSkeletonBone)
+	RegisterWithContext("part_attach_node", "geometry", false, "Detect skinned body parts whose skeleton or capart.2da attach node cannot be found (needs the skeleton: game install, --supermodel-dir or --resource-dir)", checkPartAttachNode)
+}
+
+// skinnedPartBinding resolves a skinned body part's skeleton and attach node
+// as compile does. It returns nil when the model has no skin, is not a body
+// part bound to a skeleton, or no Locations were given.
+func skinnedPartBinding(model *mdl.Model, ctx Context) *mdl.PartBinding {
+	if model == nil || len(ctx.Locations) == 0 {
+		return nil
+	}
+	skinned := false
+	for _, n := range model.Nodes {
+		if n != nil && n.Skin != nil {
+			skinned = true
+			break
+		}
+	}
+	if !skinned {
+		return nil
+	}
+	b, err := mdl.ResolvePartBinding(model.Name, ctx.Locations)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// checkPartAttachNode reports a skinned body part whose skeleton or attach
+// node cannot be found. Compile then binds the part to its own tree, which the
+// game reads as skeleton positions, so the part renders torn
+// (NWMAIN_FINDINGS.md finding 22).
+func checkPartAttachNode(model *mdl.Model, file string, _ bool, ctx Context) []mdl.CheckResult {
+	b := skinnedPartBinding(model, ctx)
+	if b == nil {
+		return nil
+	}
+	var msg string
+	switch {
+	case b.SkeletonPath == "":
+		msg = fmt.Sprintf("%s: body part %q is bound in game to the skeleton %s, which was not found; a compile here would bind it to its own nodes and it would render torn. Give --game-dir (stock skeletons) or the folder or hak holding %s.mdl with --supermodel-dir or --resource-dir",
+			file, model.Name, b.Skeleton, b.Skeleton)
+	case !b.AttachFound:
+		from := "the stock capart.2da"
+		if b.AttachFrom != "" {
+			from = b.AttachFrom
+		}
+		msg = fmt.Sprintf("%s: body part %q hangs from node %q (from %s), which the skeleton %s does not have; a compile would bind it to its own nodes and it would render torn. Put the skeleton's own capart.2da next to the model or pass the hak or folder holding it with --resource-dir, or add the node to the skeleton",
+			file, model.Name, b.Attach, from, b.SkeletonPath)
+	default:
+		return nil
+	}
+	return []mdl.CheckResult{{Check: "part_attach_node", Severity: mdl.SevWarning, Message: msg}}
+}
+
+// checkSkinSkeletonBone reports a skinned body part's bones that are not nodes
+// of its creature skeleton. The game binds a part's skin by bone name against
+// the skeleton only, so such an influence is lost; a vertex with no other bone
+// is drawn at the origin. Bones named after the part itself are left to
+// skin_part_binding.
+func checkSkinSkeletonBone(model *mdl.Model, file string, _ bool, ctx Context) []mdl.CheckResult {
+	b := skinnedPartBinding(model, ctx)
+	if b == nil || b.SkeletonPath == "" {
+		return nil
+	}
+	prefix := strings.ToLower(strings.TrimSpace(model.Name))
+	var out []mdl.CheckResult
+	for _, n := range model.Nodes {
+		if n == nil || n.Skin == nil {
+			continue
+		}
+		count, spelling := skinBones(n.Skin)
+		var missing []string
+		for k := range count {
+			if !b.Bones[k] && !strings.HasPrefix(k, prefix) {
+				missing = append(missing, k)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		sort.Slice(missing, func(i, j int) bool {
+			if count[missing[i]] != count[missing[j]] {
+				return count[missing[i]] > count[missing[j]]
+			}
+			return missing[i] < missing[j]
+		})
+		var names []string
+		for i, k := range missing {
+			if i == skinMissingBoneNames {
+				names = append(names, fmt.Sprintf("+%d more", len(missing)-i))
+				break
+			}
+			names = append(names, fmt.Sprintf("%s (%d vertices)", spelling[k], count[k]))
+		}
+		out = append(out, mdl.CheckResult{
+			Check:    "skin_skeleton_bone",
+			Node:     n.Name,
+			Severity: mdl.SevWarning,
+			Message: fmt.Sprintf("%s: body part skin %q has weights for %d bone(s) that are not nodes of the skeleton %s: %s. The game binds a part's skin to the skeleton by bone name, so these influences are lost in game",
+				file, n.Name, len(missing), b.SkeletonPath, strings.Join(names, ", ")),
 		})
 	}
 	return out

@@ -38,7 +38,7 @@ selectable items — same registry on both sides, no separate wiring.
 
 ## What runs in the registry
 
-53 checks live in [pkg/checks/](pkg/checks/), grouped by file:
+56 checks live in [pkg/checks/](pkg/checks/), grouped by file:
 
 - **structural.go** (9 checks) — root/dummy invariants, parent links, name
 uniqueness, name length, supermodel reference, classification.
@@ -47,8 +47,11 @@ multi-edges, normals, AABB tree shape, walkmesh material clamping.
 - **parameters.go** (9 checks) — alpha/diffuse/specular ranges, tex slot
 counts, materialname / texture resref length validation, render hint
 validity.
-- **skin.go** (4 checks) — skin weights that name bones the model does not
-contain, vertices with more than four influences, skinned body parts whose
+- **skin.go** (7 checks) — skin weights that name bones the model does not
+contain, vertices with more than four influences, vertices with no usable
+bone (drawn at the origin in game), skinned body parts whose bones or attach
+node are missing from the creature skeleton (these two read the skeleton and
+its capart.2da from the same places compile does), skinned body parts whose
 weights name nodes called after the part itself, such as its root or shadow
 mesh (the game binds a part only to the creature skeleton), and a names-and-counts summary of each skin (its
 node chain, bones and their tree positions, no coordinates) that can be

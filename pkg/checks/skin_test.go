@@ -1,6 +1,8 @@
 package checks
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -203,5 +205,119 @@ func TestSkinPartBindingAcceptsMeshesNamedLikeSkeletonNodes(t *testing.T) {
 	}
 	if r := findCheck(RunAll(m, "pfa0_robe003.mdl", false), "skin_part_binding"); r != nil {
 		t.Errorf("reported a robe weighted to skeleton-named meshes: %s", r.Message)
+	}
+}
+
+func TestSkinUnboundVertex(t *testing.T) {
+	// Whole model: vertex 2 has only a zero weight, vertex 3 only a bone that
+	// is not a node; vertices 0 and 1 are fine.
+	m := skinModel([]mdl.VertexWeight{
+		{Bones: []string{"head_g"}, Weights: []float32{1}},
+		{Bones: []string{"head_g", "ghost"}, Weights: []float32{0.5, 0.5}},
+		{Bones: []string{"head_g"}, Weights: []float32{0}},
+		{Bones: []string{"ghost"}, Weights: []float32{1}},
+	})
+	r := findCheck(RunAll(m, "t.mdl", false), "skin_unbound_vertex")
+	if r == nil || !strings.Contains(r.Message, "2 of 4 vertices") {
+		t.Fatalf("got %v, want 2 of 4 unbound vertices", r)
+	}
+	// Body part: skeleton bones are usable even though the file lacks them;
+	// a bone named after the part is not.
+	p := neckPart([]mdl.VertexWeight{
+		{Bones: []string{"neck_g"}, Weights: []float32{1}},
+		{Bones: []string{"pmh0_neck001gs"}, Weights: []float32{1}},
+	})
+	r = findCheck(RunAll(p, "pmh0_neck001.mdl", false), "skin_unbound_vertex")
+	if r == nil || !strings.Contains(r.Message, "1 of 2 vertices") {
+		t.Fatalf("part: got %v, want 1 of 2 unbound", r)
+	}
+	if r := findCheck(RunAll(neckPart([]mdl.VertexWeight{{Bones: []string{"neck_g"}, Weights: []float32{1}}}), "pmh0_neck001.mdl", false), "skin_unbound_vertex"); r != nil {
+		t.Errorf("clean part reported: %s", r.Message)
+	}
+}
+
+func TestSkinSummaryLabelsSkeletonBonesOnParts(t *testing.T) {
+	r := findCheck(RunAll(neckPart([]mdl.VertexWeight{{Bones: []string{"neck_g"}, Weights: []float32{1}}}), "pmh0_neck001.mdl", true), "skin_summary")
+	if r == nil || !strings.Contains(r.Message, "neck_g (skeleton pmh0)") || strings.Contains(r.Message, "NOT IN MODEL") {
+		t.Fatalf("summary: %v", r)
+	}
+}
+
+func TestSkinUnknownBoneExplainsHeads(t *testing.T) {
+	mesh := mdl.NewMeshData()
+	mesh.Verts = []mdl.Vec3{{}}
+	m := &mdl.Model{Name: "pmh0_head001", Nodes: []*mdl.Node{
+		{Name: "pmh0_head001", Parent: "NULL"},
+		{Name: "pmh0_head001g", Parent: "pmh0_head001", Mesh: mesh, Skin: &mdl.SkinData{Weights: []mdl.VertexWeight{{Bones: []string{"neck_g"}, Weights: []float32{1}}}}},
+	}}
+	r := findCheck(RunAll(m, "pmh0_head001.mdl", false), "skin_unknown_bone")
+	if r == nil || !strings.Contains(r.Message, "separate object") || !strings.Contains(r.Message, "regular body-part slot") {
+		t.Fatalf("head: %v", r)
+	}
+}
+
+const testPtx0Skeleton = `newmodel ptx0
+setsupermodel ptx0 NULL
+beginmodelgeom ptx0
+node dummy ptx0
+  parent NULL
+endnode
+node dummy torso_g
+  parent ptx0
+endnode
+node dummy neck_g
+  parent torso_g
+endnode
+endmodelgeom ptx0
+donemodel ptx0
+`
+
+func ptx0Neck(bones ...string) *mdl.Model {
+	mesh := mdl.NewMeshData()
+	var w []mdl.VertexWeight
+	for _, b := range bones {
+		mesh.Verts = append(mesh.Verts, mdl.Vec3{})
+		w = append(w, mdl.VertexWeight{Bones: []string{b}, Weights: []float32{1}})
+	}
+	return &mdl.Model{Name: "ptx0_neck001", Nodes: []*mdl.Node{
+		{Name: "ptx0_neck001", Parent: "NULL"},
+		{Name: "ptx0_neck001g", Parent: "ptx0_neck001", Mesh: mesh, Skin: &mdl.SkinData{Weights: w}},
+	}}
+}
+
+func TestSkeletonAwareSkinChecks(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ptx0.mdl"), []byte(testPtx0Skeleton), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(m *mdl.Model, locs ...string) []mdl.CheckResult {
+		return RunFilteredContext(m, "ptx0_neck001.mdl", map[string]bool{"skin_skeleton_bone": true, "part_attach_node": true}, nil, false, Context{Locations: locs})
+	}
+
+	// Skeleton found, every bone in it: nothing to report.
+	if res := run(ptx0Neck("neck_g", "torso_g"), dir); len(res) != 0 {
+		t.Errorf("clean part: %v", res)
+	}
+	// A bone the skeleton lacks.
+	r := findCheck(run(ptx0Neck("neck_g", "jaw_g"), dir), "skin_skeleton_bone")
+	if r == nil || !strings.Contains(r.Message, "jaw_g (1 vertices)") {
+		t.Errorf("missing bone: %v", r)
+	}
+	// No Locations: the checks cannot resolve anything and stay silent.
+	if res := run(ptx0Neck("jaw_g")); len(res) != 0 {
+		t.Errorf("no locations: %v", res)
+	}
+	// Skeleton not found where we looked.
+	r = findCheck(run(ptx0Neck("neck_g"), t.TempDir()), "part_attach_node")
+	if r == nil || !strings.Contains(r.Message, "skeleton ptx0, which was not found") {
+		t.Errorf("no skeleton: %v", r)
+	}
+	// capart.2da hangs NECK from a node the skeleton lacks.
+	if err := os.WriteFile(filepath.Join(dir, "capart.2da"), []byte("2DA V2.0\n\n NAME MDLNAME NODENAME\n0 0 NECK j_kubi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = findCheck(run(ptx0Neck("neck_g"), dir), "part_attach_node")
+	if r == nil || !strings.Contains(r.Message, `"j_kubi"`) || !strings.Contains(r.Message, "capart.2da") {
+		t.Errorf("missing attach node: %v", r)
 	}
 }

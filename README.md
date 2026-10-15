@@ -166,12 +166,12 @@ cleanmodels check --exclude-checks emitter_spread,missing_bitmap models/
 To see how a skinned model is put together, without sharing the model, run the skin checks verbosely:
 
 ```bash
-cleanmodels check --verbose --include-checks skin_summary,skin_unknown_bone,skin_influence_count,skin_part_binding model.mdl
+cleanmodels check --verbose --include-checks skin_summary,skin_unknown_bone,skin_influence_count,skin_unbound_vertex,skin_part_binding,skin_skeleton_bone,part_attach_node model.mdl
 ```
 
 `skin_summary` prints, for each skin node, only names, counts and tree positions: the chain of nodes above it, how many vertices and bones it has, where each bone sits in the node tree (`head_g@4`, marked `(ancestor)` when it is above the skin), and the range of influences and weight sums per vertex. No coordinates are included, so the text can be pasted into a bug report. `skin_unknown_bone` warns when weights name a bone that is not a node of the model, and `skin_influence_count` when a vertex has more than four influences.
 
-Skinned body parts (`pmh0_neck001`, `pfe0_chest003`, ...) are bound in game to the creature skeleton (`pmh0`), hung from the node the part attaches to (`neck_g`), not to the part's own nodes. Heads and robes are the exception: the game loads them as separate objects, so their skins bind to their own nodes like a whole model's. Their bones must be skeleton nodes; `skin_part_binding` warns when weights name a node called after the part itself (its root `pmh0_neck001`, its meshes `pmh0_neck001g`), which no skeleton has, and `skin_unknown_bone` leaves parts alone. Compiling and decompiling a skinned part needs the skeleton: stock skeletons are read from the game install (`--game-dir`), custom ones from `--supermodel-dir` or `--resource-dir`. A custom skeleton's `capart.2da` (which node each part hangs from) is read from the same places, so keep it next to the model or in the hak you pass. Without it, compile warns that the part will render torn, and decompile leaves the bones unnamed rather than guessing.
+Skinned body parts (`pmh0_neck001`, `pfe0_chest003`, ...) are bound in game to the creature skeleton (`pmh0`), hung from the node the part attaches to (`neck_g`), not to the part's own nodes. Heads and robes are the exception: the game loads them as separate objects, so their skins bind to their own nodes like a whole model's. Their bones must be skeleton nodes; `skin_unbound_vertex` warns about vertices left with no usable bone, which the game draws at the origin. For body parts, `skin_skeleton_bone` and `part_attach_node` read the skeleton and its `capart.2da` from the same places compile does (`--game-dir`, `--supermodel-dir`, `--resource-dir`, the model's folder) and warn when a bone or the attach node is missing from it, before a compile would bind the part wrongly. `skin_part_binding` warns when weights name a node called after the part itself (its root `pmh0_neck001`, its meshes `pmh0_neck001g`), which no skeleton has, and `skin_unknown_bone` leaves parts alone. Compiling and decompiling a skinned part needs the skeleton: stock skeletons are read from the game install (`--game-dir`), custom ones from `--supermodel-dir` or `--resource-dir`. A custom skeleton's `capart.2da` (which node each part hangs from) is read from the same places, so keep it next to the model or in the hak you pass. Without it, compile warns that the part will render torn, and decompile leaves the bones unnamed rather than guessing.
 
 ### repair — fix and transform models
 
@@ -290,7 +290,7 @@ cleanmodels --decompile-only model.mdl output.mdl
 
 cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edition, including all nine geometry node types (dummy, trimesh, danglymesh, skin, animmesh, emitter, light, reference, aabb) and their complete parameter sets.
 
-**Validation** — 53 checks across structural integrity, geometry correctness (including skin bones and weights), parameter bounds, animation consistency, emitter configuration, and tile-specific rules.
+**Validation** — 56 checks across structural integrity, geometry correctness (including skin bones and weights), parameter bounds, animation consistency, emitter configuration, and tile-specific rules.
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
 
