@@ -29,7 +29,7 @@ Emotional goal: confident and informed. The user trusts the tool and understands
 - Progress bars on operations that finish in milliseconds. Streaming per-file lines for batches; nothing for single files.
 - Enterprise-verbose framing ("Initializing pipeline orchestration..."). The tool just does the thing.
 - Hidden side effects, silent reformatting, or destructive defaults. Every change is announced in the log; `--dry-run` is real.
-- Flat 60-flag CLI surfaces. Subcommands carry the cognitive load (`check`, `compile`, `decompile`, `clean`).
+- Flat 60-flag CLI surfaces. Subcommands carry the cognitive load (`check`, `repair`, `compile`, `decompile`, `variants`, `report`).
 
 ## Design Principles
 
