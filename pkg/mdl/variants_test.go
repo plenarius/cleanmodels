@@ -121,7 +121,7 @@ func TestVariantNeedsATemplate(t *testing.T) {
 		t.Error("want an error for a name without a body prefix")
 	}
 	head := robeTestModel("pmh0_head999", 1, 0.4, 0.4, true)
-	if _, err := Variant(head, "pmd0", VariantOptions{}); err == nil || !strings.Contains(err.Error(), "not a robe or an armour body part") {
+	if _, err := Variant(head, "pmd0", VariantOptions{}); err == nil || !strings.Contains(err.Error(), "not a robe, cloak or armour body part") {
 		t.Errorf("head: want a not-supported error, got %v", err)
 	}
 }
@@ -333,4 +333,33 @@ func meanDistanceByUV(t *testing.T, a, b *Model, skinsOnly bool) (float64, int) 
 		t.Fatalf("only %d of %d vertices matched by UV", n, len(ap))
 	}
 	return sum / float64(n) * 100, n
+}
+
+// TestVariantCloakMatchesBioware generates the dwarf cloak 1 from the human
+// one and compares its cloth with Bioware's dwarf cloak 1 (the same mesh).
+// Go and the prototype measured 2.9 cm mean over all stock cloaks in
+// phenotype 0. Needs the game install.
+func TestVariantCloakMatchesBioware(t *testing.T) {
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		home, _ := os.UserHomeDir()
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	locs := []string{game}
+	if sk, _ := loadSkeleton("pmh0", locs); sk == nil {
+		t.Skip("game install not available")
+	}
+	src, ref := loadGameModel(t, locs, "pmh0_cloak_001"), loadGameModel(t, locs, "pmd0_cloak_001")
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, Warn: func(s string) { t.Error(s) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Compile(out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	mean, n := meanDistanceByUV(t, out, ref, true)
+	t.Logf("pmd0_cloak_001 generated vs Bioware's: %.2f cm mean over %d vertices", mean, n)
+	if mean > 4 {
+		t.Errorf("%.2f cm from Bioware's, want under 4", mean)
+	}
 }
