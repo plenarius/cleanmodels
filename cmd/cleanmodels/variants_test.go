@@ -182,8 +182,15 @@ func TestVariantsJSONLines(t *testing.T) {
 			t.Errorf("preview %s not written: %v", f, err)
 		}
 	}
-	if !strings.Contains(stdout, `"preview":"`+filepath.Join(pv, "pmd0_robe999.fit.mdl")+`"`) || strings.Contains(stdout, "no preview") {
-		t.Errorf("done event has no preview path: %s", stdout)
+	var preview string
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["type"] == "done" {
+			preview, _ = e["preview"].(string)
+		}
+	}
+	if preview != filepath.Join(pv, "pmd0_robe999.fit.mdl") || strings.Contains(stdout, "no preview") {
+		t.Errorf("done event has no preview path (%q): %s", preview, stdout)
 	}
 	captureStdio(t, func() { code = cmdVariants([]string{"--width", "3", src, out}) })
 	if code != exitUsage {
