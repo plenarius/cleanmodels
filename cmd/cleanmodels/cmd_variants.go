@@ -12,7 +12,7 @@ import (
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
-// variantRaces are the races robes are made for, by the letter in the body
+// variantRaces are the races variants are made for, by the letter in the body
 // prefix: halfling, dwarf, elf, gnome, human (also half-elf), half-orc.
 const variantRaces = "adegho"
 
@@ -37,7 +37,7 @@ func cmdVariants(args []string) int {
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels variants [flags] <model.mdl> [output-dir]\n\n")
-		fmt.Fprintf(os.Stderr, "Make a robe's variants for other races and phenotypes: pmh0_robe003.mdl gives\npmd0_robe003.mdl, pme0_robe003.mdl and so on. Each variant takes its bone positions\nfrom a stock robe of that body and is fitted using the race skeletons and stock body\nparts, all read from the game install (--game-dir) or --resource-dir. The output\ndirectory defaults to the robe's own. An existing file is not overwritten unless\n--overwrite is given.\n\n")
+		fmt.Fprintf(os.Stderr, "Make a robe's or armour part's versions for other races and phenotypes:\npmh0_robe003.mdl gives pmd0_robe003.mdl, pme0_robe003.mdl and so on; pmh0_chest050.mdl\ngives pmd0_chest050.mdl and so on. Each version is fitted to that body using the race\nskeletons and stock base body parts (and, for robes, a stock robe of that body), all\nread from the game install (--game-dir) or --resource-dir. The output directory\ndefaults to the model's own. An existing file is not overwritten unless --overwrite\nis given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -72,7 +72,7 @@ func cmdVariants(args []string) int {
 	}
 	srcPrefix := mdl.VariantPrefix(src.Name)
 	if srcPrefix == "" || len(srcPrefix) != 4 {
-		fmt.Fprintf(os.Stderr, "cleanmodels: %s: model %q is not named like a robe for a body (pmh0_robe003)\n", input, src.Name)
+		fmt.Fprintf(os.Stderr, "cleanmodels: %s: model %q is not named for a body (pmh0_robe003, pmh0_chest050)\n", input, src.Name)
 		return exitErrors
 	}
 	targets, err := variantTargets(*to, srcPrefix)

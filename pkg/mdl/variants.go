@@ -55,15 +55,16 @@ var robeTemplates = []string{"_robe003", "_robe004", "_robe005", "_robe006"}
 // Bioware's variants best (3.9 cm mean against 4.0 cm at full strength).
 const girthStrength = 0.5
 
-// VariantPrefix returns the body prefix of a robe model's name (pmh0 for
-// pmh0_robe003), or "" when the name does not start with one.
+// VariantPrefix returns the body prefix of a robe or body part model's name
+// (pmh0 for pmh0_robe003), or "" when the name does not start with one.
 func VariantPrefix(name string) string { return partSkeletonName(name) }
 
-// Variant returns a copy of src, a robe for one body, refitted to the body
-// with prefix target (pmd0 for a male dwarf in phenotype 0). The copy is
-// named like src with the prefix replaced (pmh0_robe003 -> pmd0_robe003),
-// node names and the supermodel included. Bitmaps are kept, as in Bioware's
-// own variants.
+// Variant returns a copy of src, a robe or an armour body part made for one
+// body, refitted to the body with prefix target (pmd0 for a male dwarf in
+// phenotype 0). The copy is named like src with the prefix replaced
+// (pmh0_robe003 -> pmd0_robe003), node names and the supermodel included.
+// Bitmaps are kept, as in Bioware's own variants. Body parts are refitted by
+// partVariant (variants_parts.go).
 func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	warn := opts.Warn
 	if warn == nil {
@@ -79,6 +80,12 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	}
 	if src.RootNode() == nil {
 		return nil, fmt.Errorf("%s has no node tree", src.Name)
+	}
+	if partAttachNode(src.Name) != "" {
+		return partVariant(src, srcPrefix, target, opts.Locs, warn)
+	}
+	if partKind(src.Name) != "robe" {
+		return nil, fmt.Errorf("%s is not a robe or an armour body part (pXXX_robeNNN, pXXX_chestNNN, ...); heads, cloaks and other models are not supported", src.Name)
 	}
 	suffix := strings.ToLower(src.Name[len(srcPrefix):])
 
@@ -363,16 +370,26 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 	return g
 }
 
-// partSpread returns the RMS spread, across x and y, of a body part model's
+// partSpread returns the RMS spread along x, y and z of a body part model's
 // vertices about their centre, or nil when the part is not found.
 func partSpread(name string, locs []string) []float64 {
+	_, spread, ok := partStats(name, locs)
+	if !ok {
+		return nil
+	}
+	return spread[:]
+}
+
+// partStats returns the centre of a body part model's vertices and their RMS
+// spread about it along x, y and z; ok is false when the part is not found.
+func partStats(name string, locs []string) (centre, spread [3]float64, ok bool) {
 	ref := findModelResource(name, locs)
 	if ref == nil {
-		return nil
+		return centre, spread, false
 	}
 	m, err := readModelRef(ref)
 	if err != nil {
-		return nil
+		return centre, spread, false
 	}
 	w := newWorldTransforms(m)
 	var pts [][3]float64
@@ -386,24 +403,26 @@ func partSpread(name string, locs []string) []float64 {
 		}
 	}
 	if len(pts) == 0 {
-		return nil
+		return centre, spread, false
 	}
-	var c [2]float64
 	for _, p := range pts {
-		c[0], c[1] = c[0]+p[0], c[1]+p[1]
+		centre = add3(centre, p)
 	}
-	c[0], c[1] = c[0]/float64(len(pts)), c[1]/float64(len(pts))
-	var s [2]float64
+	centre = scale3(centre, 1/float64(len(pts)))
 	for _, p := range pts {
-		s[0] += (p[0] - c[0]) * (p[0] - c[0])
-		s[1] += (p[1] - c[1]) * (p[1] - c[1])
+		for k := range spread {
+			spread[k] += (p[k] - centre[k]) * (p[k] - centre[k])
+		}
 	}
-	return []float64{math.Sqrt(s[0] / float64(len(pts))), math.Sqrt(s[1] / float64(len(pts)))}
+	for k := range spread {
+		spread[k] = math.Sqrt(spread[k] / float64(len(pts)))
+	}
+	return centre, spread, true
 }
 
-// cloneRobe copies src with the body prefix renamed in the model, node and
-// parent names and the supermodel. Skin meshes are copied so their vertices
-// and normals can be replaced; everything else is shared with src.
+// cloneForBody copies src with the body prefix renamed in the model, node and
+// parent names and the supermodel. Meshes are copied so their vertices and
+// normals can be replaced; everything else is shared with src.
 func cloneForBody(src *Model, from, to string) *Model {
 	rename := func(s string) string {
 		if len(s) > len(from) && strings.EqualFold(s[:len(from)+1], from+"_") {
@@ -421,7 +440,7 @@ func cloneForBody(src *Model, from, to string) *Model {
 	for i, n := range src.Nodes {
 		c := *n
 		c.Name, c.Parent = rename(n.Name), rename(n.Parent)
-		if n.Skin != nil && n.Mesh != nil {
+		if n.Mesh != nil {
 			mesh := *n.Mesh
 			c.Mesh = &mesh
 		}
