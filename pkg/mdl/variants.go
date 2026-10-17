@@ -461,10 +461,15 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 		default:
 			continue
 		}
-		a := partSpread(basePart(srcPrefix, part, locs), locs)
-		b := partSpread(basePart(target, part, locs), locs)
+		na, nb := basePart(srcPrefix, part, locs), basePart(target, part, locs)
+		a, b := partSpread(na, locs), partSpread(nb, locs)
+		if a == nil || a[0] <= 0 || a[1] <= 0 {
+			missing = append(missing, na)
+		}
+		if b == nil {
+			missing = append(missing, nb)
+		}
 		if a == nil || b == nil || a[0] <= 0 || a[1] <= 0 {
-			missing = append(missing, part)
 			continue
 		}
 		g[bone] = [2]float64{robeGirth(b[0] / a[0]), robeGirth(b[1] / a[1])}
@@ -475,7 +480,8 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 		}
 	}
 	if len(missing) > 0 {
-		warn(fmt.Sprintf("stock body parts for %s or %s not found (%s): those bones keep their width", srcPrefix, target, strings.Join(missing, ", ")))
+		sort.Strings(missing)
+		warn(fmt.Sprintf("base body parts %s not found: those bones keep their width", strings.Join(missing, ", ")))
 	}
 	return g
 }

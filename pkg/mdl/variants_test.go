@@ -258,8 +258,9 @@ func TestVariantRefitsBodyPart(t *testing.T) {
 	if len(body.Nodes) != 2 || !near(body.Nodes[1].Mesh.Verts[1], Vec3{-0.1, 0, 0.2}) {
 		t.Errorf("body: %d nodes, want the root and the shin at lshin_g (-0.1, 0, 0.3)", len(body.Nodes))
 	}
-	if len(notes) != 1 || strings.Contains(notes[0], "pmd0_legl001") || strings.Contains(notes[0], "pmd0_belt001") || !strings.Contains(notes[0], "pmd0_chest001") {
-		t.Errorf("notes %q: want the missing base parts, without the thigh (the variant's slot) and the belt (not in a bare body)", notes)
+	if len(notes) != 1 || strings.Contains(notes[0], "pmd0_legl001") || strings.Contains(notes[0], "pmd0_belt001") ||
+		!strings.Contains(notes[0], "pmd0_footl001") || strings.Contains(notes[0], "pmd0_chest001") {
+		t.Errorf("notes %q: want the missing base parts (the foot), without the thigh (the variant's slot), the belt (not in a bare body) or the chest (no torso_g in this skeleton)", notes)
 	}
 
 	// A skinned part needs its attach bone in both skeletons (these have no neck_g).

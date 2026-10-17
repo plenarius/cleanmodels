@@ -123,10 +123,13 @@ func VariantPreview(v *Model, target string, locs []string, textureDir string) (
 		if slot == "head" {
 			node = "head_g"
 		}
+		r, ok := at(node)
+		if !ok {
+			continue // the body has no such slot (a wemic's legs are its skeleton's own)
+		}
 		name := basePart(target, slot, locs)
 		ref := findModelResource(name, locs)
-		r, ok := at(node)
-		if ref == nil || !ok {
+		if ref == nil {
 			missing = append(missing, name)
 			continue
 		}

@@ -237,7 +237,14 @@ func (fs *boneFits) of(bone, slot string) *boneFit {
 		ca, sa, okA := partStats(na, fs.locs)
 		cb, sb, okB := partStats(nb, fs.locs)
 		if !okA || !okB {
-			fs.note("base body part "+na+" or "+nb+" not found", ": the part keeps its width there")
+			var missing []string
+			if !okA {
+				missing = append(missing, na)
+			}
+			if !okB {
+				missing = append(missing, nb)
+			}
+			fs.note("base body part "+strings.Join(missing, " and ")+" not found", ": the part keeps its width there")
 		} else {
 			for k := range f.g {
 				if (k < 2 || allAxes) && sa[k] > 1e-4 {
