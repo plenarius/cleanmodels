@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -106,5 +107,48 @@ func TestVariantsCommandMissingTemplate(t *testing.T) {
 	stdout, _ := captureStdio(t, func() { code = cmdVariants([]string{"--to", "pme0", "--game-dir", dir, src, dir}) })
 	if code != exitErrors || !strings.Contains(stdout, "no robe for pme0") {
 		t.Errorf("exit %d, output %q: want a failure naming the missing template", code, stdout)
+	}
+}
+
+// TestVariantsJSONLines pins the event stream the GUI reads: start and done
+// (or error) per target, in order, then a summary; done carries the target,
+// the source and the absolute output path.
+func TestVariantsJSONLines(t *testing.T) {
+	dir := t.TempDir()
+	src := variantFixture(t, dir)
+	out := filepath.Join(dir, "out")
+	var code int
+	stdout, _ := captureStdio(t, func() { code = cmdVariants([]string{"--json-lines", "--to", "pmd0", src, out}) })
+	if code != exitOK {
+		t.Fatalf("exit %d: %s", code, stdout)
+	}
+	var events []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var e map[string]any
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("not JSON: %q", line)
+		}
+		events = append(events, e)
+	}
+	types := []string{}
+	for _, e := range events {
+		types = append(types, e["type"].(string))
+	}
+	if strings.Join(types, ",") != "start,done,summary" {
+		t.Fatalf("event types %v, want start, done, summary", types)
+	}
+	done := events[1]
+	want := filepath.Join(out, "pmd0_robe999.mdl")
+	if done["target"] != "pmd0" || done["file"] != "pmd0_robe999.mdl" || done["output"] != want || done["index"] != float64(1) || done["total"] != float64(1) {
+		t.Errorf("done event %v", done)
+	}
+	if res, ok := done["result"].(map[string]any); !ok || res["file"] == nil {
+		t.Errorf("done event has no result: %v", done)
+	}
+
+	// Again without --overwrite: an error event, still followed by the summary.
+	stdout, _ = captureStdio(t, func() { code = cmdVariants([]string{"--json-lines", "--to", "pmd0", src, out}) })
+	if code != exitErrors || !strings.Contains(stdout, `"type":"error"`) || !strings.Contains(stdout, `"message":"`) || !strings.Contains(stdout, `"0 of 1 variants written"`) {
+		t.Errorf("exit %d, output %s: want an error event and the summary", code, stdout)
 	}
 }

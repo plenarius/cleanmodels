@@ -145,17 +145,30 @@ Batch lines are width-aware on TTY: when `termWriter.cols > 0`, the dot leader b
 The contract between CLI and GUI. Stable across releases.
 
 ```json
-{"type": "batch_start", "total": 1234}
-{"type": "file_start", "file": "foo.mdl", "index": 1, "total": 1234}
-{"type": "file_done",  "file": "foo.mdl", "index": 1, "total": 1234, "fixes": 3,
+{"type": "start",   "file": "foo.mdl", "index": 1, "total": 1234}
+{"type": "done",    "file": "foo.mdl", "index": 1, "total": 1234, "fixes": 3,
  "result": { "file": "foo.mdl", "checks": [...], "repairs": [...], "actions": [...], "warnings": [...] }}
-{"type": "batch_done", "message": "1234 files, 421 repaired, 12 errors"}
+{"type": "error",   "file": "bar.mdl", "index": 2, "total": 1234, "message": "..."}
+{"type": "summary", "total": 1234, "fixes": 421, "message": "Processed 1234 files, 12 warnings, 3 errors"}
+```
+
+`variants` sends one `start` and one `done` or `error` per body it makes a version for (index and total count those, not input files), with three more fields, then the `summary`:
+
+```json
+{"type": "start", "file": "pmd0_robe200.mdl", "index": 1, "total": 11,
+ "source": "/path/pmh0_robe200.mdl", "target": "pmd0"}
+{"type": "done",  "file": "pmd0_robe200.mdl", "index": 1, "total": 11,
+ "source": "/path/pmh0_robe200.mdl", "target": "pmd0", "output": "/abs/out/pmd0_robe200.mdl",
+ "result": { "file": "out/pmd0_robe200.mdl", "warnings": [...] }}
+{"type": "summary", "total": 11, "message": "11 of 11 variants written"}
 ```
 
 Field rules:
 
-- `type` is always present and stable.
-- `result` matches `Result` in `process.go` exactly. Only present on `file_done`.
+- `type` is always present and stable: `start`, `done`, `error`, `summary`.
+- `file` is the model's base name (for `variants`, the version's).
+- `result` matches `Result` in `process.go` exactly. Only present on `done`.
+- `source`, `target` and `output` (absolute path of the file written) are only set by `variants`.
 - Empty arrays are omitted (`omitempty`); consumers must treat missing as empty.
 - `error` on `Result` is set if the file failed to process; other arrays may still be populated.
 

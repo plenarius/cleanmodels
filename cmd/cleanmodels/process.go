@@ -38,6 +38,12 @@ type Event struct {
 	Message string `json:"message,omitempty"`
 	Fixes   int    `json:"fixes,omitempty"`
 	*Result `json:"result,omitempty"`
+
+	// variants: the model the version is made from, the body it is for
+	// (pmd0) and the file written.
+	Source string `json:"source,omitempty"`
+	Target string `json:"target,omitempty"`
+	Output string `json:"output,omitempty"`
 }
 
 type pivotOpts struct {

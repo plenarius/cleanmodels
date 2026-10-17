@@ -89,14 +89,18 @@ func cmdVariants(args []string) int {
 	suffix := src.Name[len(srcPrefix):]
 	failed := 0
 	var results []variantResult
-	for _, target := range targets {
+	for i, target := range targets {
+		name := target + suffix + ".mdl"
+		if o.jsonLines {
+			emitEvent(Event{Type: "start", File: name, Index: i + 1, Total: len(targets), Source: input, Target: target})
+		}
 		res := variantResult{Source: input, Target: target}
 		out, err := mdl.Variant(src, target, mdl.VariantOptions{
 			Locs: superDirs,
 			Warn: func(s string) { res.Warnings = append(res.Warnings, s) },
 		})
 		if err == nil {
-			res.File = filepath.Join(outDir, target+suffix+".mdl")
+			res.File = filepath.Join(outDir, name)
 			err = writeVariant(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
 		}
 		if err != nil {
@@ -106,19 +110,34 @@ func cmdVariants(args []string) int {
 		}
 		results = append(results, res)
 		if o.jsonLines {
-			b, _ := json.Marshal(res)
-			fmt.Println(string(b))
+			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target}
+			if res.Error != "" {
+				evt.Type, evt.Message = "error", res.Error
+			} else {
+				r := Result{File: res.File}
+				for _, w := range res.Warnings {
+					r.Warnings = append(r.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: w})
+				}
+				evt.Type, evt.Output, evt.Result = "done", res.File, &r
+				if abs, err := filepath.Abs(res.File); err == nil {
+					evt.Output = abs
+				}
+			}
+			emitEvent(evt)
 		} else if !o.jsonOut && !o.quiet {
 			printVariantResult(res)
 		} else if o.quiet && res.Error != "" {
 			fmt.Fprintf(os.Stderr, "%s: %s\n", target, res.Error)
 		}
 	}
+	summary := fmt.Sprintf("%d of %d variants written", len(targets)-failed, len(targets))
 	if o.jsonOut {
 		b, _ := json.MarshalIndent(results, "", "  ")
 		fmt.Println(string(b))
-	} else if !o.jsonLines && !o.quiet {
-		fmt.Printf("\n%d of %d variants written\n", len(targets)-failed, len(targets))
+	} else if o.jsonLines {
+		emitEvent(Event{Type: "summary", Total: len(targets), Message: summary})
+	} else if !o.quiet {
+		fmt.Printf("\n%s\n", summary)
 	}
 	if failed > 0 {
 		return exitErrors
