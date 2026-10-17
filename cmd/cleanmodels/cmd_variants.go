@@ -21,6 +21,8 @@ type variantResult struct {
 	Source   string   `json:"source"`
 	Target   string   `json:"target"`
 	File     string   `json:"file,omitempty"`
+	Preview  string   `json:"preview,omitempty"`
+	Body     string   `json:"body,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
 	Error    string   `json:"error,omitempty"`
 }
@@ -31,6 +33,9 @@ func cmdVariants(args []string) int {
 
 	to := fs.String("to", "", "comma-separated bodies to make variants for (pmd0,pme2,...); default: every race in phenotypes 0 and 2, same gender as the source")
 	compile := fs.Bool("compile", false, "write compiled (binary) models instead of ASCII")
+	width := fs.Float64("width", 1, "multiply the fit's width across every bone (1.05: 5% looser)")
+	length := fs.Float64("length", 1, "multiply the fit's stretch along every bone")
+	previewDir := fs.String("preview-dir", "", "also write, per variant, static preview models of it in place on its body and of the bare body (for viewers such as cleanmodels-qt)")
 
 	var cf commonFlags
 	cf.register(fs)
@@ -51,6 +56,15 @@ func cmdVariants(args []string) int {
 	if err := cf.validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
 		return exitUsage
+	}
+	for _, f := range []struct {
+		name string
+		v    float64
+	}{{"width", *width}, {"length", *length}} {
+		if f.v < 0.5 || f.v > 2 {
+			fmt.Fprintf(os.Stderr, "cleanmodels: --%s %g: give a factor from 0.5 to 2\n", f.name, f.v)
+			return exitUsage
+		}
 	}
 	pos := fs.Args()
 	if len(pos) < 1 || len(pos) > 2 {
@@ -81,9 +95,25 @@ func cmdVariants(args []string) int {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
 		return exitUsage
 	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
-		return exitErrors
+	for _, d := range []string{outDir, *previewDir} {
+		if d == "" {
+			continue
+		}
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+			return exitErrors
+		}
+	}
+	if *previewDir != "" && o.jsonLines {
+		// The source in place on its own body, to compare the variants with.
+		evt := Event{Type: "source", File: filepath.Base(input), Source: input, Target: srcPrefix}
+		var r variantResult
+		writePreview(src, srcPrefix, src.Name, *previewDir, superDirs, &r)
+		evt.Preview, evt.Body = r.Preview, r.Body
+		if len(r.Warnings) > 0 {
+			evt.Message = strings.Join(r.Warnings, "; ")
+		}
+		emitEvent(evt)
 	}
 
 	suffix := src.Name[len(srcPrefix):]
@@ -96,12 +126,17 @@ func cmdVariants(args []string) int {
 		}
 		res := variantResult{Source: input, Target: target}
 		out, err := mdl.Variant(src, target, mdl.VariantOptions{
-			Locs: superDirs,
-			Warn: func(s string) { res.Warnings = append(res.Warnings, s) },
+			Locs:   superDirs,
+			Warn:   func(s string) { res.Warnings = append(res.Warnings, s) },
+			Width:  *width,
+			Length: *length,
 		})
 		if err == nil {
 			res.File = filepath.Join(outDir, name)
 			err = writeVariant(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
+		}
+		if err == nil && *previewDir != "" {
+			writePreview(out, target, target+suffix, *previewDir, superDirs, &res)
 		}
 		if err != nil {
 			res.Error = err.Error()
@@ -119,6 +154,7 @@ func cmdVariants(args []string) int {
 					r.Warnings = append(r.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: w})
 				}
 				evt.Type, evt.Output, evt.Result = "done", res.File, &r
+				evt.Preview, evt.Body = res.Preview, res.Body
 				if abs, err := filepath.Abs(res.File); err == nil {
 					evt.Output = abs
 				}
@@ -206,6 +242,39 @@ func writeVariant(m *mdl.Model, path, input string, compile, overwrite bool, sup
 		ResourceDirs:   resDirs,
 		Warn:           func(s string) { res.Warnings = append(res.Warnings, s) },
 	})
+}
+
+// writePreview writes m's preview models (mdl.VariantPreview) for the body
+// target to dir as <name>.fit.mdl and <name>.body.mdl, and records their
+// absolute paths in res. A preview that cannot be made is a warning: the
+// variant itself is written.
+func writePreview(m *mdl.Model, target, name, dir string, locs []string, res *variantResult) {
+	fit, body, notes, err := mdl.VariantPreview(m, target, locs)
+	if err != nil {
+		res.Warnings = append(res.Warnings, "no preview: "+err.Error())
+		return
+	}
+	res.Warnings = append(res.Warnings, notes...)
+	abs := func(p string) string {
+		if a, err := filepath.Abs(p); err == nil {
+			return a
+		}
+		return p
+	}
+	fitPath := filepath.Join(dir, strings.ToLower(name)+".fit.mdl")
+	bodyPath := filepath.Join(dir, strings.ToLower(name)+".body.mdl")
+	if err := mdl.WriteFile(fit, fitPath); err != nil {
+		res.Warnings = append(res.Warnings, "no preview: "+err.Error())
+		return
+	}
+	if err := mdl.WriteFile(body, bodyPath); err != nil {
+		res.Warnings = append(res.Warnings, "no preview body: "+err.Error())
+		bodyPath = ""
+	}
+	res.Preview = abs(fitPath)
+	if bodyPath != "" {
+		res.Body = abs(bodyPath)
+	}
 }
 
 func sameFile(a, b string) (bool, error) {

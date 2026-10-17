@@ -7,8 +7,8 @@ import (
 )
 
 // parse2DA reads a text 2DA V2.0 table: the column names, then each row's
-// values by lower-case column name. "****" (empty) is kept as is; quoted values
-// may contain spaces.
+// values by lower-case column name, and its row number under rowKey. "****"
+// (empty) is kept as is; quoted values may contain spaces.
 func parse2DA(data []byte) ([]map[string]string, error) {
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	if len(lines) == 0 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "2DA") {
@@ -28,7 +28,7 @@ func parse2DA(data []byte) ([]map[string]string, error) {
 			}
 			continue
 		}
-		row := map[string]string{}
+		row := map[string]string{rowKey: f[0]}
 		for i, c := range cols {
 			if i+1 < len(f) {
 				row[c] = f[i+1] // f[0] is the row number
@@ -38,6 +38,10 @@ func parse2DA(data []byte) ([]map[string]string, error) {
 	}
 	return rows, nil
 }
+
+// rowKey holds a parse2DA row's number (no column can be named so: names
+// have no spaces).
+const rowKey = "# row"
 
 func split2DALine(line string) []string {
 	var out []string

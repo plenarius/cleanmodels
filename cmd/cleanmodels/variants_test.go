@@ -146,6 +146,36 @@ func TestVariantsJSONLines(t *testing.T) {
 		t.Errorf("done event has no result: %v", done)
 	}
 
+	// With previews: a source event first, and the preview paths on done.
+	pv := filepath.Join(dir, "pv")
+	for _, name := range []string{"pmh0", "pmd0"} {
+		sk := &mdl.Model{Name: name, Classification: "CHARACTER", AnimationScale: 1, Nodes: []*mdl.Node{
+			{Name: name, Parent: "NULL", Orientation: mdl.Vec4{Z: 1}, Scale: 1},
+			{Name: "pelvis_g", Parent: name, Position: mdl.Vec3{Z: 1}, Orientation: mdl.Vec4{Z: 1}, Scale: 1},
+		}}
+		if err := mdl.WriteFile(sk, filepath.Join(dir, name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stdout, _ = captureStdio(t, func() {
+		code = cmdVariants([]string{"--json-lines", "--overwrite", "--to", "pmd0", "--preview-dir", pv, "--width", "1.05", src, out})
+	})
+	if code != exitOK || !strings.HasPrefix(stdout, `{"type":"source"`) {
+		t.Fatalf("exit %d, output %s: want a source event first", code, stdout)
+	}
+	for _, f := range []string{"pmh0_robe999.fit.mdl", "pmd0_robe999.fit.mdl", "pmd0_robe999.body.mdl"} {
+		if _, err := os.Stat(filepath.Join(pv, f)); err != nil {
+			t.Errorf("preview %s not written: %v", f, err)
+		}
+	}
+	if !strings.Contains(stdout, `"preview":"`+filepath.Join(pv, "pmd0_robe999.fit.mdl")+`"`) || strings.Contains(stdout, "no preview") {
+		t.Errorf("done event has no preview path: %s", stdout)
+	}
+	captureStdio(t, func() { code = cmdVariants([]string{"--width", "3", src, out}) })
+	if code != exitUsage {
+		t.Errorf("--width 3: exit %d, want a usage error", code)
+	}
+
 	// Again without --overwrite: an error event, still followed by the summary.
 	stdout, _ = captureStdio(t, func() { code = cmdVariants([]string{"--json-lines", "--to", "pmd0", src, out}) })
 	if code != exitErrors || !strings.Contains(stdout, `"type":"error"`) || !strings.Contains(stdout, `"message":"`) || !strings.Contains(stdout, `"0 of 1 variants written"`) {

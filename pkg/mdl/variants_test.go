@@ -225,6 +225,42 @@ func TestVariantRefitsBodyPart(t *testing.T) {
 		t.Error("source part was changed")
 	}
 
+	// Width and Length on top of the fit: x and y 1.1 times further from the
+	// centre, z below the hip 1.2 times further.
+	adj, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Width: 1.1, Length: 1.2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAdj := []Vec3{{0.1*1.5*1.1 + 0.01, 0, -0.2 * 0.75 * 1.2}, {0.01, 0.15 * 1.1, 0.05}, {0.01, 0, -0.4 * 0.75 * 1.2}}
+	for i, v := range adj.Nodes[1].Mesh.Verts {
+		if !near(v, wantAdj[i]) {
+			t.Errorf("Width/Length: vertex %d at %v, want %v", i, v, wantAdj[i])
+		}
+	}
+
+	// The preview: the thigh where the dwarf skeleton hangs it (lthigh_g at
+	// (-0.1, 0, 0.6)), and a body of the base parts found, without a thigh.
+	write(partTestModel("pmd0_shinl001", []Vec3{{0, 0, 0}, {0, 0, -0.1}, {0.1, 0, 0}}))
+	fit, body, notes, err := VariantPreview(out, "pmd0", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fit.Nodes) != 2 || fit.Nodes[1].Skin != nil {
+		t.Fatalf("fit has %d nodes, want the root and one plain mesh", len(fit.Nodes))
+	}
+	for i, v := range fit.Nodes[1].Mesh.Verts {
+		w := Vec3{want[i].X - 0.1, want[i].Y, want[i].Z + 0.6}
+		if !near(v, w) {
+			t.Errorf("fit vertex %d at %v, want %v", i, v, w)
+		}
+	}
+	if len(body.Nodes) != 2 || !near(body.Nodes[1].Mesh.Verts[1], Vec3{-0.1, 0, 0.2}) {
+		t.Errorf("body: %d nodes, want the root and the shin at lshin_g (-0.1, 0, 0.3)", len(body.Nodes))
+	}
+	if len(notes) != 1 || strings.Contains(notes[0], "pmd0_legl001") || strings.Contains(notes[0], "pmd0_belt001") || !strings.Contains(notes[0], "pmd0_chest001") {
+		t.Errorf("notes %q: want the missing base parts, without the thigh (the variant's slot) and the belt (not in a bare body)", notes)
+	}
+
 	// A skinned part needs its attach bone in both skeletons (these have no neck_g).
 	skinned := robeTestModel("pmh0_neck999", 1, 0.4, 0.4, true)
 	if _, err := Variant(skinned, "pmd0", VariantOptions{Locs: []string{dir}}); err == nil || !strings.Contains(err.Error(), "needs the skeletons pmh0 and pmd0 with neck_g") {
@@ -446,5 +482,23 @@ func TestVariantHDPartsMatchBeamdog(t *testing.T) {
 		if mean > 5 {
 			t.Errorf("pmd0_%s: %.2f cm from Beamdog's, want under 5", c.part, mean)
 		}
+	}
+}
+
+func TestRobeHides(t *testing.T) {
+	dir := t.TempDir()
+	table := "2DA V2.0\n\n   HIDECHEST HIDEHANDR HIDEHEAD\n0  1 0 0\n3  1 1 ****\n"
+	if err := os.WriteFile(filepath.Join(dir, "parts_robe.2da"), []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hidden, note := robeHides("pmd0_robe003", []string{dir})
+	if note != "" || !hidden["chest"] || !hidden["handr"] || hidden["head"] || len(hidden) != 2 {
+		t.Errorf("robe 3: hidden %v, note %q; want chest and right hand", hidden, note)
+	}
+	if hidden, note = robeHides("pmd0_robe039", []string{dir}); hidden != nil || !strings.Contains(note, "no row 39") {
+		t.Errorf("robe 39 (no row): hidden %v, note %q", hidden, note)
+	}
+	if hidden, note = robeHides("pmd0_chest003", []string{dir}); hidden != nil || note != "" {
+		t.Errorf("a chest is not a robe: hidden %v, note %q", hidden, note)
 	}
 }

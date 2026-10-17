@@ -47,6 +47,25 @@ type VariantOptions struct {
 	// as described above (a missing skeleton, body part or bone), and what
 	// was done instead.
 	Warn func(string)
+
+	// Width and Length adjust the fit for a variant that needs a touch more
+	// or less room: Width multiplies the scale across every bone (1.05 makes
+	// a robe 5% looser than the fit, a part 5% wider), Length the stretch
+	// along every bone. Zero means 1. Feet, hands, shoulder pads and belts,
+	// which scale in all three directions, take Width in all three.
+	Width, Length float64
+}
+
+// factors returns opts' Width and Length, with zero as 1.
+func (o VariantOptions) factors() (width, length float64) {
+	width, length = o.Width, o.Length
+	if width == 0 {
+		width = 1
+	}
+	if length == 0 {
+		length = 1
+	}
+	return width, length
 }
 
 // boneTemplates are the models tried, after the source's own number, as the
@@ -91,7 +110,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		return nil, fmt.Errorf("%s has no node tree", src.Name)
 	}
 	if partAttachNode(src.Name) != "" {
-		return partVariant(src, srcPrefix, target, opts.Locs, warn)
+		return partVariant(src, srcPrefix, target, opts, warn)
 	}
 	kind := strings.TrimRight(partKind(src.Name), "_")
 	templates, ok := boneTemplates[kind]
@@ -160,6 +179,11 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		warn(fmt.Sprintf("skeleton %s or %s not found: shins and forearms keep their source length", srcPrefix, target))
 	}
 	axes := boneAxes(src, tmplNodes, bones, srcSkel, dstSkel)
+	width, length := opts.factors()
+	for b, ax := range axes {
+		ax.ratio *= length
+		axes[b] = ax
+	}
 	girth := bodyGirth(srcPrefix, target, opts.Locs, warn)
 	widen := cloakWidening(kind, src, srcPrefix, target, tmplW, opts.Locs, warn)
 
@@ -199,6 +223,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 					l = add3(l, scale3(ax.dir, (ax.ratio-1)*d))
 				}
 				g := girth.of(b)
+				g[0], g[1] = g[0]*width, g[1]*width
 				l = [3]float64{l[0] * g[0], l[1] * g[1], l[2]}
 				return bd.apply(l), true
 			})
@@ -226,6 +251,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 					d := dot3(l, ax.dir)
 					l = add3(l, scale3(ax.dir, (1/ax.ratio-1)*d))
 					g := girth.of(b)
+					g[0], g[1] = g[0]*width, g[1]*width
 					l = norm3([3]float64{l[0] / g[0], l[1] / g[1], l[2]})
 					return quatRotate(bd.rot, l), true
 				})
