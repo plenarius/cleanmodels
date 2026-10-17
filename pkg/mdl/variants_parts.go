@@ -20,6 +20,13 @@ import (
 //     elsewhere. Armour sits close to the body, so the full ratio is used,
 //     where robes take half.
 //
+// Skinned parts (Beamdog's HD parts) are bound to the creature skeleton:
+// each vertex is refitted that way in the space of every skeleton bone it is
+// weighted to (each bone with its own slot's base part), carried from the
+// source skeleton to the target's, and blended by its weights. Against
+// Beamdog's own race versions of their HD parts: 2.6 cm mean per vertex in
+// phenotype 0 and 3.4 cm in phenotype 2, against 5.4 and 5.2 cm unchanged.
+//
 // Feet, hands, shoulder pads and belts do not run along a bone; they scale
 // in all three directions by their base part. A bone's length is the offset
 // to its child joints only (the nodes body parts hang from, and the head):
@@ -32,6 +39,14 @@ import (
 // 0.8, chests 0.9, shins 1.1, belts 1.1, biceps 1.1, necks 1.2, pelvis 1.2,
 // shoulder pads 1.8) and 2.2 cm in phenotype 2, where the unchanged human
 // parts are 2 to 7 cm off.
+
+// skinGirthStrength is the share of the base parts' width ratio applied to
+// each bone of a skinned part. Rigid parts take all of it; a skinned part's
+// vertices blend several bones, and against Beamdog's own race versions of
+// their HD parts half fitted best (2.6 cm mean per vertex in phenotype 0,
+// 3.4 cm in phenotype 2, against 5.4 and 5.2 cm for the unchanged human part;
+// all of it gave 2.6 and 3.9 cm).
+const skinGirthStrength = 0.5
 
 // partScalesAllAxes are the slots that do not run along their bone.
 var partScalesAllAxes = map[string]bool{
@@ -55,44 +70,36 @@ func isBodyJoint(name string) bool {
 }
 
 // partVariant returns src, a body part for the body srcPrefix, refitted to
-// the body target. See the comment above.
+// the body target. See the comment above. Rigid meshes are refitted in the
+// space of the bone the part hangs from. Skins (Beamdog's HD parts) are
+// bound in game to the creature skeleton, so each vertex is refitted the same
+// way in the space of every skeleton bone it is weighted to, moved to the
+// target skeleton's bone, and blended by its weights.
 func partVariant(src *Model, srcPrefix, target string, locs []string, warn func(string)) (*Model, error) {
+	attach := partAttachNode(src.Name)
+	srcSkel, _ := loadSkeleton(srcPrefix, locs)
+	dstSkel, _ := loadSkeleton(target, locs)
+	newFits := func(strength float64) *boneFits {
+		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength}
+	}
+	rigidFit := newFits(1).of(attach, partKind(src.Name))
+	fits := newFits(skinGirthStrength)
+
+	hasSkin := false
 	for _, n := range src.Nodes {
-		if n.Skin != nil {
-			return nil, fmt.Errorf("%s has skinned meshes; variants of skinned body parts are not supported yet", src.Name)
+		if n.Skin != nil && n.Mesh != nil {
+			hasSkin = true
 		}
 	}
-	slot := partKind(src.Name)
-	bone := partAttachNode(src.Name)
-	allAxes := partScalesAllAxes[slot]
-
-	ax := boneAxis{dir: [3]float64{0, 0, 1}, ratio: 1}
-	if !allAxes {
-		srcSkel, _ := loadSkeleton(srcPrefix, locs)
-		dstSkel, _ := loadSkeleton(target, locs)
-		if a, ok := skeletonBoneAxis(srcSkel, dstSkel, bone); ok {
-			ax = a
-		} else {
-			warn(fmt.Sprintf("skeleton %s or %s not found, or %s has no child bone in it: the part keeps its length", srcPrefix, target, bone))
+	var srcAttach, dstAttach rigid
+	if hasSkin {
+		i, okS := skeletonIndex(srcSkel, attach)
+		j, okD := skeletonIndex(dstSkel, attach)
+		if !okS || !okD {
+			return nil, fmt.Errorf("%s is skinned: it needs the skeletons %s and %s with %s (pass the game install or the hak that has them)", src.Name, srcPrefix, target, attach)
 		}
-	}
-
-	// Scaling across the bone: p -> (p - ca) * g + cb on the scaled axes.
-	g := [3]float64{1, 1, 1}
-	base := slot + "001"
-	ca, sa, okA := partStats(srcPrefix+"_"+base, locs)
-	cb, sb, okB := partStats(target+"_"+base, locs)
-	if !okA || !okB {
-		warn(fmt.Sprintf("base body part %s_%s or %s_%s not found: the part keeps its width", srcPrefix, base, target, base))
-		ca, cb = [3]float64{}, [3]float64{}
-	} else {
-		for k := range g {
-			if (k < 2 || allAxes) && sa[k] > 1e-4 {
-				g[k] = sb[k] / sa[k]
-			} else {
-				ca[k], cb[k] = 0, 0
-			}
-		}
+		srcAttach = rigid{rot: srcSkel.rot[i], pos: srcSkel.pos[i]}
+		dstAttach = rigid{rot: dstSkel.rot[j], pos: dstSkel.pos[j]}
 	}
 
 	out := cloneForBody(src, srcPrefix, target)
@@ -103,14 +110,28 @@ func partVariant(src *Model, srcPrefix, target string, locs []string, warn func(
 		}
 		x := w.of(n.Name)
 		dst := out.Nodes[i]
+		skinned := n.Skin != nil
 		verts := make([]Vec3, len(n.Mesh.Verts))
 		for vi, v := range n.Mesh.Verts {
 			p := x.apply(vec3d(v))
-			if d := dot3(p, ax.dir); d > 0 {
-				p = add3(p, scale3(ax.dir, (ax.ratio-1)*d))
-			}
-			for k := range p {
-				p[k] = (p[k]-ca[k])*g[k] + cb[k]
+			if skinned {
+				var ws VertexWeight
+				if vi < len(n.Skin.Weights) {
+					ws = n.Skin.Weights[vi]
+				}
+				q := blendBones(srcAttach.apply(p), ws, func(b string, sp [3]float64) ([3]float64, bool) {
+					f := fits.of(b, "")
+					if !f.bound {
+						// Keep it with the part: the part's own fit, relative
+						// to the bone it hangs from.
+						fits.note("bone "+b+" is not in both skeletons", ": the vertices weighted to it move with the part")
+						return dstAttach.apply(rigidFit.point(srcAttach.unapply(sp))), true
+					}
+					return f.dst.apply(f.point(f.src.unapply(sp))), true
+				})
+				p = dstAttach.unapply(q)
+			} else {
+				p = rigidFit.point(p)
 			}
 			verts[vi] = vec3f(x.unapply(p))
 		}
@@ -119,14 +140,142 @@ func partVariant(src *Model, srcPrefix, target string, locs []string, warn func(
 			normals := make([]Vec3, len(n.Mesh.Normals))
 			for vi, nv := range n.Mesh.Normals {
 				l := quatRotate(x.rot, vec3d(nv))
-				l = add3(l, scale3(ax.dir, (1/ax.ratio-1)*dot3(l, ax.dir)))
-				l = norm3([3]float64{l[0] / g[0], l[1] / g[1], l[2] / g[2]})
+				if skinned {
+					var ws VertexWeight
+					if vi < len(n.Skin.Weights) {
+						ws = n.Skin.Weights[vi]
+					}
+					q := blendBones(quatRotate(srcAttach.rot, l), ws, func(b string, sn [3]float64) ([3]float64, bool) {
+						f := fits.of(b, "")
+						if !f.bound {
+							return quatRotate(dstAttach.rot, rigidFit.normal(quatRotate(quatConj(srcAttach.rot), sn))), true
+						}
+						return quatRotate(f.dst.rot, f.normal(quatRotate(quatConj(f.src.rot), sn))), true
+					})
+					l = quatRotate(quatConj(dstAttach.rot), norm3(q))
+				} else {
+					l = rigidFit.normal(l)
+				}
 				normals[vi] = vec3f(norm3(quatRotate(quatConj(x.rot), l)))
 			}
 			dst.Mesh.Normals = normals
 		}
 	}
 	return out, nil
+}
+
+// boneFit is one bone's refit in its own space: a stretch along the bone
+// (far side of the joint only), then a scale about the source base part's
+// centre ca to the target's cb, and, for skinned parts, the bone's source and
+// target skeleton transforms.
+type boneFit struct {
+	ax       boneAxis
+	g        [3]float64
+	ca, cb   [3]float64
+	src, dst rigid
+	bound    bool // src and dst are set: the bone is in both skeletons
+}
+
+func (f *boneFit) point(p [3]float64) [3]float64 {
+	if d := dot3(p, f.ax.dir); d > 0 {
+		p = add3(p, scale3(f.ax.dir, (f.ax.ratio-1)*d))
+	}
+	for k := range p {
+		p[k] = (p[k]-f.ca[k])*f.g[k] + f.cb[k]
+	}
+	return p
+}
+
+func (f *boneFit) normal(n [3]float64) [3]float64 {
+	n = add3(n, scale3(f.ax.dir, (1/f.ax.ratio-1)*dot3(n, f.ax.dir)))
+	return norm3([3]float64{n[0] / f.g[0], n[1] / f.g[1], n[2] / f.g[2]})
+}
+
+// boneFits works out and caches the fit of each bone.
+type boneFits struct {
+	srcPrefix, target string
+	locs              []string
+	srcSkel, dstSkel  *skeleton
+	warn              func(string)
+	cache             map[string]*boneFit
+	warned            map[string]bool
+	strength          float64 // share of the base parts' width ratio applied
+}
+
+// of returns the fit of bone, whose body part slot is slot ("" to look it up
+// from the bone: torso_g is the chest's, lthigh_g the left thigh's). For a
+// bone in both skeletons the fit also holds its skeleton transforms (bound).
+func (fs *boneFits) of(bone, slot string) *boneFit {
+	key := strings.ToLower(bone)
+	if f, ok := fs.cache[key]; ok {
+		return f
+	}
+	if slot == "" {
+		slot = slotOfBone(key)
+	}
+	f := &boneFit{ax: boneAxis{dir: [3]float64{0, 0, 1}, ratio: 1}, g: [3]float64{1, 1, 1}}
+	i, okS := skeletonIndex(fs.srcSkel, key)
+	j, okD := skeletonIndex(fs.dstSkel, key)
+	if okS && okD {
+		f.src = rigid{rot: fs.srcSkel.rot[i], pos: fs.srcSkel.pos[i]}
+		f.dst = rigid{rot: fs.dstSkel.rot[j], pos: fs.dstSkel.pos[j]}
+		f.bound = true
+	}
+	allAxes := partScalesAllAxes[slot]
+	if !allAxes {
+		if a, ok := skeletonBoneAxis(fs.srcSkel, fs.dstSkel, key); ok {
+			f.ax = a
+		} else if slot != "" {
+			fs.note("skeleton "+fs.srcPrefix+" or "+fs.target+" not found, or "+key+" has no child joint in it", ": the part keeps its length along "+key)
+		}
+	}
+	if slot != "" {
+		base := slot + "001"
+		ca, sa, okA := partStats(fs.srcPrefix+"_"+base, fs.locs)
+		cb, sb, okB := partStats(fs.target+"_"+base, fs.locs)
+		if !okA || !okB {
+			fs.note("base body part "+fs.srcPrefix+"_"+base+" or "+fs.target+"_"+base+" not found", ": the part keeps its width there")
+		} else {
+			for k := range f.g {
+				if (k < 2 || allAxes) && sa[k] > 1e-4 {
+					f.g[k] = 1 + fs.strength*(sb[k]/sa[k]-1)
+					f.ca[k], f.cb[k] = ca[k], ca[k]+fs.strength*(cb[k]-ca[k])
+				}
+			}
+		}
+	}
+	fs.cache[key] = f
+	return f
+}
+
+func (fs *boneFits) note(what, then string) {
+	if fs.warned == nil {
+		fs.warned = map[string]bool{}
+	}
+	if !fs.warned[what] {
+		fs.warned[what] = true
+		fs.warn(what + then)
+	}
+}
+
+// slotOfBone returns the body part slot that hangs from a skeleton bone
+// (chest for torso_g), or "" for a bone no part hangs from.
+func slotOfBone(bone string) string {
+	for slot, b := range partAttachNodes {
+		if b == bone {
+			return slot
+		}
+	}
+	return ""
+}
+
+// skeletonIndex returns a node's tree position in sk.
+func skeletonIndex(sk *skeleton, name string) (int, bool) {
+	if sk == nil {
+		return 0, false
+	}
+	i, ok := sk.index[strings.ToLower(name)]
+	return i, ok
 }
 
 // skeletonBoneAxis returns a bone's stretch from the race skeletons: the

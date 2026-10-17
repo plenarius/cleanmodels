@@ -37,7 +37,7 @@ func cmdVariants(args []string) int {
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels variants [flags] <model.mdl> [output-dir]\n\n")
-		fmt.Fprintf(os.Stderr, "Make a robe's or armour part's versions for other races and phenotypes:\npmh0_robe003.mdl gives pmd0_robe003.mdl, pme0_robe003.mdl and so on; pmh0_chest050.mdl\ngives pmd0_chest050.mdl and so on. Each version is fitted to that body using the race\nskeletons and stock base body parts (and, for robes, a stock robe of that body), all\nread from the game install (--game-dir) or --resource-dir. The output directory\ndefaults to the model's own. An existing file is not overwritten unless --overwrite\nis given.\n\n")
+		fmt.Fprintf(os.Stderr, "Make a robe's, cloak's or armour part's versions for other races and phenotypes:\npmh0_robe003.mdl gives pmd0_robe003.mdl, pme0_robe003.mdl and so on; pmh0_chest050.mdl\ngives pmd0_chest050.mdl and so on. Each version is fitted to that body using the race\nskeletons and stock base body parts (and, for robes and cloaks, a stock one of that\nbody), all read from the game install (--game-dir) or --resource-dir. The output directory\ndefaults to the model's own. An existing file is not overwritten unless --overwrite\nis given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
 	}
@@ -65,7 +65,8 @@ func cmdVariants(args []string) int {
 	var o procOpts
 	cf.apply(&o)
 
-	src, err := loadVariantSource(input)
+	superDirs, resDirs := lookupDirs(input, o)
+	src, err := loadVariantSource(input, superDirs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", wrapWithSuggestion(err, input))
 		return exitErrors
@@ -85,7 +86,6 @@ func cmdVariants(args []string) int {
 		return exitErrors
 	}
 
-	superDirs, resDirs := lookupDirs(input, o)
 	suffix := src.Name[len(srcPrefix):]
 	failed := 0
 	var results []variantResult
@@ -152,13 +152,15 @@ func variantTargets(list, srcPrefix string) ([]string, error) {
 	return targets, nil
 }
 
-func loadVariantSource(path string) (*mdl.Model, error) {
+// loadVariantSource reads the source model; a binary skinned body part is
+// decompiled with the skeletons found in dirs, so its bones are named.
+func loadVariantSource(path string, dirs []string) (*mdl.Model, error) {
 	bin, err := isBinaryMDL(path)
 	if err != nil {
 		return nil, err
 	}
 	if bin {
-		return mdl.DecompileFile(path)
+		return mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: dirs})
 	}
 	res, err := mdl.ParseFile(path)
 	if res == nil || res.Model == nil {

@@ -240,7 +240,7 @@ cleanmodels decompile -f mystery_file.bin output.mdl
 |---|---|---|
 | `--force` | `-f` | Treat input as binary even if auto-detection fails |
 
-### variants — a robe's or armour part's versions for other races and phenotypes
+### variants — a robe's, cloak's or armour part's versions for other races and phenotypes
 
 ```bash
 cleanmodels variants pmh0_robe200.mdl               # every race, phenotypes 0 and 2, next to the source
@@ -248,12 +248,13 @@ cleanmodels variants pmh0_chest200.mdl              # the same for an armour par
 cleanmodels variants --to pmd0,pmo0 --compile pmh0_robe200.mdl haks/robes/
 ```
 
-Robes and armour parts are made once per body: `pmh0_chest200` is worn by male humans in phenotype 0, `pmd0_chest200` by male dwarves, and so on. `variants` makes those from one model, fitted to each body with the game's own data; everything it reads comes from the game install (`--game-dir`, found by itself on usual Steam and GOG installs) or `--resource-dir`. Names, node names and the supermodel take the new prefix; bitmaps are kept, as in Bioware's own versions.
+Robes, cloaks and armour parts are made once per body: `pmh0_chest200` is worn by male humans in phenotype 0, `pmd0_chest200` by male dwarves, and so on. `variants` makes those from one model, fitted to each body with the game's own data; everything it reads comes from the game install (`--game-dir`, found by itself on usual Steam and GOG installs) or `--resource-dir`. Names, node names and the supermodel take the new prefix; bitmaps are kept, as in Bioware's own versions.
 
 - **Robes** take their bone positions from a stock robe of the target body (`pmd0_robe003`), stretch the cloth along each bone to the body's limb lengths (from the race skeletons), and widen or narrow it across each bone by half the difference in the stock body parts' width. A skirt follows the thighs, not the boots.
-- **Armour parts** (chest, pelvis, belt, neck, shoulders, biceps, forearms, hands, thighs, shins, feet) are stretched along the bone they hang from to the target skeleton's bone length and scaled across it to the target race's base body part for that slot (`pmd0_chest001`), about that part's centre. Feet, hands, shoulder pads and belts scale in all three directions. Skinned parts (Beamdog's HD parts) are not supported yet.
+- **Cloaks** are refitted like robes, with a stock cloak of the target body as the bone template (`pmd0_cloak_001`), and widened across the body with the chest.
+- **Armour parts** (chest, pelvis, belt, neck, shoulders, biceps, forearms, hands, thighs, shins, feet) are stretched along the bone they hang from to the target skeleton's bone length and scaled across it to the target race's base body part for that slot (`pmd0_chest001`), about that part's centre. Feet, hands, shoulder pads and belts scale in all three directions. Skinned parts (Beamdog's HD parts) are refitted the same way in the space of each skeleton bone they are weighted to, and blended by their weights.
 
-Checked against Bioware's own versions (the same meshes, refitted by Bioware), mean distance per vertex over every race and gender: robes 003, 004, 006 and 030 3.9 cm (phenotypes 0 and 2); armour parts 1.0 cm in phenotype 0 and 2.4 cm in phenotype 2 (2 to 5 part numbers per slot). Bioware also restyled some by hand (shorter sleeves on dwarves); `variants` keeps the source's design. Make male versions from a male model and female from a female one: the meshes differ. Test robes and armour in game from `override/` or a hak: a model loaded from `development/` shows its palette colours in the wrong places, even Bioware's own.
+Checked against Bioware's and Beamdog's own versions (the same meshes, refitted by them), mean distance per vertex over every race and gender: robes 003, 004, 006 and 030 3.9 cm (phenotypes 0 and 2); cloaks 001 to 007 2.9 cm in phenotype 0 and 4.7 cm in phenotype 2; armour parts 1.0 cm in phenotype 0 and 2.4 cm in phenotype 2 (2 to 5 part numbers per slot); Beamdog's skinned HD parts 2.6 cm in phenotype 0 and 3.4 cm in phenotype 2. Bioware also restyled some by hand (shorter sleeves on dwarves); `variants` keeps the source's design. Make male versions from a male model and female from a female one: the meshes differ. Test robes, cloaks and armour in game from `override/` or a hak: a model loaded from `development/` shows its palette colours in the wrong places, even Bioware's own.
 
 | Flag | Description |
 |---|---|
@@ -320,7 +321,7 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
 
-**Variants** — `variants` refits a robe or armour part made for one body to the other races and phenotypes, using the game's own skeletons, body parts and robes.
+**Variants** — `variants` refits a robe, cloak or armour part (also Beamdog's skinned HD parts) made for one body to the other races and phenotypes, using the game's own skeletons, body parts and robes.
 
 **Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
 

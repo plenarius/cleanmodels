@@ -225,9 +225,10 @@ func TestVariantRefitsBodyPart(t *testing.T) {
 		t.Error("source part was changed")
 	}
 
+	// A skinned part needs its attach bone in both skeletons (these have no neck_g).
 	skinned := robeTestModel("pmh0_neck999", 1, 0.4, 0.4, true)
-	if _, err := Variant(skinned, "pmd0", VariantOptions{Locs: []string{dir}}); err == nil || !strings.Contains(err.Error(), "skinned body parts are not supported yet") {
-		t.Errorf("skinned part: want a not-supported error, got %v", err)
+	if _, err := Variant(skinned, "pmd0", VariantOptions{Locs: []string{dir}}); err == nil || !strings.Contains(err.Error(), "needs the skeletons pmh0 and pmd0 with neck_g") {
+		t.Errorf("skinned part without its attach bone: want a clear error, got %v", err)
 	}
 }
 
@@ -361,5 +362,89 @@ func TestVariantCloakMatchesBioware(t *testing.T) {
 	t.Logf("pmd0_cloak_001 generated vs Bioware's: %.2f cm mean over %d vertices", mean, n)
 	if mean > 4 {
 		t.Errorf("%.2f cm from Bioware's, want under 4", mean)
+	}
+}
+
+// TestVariantRefitsSkinnedPart refits a skinned thigh piece bound to the
+// skeleton: one vertex on the thigh, one on the shin. Each follows its bone
+// from the pmh0 skeleton to the pmd0 one (thigh 0.4 -> 0.3, shin's foot 0.4
+// -> 0.2), in the frame of the bone the part hangs from (lthigh_g).
+func TestVariantRefitsSkinnedPart(t *testing.T) {
+	dir := t.TempDir()
+	for name, m := range map[string]*Model{"pmh0": skeletonTestModel("pmh0", 0.4), "pmd0": skeletonTestModel("pmd0", 0.2)} {
+		if name == "pmd0" {
+			m.FindNode("lshin_g").Position = Vec3{0, 0, -0.3}
+		}
+		if err := WriteFile(m, filepath.Join(dir, name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := partTestModel("pmh0_legl999", []Vec3{{0, 0, -0.2}, {0, 0, -0.6}, {0.1, 0, -0.1}})
+	g := src.Nodes[1]
+	g.Skin = &SkinData{Weights: []VertexWeight{
+		{Bones: []string{"lthigh_g"}, Weights: []float32{1}},
+		{Bones: []string{"lshin_g"}, Weights: []float32{1}},
+		{Bones: []string{"lthigh_g"}, Weights: []float32{1}},
+	}}
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(s string) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.Nodes[1].Mesh.Verts
+	// Vertex 0: 0.2 down the thigh, which is 0.75 as long: 0.15.
+	// Vertex 1: 0.2 below the knee (0.4 down the source thigh); the shin is
+	// half as long (foot 0.2 instead of 0.4) and the knee is at 0.3: 0.4.
+	// Vertex 2: above the hip joint's far side stays (0.1, 0, -0.1) * 0.75 in z.
+	want := []Vec3{{0, 0, -0.15}, {0, 0, -0.4}, {0.1, 0, -0.075}}
+	for i := range want {
+		if !near(got[i], want[i]) {
+			t.Errorf("vertex %d at %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestVariantHDPartsMatchBeamdog generates the dwarf versions of Beamdog's
+// skinned HD shin and chest from the human ones and compares them with
+// Beamdog's own dwarf versions. Needs the game install and the HD pheno
+// haks; skipped without them.
+func TestVariantHDPartsMatchBeamdog(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	patch := filepath.Join(home, ".local", "share", "Neverwinter Nights", "patch")
+	other, chest := filepath.Join(patch, "bdhd_pheno_other.hak"), filepath.Join(patch, "bdhd_pheno_chest.hak")
+	if findModelResource("pmh0_shinl003", []string{other}) == nil || findModelResource("pmh0_chest003", []string{chest}) == nil {
+		t.Skip("HD pheno haks not available")
+	}
+	if sk, _ := loadSkeleton("pmh0", []string{game}); sk == nil {
+		t.Skip("game install not available")
+	}
+	for _, c := range []struct{ part, hak string }{{"shinl003", other}, {"chest003", chest}} {
+		locs := []string{c.hak, game}
+		load := func(name string) *Model {
+			ref := findModelResource(name, locs)
+			data, err := ref.read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, err := DecompileWithOptions(bytes.NewReader(data), int64(len(data)), DecompileOptions{SkeletonDirs: []string{game}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return m
+		}
+		src, ref := load("pmh0_"+c.part), load("pmd0_"+c.part)
+		out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{game}, Warn: func(s string) { t.Errorf("%s: %s", c.part, s) }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mean, n := meanDistanceByUV(t, out, ref, false)
+		t.Logf("pmd0_%s (HD, skinned) generated vs Beamdog's: %.2f cm mean over %d vertices", c.part, mean, n)
+		// The unchanged human parts are 7.3 (shin) and 6.2 cm (chest) off.
+		if mean > 5 {
+			t.Errorf("pmd0_%s: %.2f cm from Beamdog's, want under 5", c.part, mean)
+		}
 	}
 }
