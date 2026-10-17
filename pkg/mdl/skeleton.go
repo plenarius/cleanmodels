@@ -127,16 +127,7 @@ func loadSkeleton(name string, locs []string) (*skeleton, error) {
 	if err != nil {
 		return nil, err
 	}
-	var model *Model
-	if len(data) >= 12 && binary.LittleEndian.Uint32(data[0:4]) == 0 {
-		model, err = Decompile(bytes.NewReader(data), int64(len(data)))
-	} else {
-		var res *ParseResult
-		res, err = Parse(bytes.NewReader(data))
-		if res != nil {
-			model = res.Model
-		}
-	}
+	model, err := readModelBytes(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", ref.id, err)
 	}
@@ -284,4 +275,16 @@ func ResolvePartBinding(modelName string, locs []string) (*PartBinding, error) {
 		b.Bones[name] = true
 	}
 	return b, nil
+}
+
+// readModelBytes reads a model from memory, binary or ASCII.
+func readModelBytes(data []byte) (*Model, error) {
+	if len(data) >= 12 && binary.LittleEndian.Uint32(data[0:4]) == 0 {
+		return Decompile(bytes.NewReader(data), int64(len(data)))
+	}
+	res, err := Parse(bytes.NewReader(data))
+	if res != nil {
+		return res.Model, err
+	}
+	return nil, err
 }
