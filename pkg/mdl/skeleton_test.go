@@ -569,3 +569,23 @@ func TestUnknownBoneInfluenceDropped(t *testing.T) {
 		t.Error("the vertex weighted neck_g 0.5 + ghost_g 0.5 should keep neck_g at 0.5, unnormalised")
 	}
 }
+
+// TestWeightListBlankEntry: NeverBlender writes a vertex with no weight as a
+// line of spaces inside a counted weights list. The engine reads that line as
+// an entry (only a truly empty line is skipped); we used to skip it, shifting
+// every later vertex's weights by one and reading the next node as weights.
+func TestWeightListBlankEntry(t *testing.T) {
+	src := strings.Replace(testNeckPartASCII, "    weights 3\n      neck_g 1.0\n      neck_g 0.5 head_g 0.5\n", "    weights 3\n      neck_g 1.0\n    \n\n", 1)
+	src = strings.ReplaceAll(src, "\n", "\r\n") // and with Windows line endings
+	res, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) > 0 {
+		t.Errorf("parse errors: %v", res.Errors)
+	}
+	w := res.Model.FindNode("ptx0_neck001g").Skin.Weights
+	if len(w) != 3 || len(w[0].Bones) != 1 || len(w[1].Bones) != 0 || len(w[2].Bones) != 2 || w[2].Bones[1] != "torso_g" {
+		t.Errorf("weights %+v; want neck_g / (none) / head_g+torso_g", w)
+	}
+}
