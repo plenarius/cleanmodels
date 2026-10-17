@@ -286,6 +286,12 @@ cleanmodels --check --fix-pivots input/ output/
 cleanmodels --decompile-only model.mdl output.mdl
 ```
 
+CleanModels 3's own command line is accepted too, so tools that still generate it (NeverBlender's "detect options" for an external decompiler) keep working: `-d` decompiles only, `-i`/`--indir` and `-o`/`--outdir` are the input and output folders (default the current folder; the output folder is created), `-p`/`--pattern` picks the files (default `*.mdl`), and `-c` sets the classification. As in CleanModels 3, results replace files of the same name in the output folder.
+
+```bash
+cleanmodels -d -i models -o ascii -p "c_*.mdl"
+```
+
 ## What it does
 
 cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edition, including all nine geometry node types (dummy, trimesh, danglymesh, skin, animmesh, emitter, light, reference, aabb) and their complete parameter sets.
