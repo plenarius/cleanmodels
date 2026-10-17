@@ -258,6 +258,28 @@ func (p *parser) nextLine() (string, bool) {
 	return "", false
 }
 
+// nextWeightLine reads the next entry of a counted weights list the way the
+// engine does (Parse<SkinVertexWeight>, 0x44fd00): a line that is truly empty
+// is skipped, but a line of only spaces or tabs is an entry, a vertex with no
+// weights. NeverBlender writes such a line for a vertex with no weight; skipping
+// it, as nextLine does, shifted every later vertex's weights by one and read
+// the next node's lines as weights. Comment lines stay skipped, as before.
+func (p *parser) nextWeightLine() (string, bool) {
+	for p.scanner.Scan() {
+		p.line++
+		raw := strings.TrimRight(p.scanner.Text(), "\r")
+		if raw == "" {
+			continue
+		}
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		return line, true
+	}
+	return "", false
+}
+
 func (p *parser) parse() {
 	for {
 		line, ok := p.nextLine()
@@ -1712,7 +1734,7 @@ func (p *parser) readWeightList(skin *SkinData, count int) {
 	ww := p.newListWarn()
 	defer ww.done()
 	for i := 0; i < count; i++ {
-		line, ok := p.nextLine()
+		line, ok := p.nextWeightLine()
 		if !ok {
 			break
 		}
