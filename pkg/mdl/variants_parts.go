@@ -79,8 +79,8 @@ func partVariant(src *Model, srcPrefix, target string, opts VariantOptions, warn
 	locs := opts.Locs
 	width, length := opts.factors()
 	attach := partAttachNode(src.Name)
-	srcSkel, _ := loadSkeleton(srcPrefix, locs)
-	dstSkel, _ := loadSkeleton(target, locs)
+	srcSkel, _ := loadBodySkeleton(srcPrefix, locs)
+	dstSkel, _ := loadBodySkeleton(target, locs)
 	newFits := func(strength float64) *boneFits {
 		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength, width: width, length: length}
 	}
@@ -233,11 +233,11 @@ func (fs *boneFits) of(bone, slot string) *boneFit {
 		}
 	}
 	if slot != "" {
-		base := slot + "001"
-		ca, sa, okA := partStats(fs.srcPrefix+"_"+base, fs.locs)
-		cb, sb, okB := partStats(fs.target+"_"+base, fs.locs)
+		na, nb := basePart(fs.srcPrefix, slot, fs.locs), basePart(fs.target, slot, fs.locs)
+		ca, sa, okA := partStats(na, fs.locs)
+		cb, sb, okB := partStats(nb, fs.locs)
 		if !okA || !okB {
-			fs.note("base body part "+fs.srcPrefix+"_"+base+" or "+fs.target+"_"+base+" not found", ": the part keeps its width there")
+			fs.note("base body part "+na+" or "+nb+" not found", ": the part keeps its width there")
 		} else {
 			for k := range f.g {
 				if (k < 2 || allAxes) && sa[k] > 1e-4 {

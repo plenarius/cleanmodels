@@ -14,25 +14,50 @@ import (
 // VariantPreview returns two static models for looking at the variant v (a
 // robe, cloak or body part made by Variant for the body target): fit, v
 // placed where the game shows it on that body, and body, the body's base
-// parts (part 001 of every slot but the belt and shoulders, and head 001) on
-// its skeleton, without the slot v replaces, or for a robe, without the parts
+// parts as the game picks them (part 001 of every slot but the belt and
+// shoulders, and head 001; see basePart) on its skeleton (bodySkeleton), with
+// the skeleton's own meshes, without the slot v replaces, or for a robe, without the parts
 // its row in parts_robe.2da hides. notes says what could not be shown that
 // way (a base part or the robe's row not found).
 func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, notes []string, err error) {
 	target = strings.ToLower(strings.TrimSpace(target))
-	sk, err := loadSkeleton(target, locs)
+	sk, err := loadBodySkeleton(target, locs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if sk == nil {
 		return nil, nil, nil, fmt.Errorf("skeleton %s not found; pass the game install or the hak that has it", target)
 	}
+	// Where each skeleton node is drawn. A robe or cloak carries its own
+	// copies of the bones, in the pose it is fitted in; the skeleton files
+	// do not always rest in that pose (a dwarf's root is as high as a
+	// human's, a mounted one rests as a rider). So for those, the body is
+	// posed on the model's copies: a node it has takes the copy's place, the
+	// others keep their skeleton offset from their parent.
+	pose := make([]rigid, len(sk.order))
+	robeLike := partAttachNode(v.Name) == ""
+	vw := newWorldTransforms(v)
+	for i, n := range sk.order {
+		own := rigid{rot: sk.rot[i], pos: sk.pos[i]}
+		pose[i] = own
+		if !robeLike {
+			continue
+		}
+		if r, ok := vw.lookup(n.Name); ok {
+			pose[i] = r
+			continue
+		}
+		if p, ok := sk.index[strings.ToLower(n.Parent)]; ok && p < i {
+			parent := rigid{rot: sk.rot[p], pos: sk.pos[p]}
+			pose[i] = pose[p].compose(parent.inverse().compose(own))
+		}
+	}
 	at := func(node string) (rigid, bool) {
 		i, ok := sk.attachIndex(node)
 		if !ok {
 			return rigid{}, false
 		}
-		return rigid{rot: sk.rot[i], pos: sk.pos[i]}, true
+		return pose[i], true
 	}
 
 	fit = newPreviewModel(v.Name + "_fit")
@@ -51,19 +76,6 @@ func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, n
 		n.Mesh.Diffuse, n.Mesh.Ambient = Vec3{0.6, 0.6, 0.6}, Vec3{0.6, 0.6, 0.6}
 	}
 
-	// A robe or cloak carries its own copies of the bones, in the pose the
-	// game fits it to; the race skeleton files sit at human height (a
-	// dwarf's root is as high as a human's). Move the body onto the robe's
-	// pelvis.
-	var shift [3]float64
-	if node := partAttachNode(v.Name); node == "" {
-		rp, okR := newWorldTransforms(v).lookup("pelvis_g")
-		sp, okS := at("pelvis_g")
-		if okR && okS {
-			shift = [3]float64{rp.pos[0] - sp.pos[0], rp.pos[1] - sp.pos[1], rp.pos[2] - sp.pos[2]}
-		}
-	}
-
 	body = newPreviewModel(target + "_body")
 	skip := partKind(v.Name)
 	hidden, note := robeHides(v.Name, locs)
@@ -71,6 +83,13 @@ func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, n
 		notes = append(notes, note)
 	}
 	var missing []string
+	// A skeleton can carry meshes of its own (a wemic's lion body).
+	bakeNodes(body, sk.model, func(name string) rigid {
+		if i, ok := sk.index[strings.ToLower(name)]; ok {
+			return pose[i]
+		}
+		return rigid{rot: [4]float64{0, 0, 0, 1}}
+	})
 	slots := make([]string, 0, len(partAttachNodes)+1)
 	for slot := range partAttachNodes {
 		if !previewAccessory[slot] {
@@ -87,7 +106,7 @@ func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, n
 		if slot == "head" {
 			node = "head_g"
 		}
-		name := target + "_" + slot + "001"
+		name := basePart(target, slot, locs)
 		ref := findModelResource(name, locs)
 		r, ok := at(node)
 		if ref == nil || !ok {
@@ -99,7 +118,6 @@ func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, n
 			missing = append(missing, name)
 			continue
 		}
-		r.pos = add3(r.pos, shift)
 		bakeInto(body, part, r)
 	}
 	if len(missing) > 0 {
@@ -160,26 +178,31 @@ func newPreviewModel(name string) *Model {
 	}
 }
 
-// bakeInto adds every mesh of m (walkmeshes aside) to dst as a plain mesh under dst's
-// root, its vertices and normals moved by the node's rest transform in m and
-// then by place.
+// bakeInto adds every rendered mesh of m (walkmeshes aside) to dst as a
+// plain mesh under dst's root, its vertices and normals moved by the node's
+// rest transform in m and then by place.
 func bakeInto(dst, m *Model, place rigid) {
 	w := newWorldTransforms(m)
+	bakeNodes(dst, m, func(name string) rigid { return place.compose(w.of(name)) })
+}
+
+// bakeNodes is bakeInto with each node's transform given by world.
+func bakeNodes(dst, m *Model, world func(name string) rigid) {
 	root := dst.Nodes[0].Name
 	for _, n := range m.Nodes {
-		if n.Mesh == nil || len(n.Mesh.Verts) == 0 || len(n.Mesh.Faces) == 0 || n.Aabb != nil {
+		if n.Mesh == nil || len(n.Mesh.Verts) == 0 || len(n.Mesh.Faces) == 0 || n.Aabb != nil || n.Mesh.Render == 0 {
 			continue
 		}
-		x := w.of(n.Name)
+		x := world(n.Name)
 		mesh := *n.Mesh
 		mesh.Verts = make([]Vec3, len(n.Mesh.Verts))
 		for i, v := range n.Mesh.Verts {
-			mesh.Verts[i] = vec3f(place.apply(x.apply(vec3d(v))))
+			mesh.Verts[i] = vec3f(x.apply(vec3d(v)))
 		}
 		if len(n.Mesh.Normals) > 0 {
 			mesh.Normals = make([]Vec3, len(n.Mesh.Normals))
 			for i, nv := range n.Mesh.Normals {
-				mesh.Normals[i] = vec3f(quatRotate(place.rot, quatRotate(x.rot, vec3d(nv))))
+				mesh.Normals[i] = vec3f(quatRotate(x.rot, vec3d(nv)))
 			}
 		}
 		mesh.CornerNormals, mesh.Tangents = nil, nil

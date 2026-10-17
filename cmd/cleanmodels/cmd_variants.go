@@ -7,31 +7,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
-// variantRaces are the races variants are made for, by the letter in the body
-// prefix: halfling, dwarf, elf, gnome, human (also half-elf), half-orc.
+// variantRaces are the stock races, by the letter in the body prefix:
+// halfling, dwarf, elf, gnome, human (also half-elf), half-orc. They are the
+// default targets when no bodies are found (no game install).
 const variantRaces = "adegho"
+
+// bodyPrefixRE matches a body prefix: p, gender, race letter, phenotype.
+var bodyPrefixRE = regexp.MustCompile(`^p[mf][a-z][0-9]+$`)
 
 // variantResult is one variant's outcome, as printed by --json and --json-lines.
 type variantResult struct {
-	Source   string   `json:"source"`
-	Target   string   `json:"target"`
-	File     string   `json:"file,omitempty"`
-	Preview  string   `json:"preview,omitempty"`
-	Body     string   `json:"body,omitempty"`
-	Warnings []string `json:"warnings,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	File   string `json:"file,omitempty"`
+	// SameShape is set when the variant is that body's, renamed (mdl.Body).
+	SameShape string   `json:"sameShape,omitempty"`
+	Preview   string   `json:"preview,omitempty"`
+	Body      string   `json:"body,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 func cmdVariants(args []string) int {
 	fs := flag.NewFlagSet("cleanmodels variants", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	to := fs.String("to", "", "comma-separated bodies to make variants for (pmd0,pme2,...); default: every race in phenotypes 0 and 2, same gender as the source")
+	to := fs.String("to", "", "comma-separated bodies to make variants for (pmd0,pme2,...); default: every body found (game install, --resource-dir) of the source's gender that has models of the source's kind")
+	listBodies := fs.Bool("list-bodies", false, "list the bodies found in the game install and --resource-dir, with their shape groups; given a model, the bodies it would get variants for (and its own)")
 	compile := fs.Bool("compile", false, "write compiled (binary) models instead of ASCII")
 	width := fs.Float64("width", 1, "multiply the fit's width across every bone (1.05: 5% looser)")
 	length := fs.Float64("length", 1, "multiply the fit's stretch along every bone")
@@ -41,7 +51,7 @@ func cmdVariants(args []string) int {
 	cf.register(fs)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: cleanmodels variants [flags] <model.mdl> [output-dir]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: cleanmodels variants [flags] <model.mdl> [output-dir]\n       cleanmodels variants --list-bodies [flags] [model.mdl]\n\n")
 		fmt.Fprintf(os.Stderr, "Make a robe's, cloak's or armour part's versions for other races and phenotypes:\npmh0_robe003.mdl gives pmd0_robe003.mdl, pme0_robe003.mdl and so on; pmh0_chest050.mdl\ngives pmd0_chest050.mdl and so on. Each version is fitted to that body using the race\nskeletons and stock base body parts (and, for robes and cloaks, a stock one of that\nbody), all read from the game install (--game-dir) or --resource-dir. The output directory\ndefaults to the model's own. An existing file is not overwritten unless --overwrite\nis given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
@@ -67,7 +77,16 @@ func cmdVariants(args []string) int {
 		}
 	}
 	pos := fs.Args()
-	if len(pos) < 1 || len(pos) > 2 {
+	if *listBodies && len(pos) == 0 {
+		var o procOpts
+		cf.apply(&o)
+		locs := append(append([]string{}, o.supermodelDirs...), o.resourceDirs...)
+		if g := resolveGameInstall(o.gameDir); g.dir != "" {
+			locs = append(locs, g.dir)
+		}
+		return printBodies(mdl.VariantBodies(locs), "", o)
+	}
+	if len(pos) < 1 || len(pos) > 2 || (*listBodies && len(pos) > 1) {
 		fs.Usage()
 		return exitUsage
 	}
@@ -86,14 +105,31 @@ func cmdVariants(args []string) int {
 		return exitErrors
 	}
 	srcPrefix := mdl.VariantPrefix(src.Name)
-	if srcPrefix == "" || len(srcPrefix) != 4 {
-		fmt.Fprintf(os.Stderr, "cleanmodels: %s: model %q is not named for a body (pmh0_robe003, pmh0_chest050)\n", input, src.Name)
+	kind := mdl.VariantKind(src.Name)
+	if !bodyPrefixRE.MatchString(srcPrefix) || kind == "" {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %s: model %q is not a robe, cloak or armour part named for a body (pmh0_robe003, pmh0_cloak_001, pmh0_chest050)\n", input, src.Name)
 		return exitErrors
 	}
-	targets, err := variantTargets(*to, srcPrefix)
+	bodies := mdl.VariantBodies(superDirs)
+	targets, err := variantTargets(*to, srcPrefix, kind, bodies)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
 		return exitUsage
+	}
+	if *listBodies {
+		var list []mdl.Body
+		for _, b := range bodies {
+			if b.Prefix == srcPrefix {
+				list = append([]mdl.Body{b}, list...)
+			} else if slices.Contains(targets, b.Prefix) {
+				list = append(list, b)
+			}
+		}
+		return printBodies(list, srcPrefix, o)
+	}
+	sameShape := map[string]string{}
+	for _, b := range bodies {
+		sameShape[b.Prefix] = b.SameShape
 	}
 	for _, d := range []string{outDir, *previewDir} {
 		if d == "" {
@@ -119,23 +155,59 @@ func cmdVariants(args []string) int {
 	suffix := src.Name[len(srcPrefix):]
 	failed := 0
 	var results []variantResult
+	// A body of the same shape as another (mdl.Body.SameShape) gets that
+	// body's variant, renamed: fitted once per shape.
+	type made struct {
+		m        *mdl.Model
+		warnings []string
+		err      error
+	}
+	fitted := map[string]made{}
+	fit := func(body string) made {
+		if f, ok := fitted[body]; ok {
+			return f
+		}
+		var f made
+		f.m, f.err = mdl.Variant(src, body, mdl.VariantOptions{
+			Locs:      superDirs,
+			OutputDir: outDir,
+			Warn:      func(s string) { f.warnings = append(f.warnings, s) },
+			Width:     *width,
+			Length:    *length,
+		})
+		fitted[body] = f
+		return f
+	}
 	for i, target := range targets {
 		name := target + suffix + ".mdl"
 		if o.jsonLines {
 			emitEvent(Event{Type: "start", File: name, Index: i + 1, Total: len(targets), Source: input, Target: target})
 		}
 		res := variantResult{Source: input, Target: target}
-		out, err := mdl.Variant(src, target, mdl.VariantOptions{
-			Locs:   superDirs,
-			Warn:   func(s string) { res.Warnings = append(res.Warnings, s) },
-			Width:  *width,
-			Length: *length,
-		})
+		var out *mdl.Model
+		var err error
+		switch rep := sameShape[target]; {
+		case rep == "" || *to != "" && !slices.Contains(targets, rep) && rep != srcPrefix:
+			// Its own shape, or one asked for alone: fit it itself.
+			f := fit(target)
+			out, err, res.Warnings = f.m, f.err, f.warnings
+		case rep == srcPrefix:
+			res.SameShape = rep
+			out = mdl.RenameBody(src, srcPrefix, target)
+		default:
+			res.SameShape = rep
+			f := fit(rep)
+			if f.err != nil {
+				err = fmt.Errorf("same shape as %s, which failed: %v", rep, f.err)
+			} else {
+				out = mdl.RenameBody(f.m, rep, target)
+			}
+		}
 		if err == nil {
 			res.File = filepath.Join(outDir, name)
 			err = writeVariant(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
 		}
-		if err == nil && *previewDir != "" {
+		if err == nil && *previewDir != "" && res.SameShape == "" {
 			writePreview(out, target, target+suffix, *previewDir, superDirs, &res)
 		}
 		if err != nil {
@@ -145,7 +217,7 @@ func cmdVariants(args []string) int {
 		}
 		results = append(results, res)
 		if o.jsonLines {
-			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target}
+			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target, SameShape: res.SameShape}
 			if res.Error != "" {
 				evt.Type, evt.Message = "error", res.Error
 			} else {
@@ -182,18 +254,27 @@ func cmdVariants(args []string) int {
 }
 
 // variantTargets returns the bodies to make variants for: the --to list, or
-// every race in phenotypes 0 and 2 of the source's gender, without the
-// source's own body.
-func variantTargets(list, srcPrefix string) ([]string, error) {
+// every body found of the source's gender that has models of its kind (robe,
+// cloak, chest, ...), without the source's own body. When none is found (no
+// game install), the stock races in phenotypes 0 and 2.
+func variantTargets(list, srcPrefix, kind string, bodies []mdl.Body) ([]string, error) {
 	var targets []string
 	if list != "" {
 		for _, t := range strings.Split(list, ",") {
 			t = strings.ToLower(strings.TrimSpace(t))
-			if len(t) != 4 || t[0] != 'p' || (t[1] != 'm' && t[1] != 'f') {
+			if !bodyPrefixRE.MatchString(t) {
 				return nil, fmt.Errorf("--to: %q is not a body prefix such as pmd0", t)
 			}
 			targets = append(targets, t)
 		}
+		return targets, nil
+	}
+	for _, b := range bodies {
+		if b.Gender == srcPrefix[1:2] && b.Slots[kind] > 0 && b.Prefix != srcPrefix {
+			targets = append(targets, b.Prefix)
+		}
+	}
+	if len(targets) > 0 {
 		return targets, nil
 	}
 	for _, race := range variantRaces {
@@ -205,6 +286,57 @@ func variantTargets(list, srcPrefix string) ([]string, error) {
 		}
 	}
 	return targets, nil
+}
+
+// printBodies prints bodies for --list-bodies: a JSON array (--json), one
+// JSON object per line (--json-lines), or a table. source, if set, is the
+// model's own body.
+func printBodies(bodies []mdl.Body, source string, o procOpts) int {
+	type entry struct {
+		mdl.Body
+		Source bool `json:"source,omitempty"`
+	}
+	list := make([]entry, len(bodies))
+	for i, b := range bodies {
+		list[i] = entry{b, b.Prefix == source}
+	}
+	switch {
+	case o.jsonOut:
+		b, _ := json.MarshalIndent(list, "", "  ")
+		fmt.Println(string(b))
+	case o.jsonLines:
+		for _, e := range list {
+			b, _ := json.Marshal(e)
+			fmt.Println(string(b))
+		}
+	default:
+		if len(list) == 0 {
+			fmt.Println("no bodies found: pass --game-dir or --resource-dir")
+			return exitOK
+		}
+		fmt.Printf("%-7s %-10s %-3s %-16s %6s  %s\n", "body", "race", "sex", "phenotype", "parts", "notes")
+		for _, e := range list {
+			var notes []string
+			if e.Source {
+				notes = append(notes, "source")
+			}
+			if e.SameShape != "" {
+				notes = append(notes, "same shape as "+e.SameShape)
+			}
+			if !e.Skeleton {
+				notes = append(notes, "no skeleton of its own: the game uses "+e.SkeletonFrom)
+			}
+			if e.PartsFrom != e.Prefix {
+				notes = append(notes, "base parts from "+e.PartsFrom)
+			}
+			ph := strconv.Itoa(e.Phenotype)
+			if e.PhenotypeName != "" {
+				ph += " " + e.PhenotypeName
+			}
+			fmt.Printf("%-7s %-10s %-3s %-16s %6d  %s\n", e.Prefix, e.RaceName, e.Gender, ph, e.Parts, strings.Join(notes, "; "))
+		}
+	}
+	return exitOK
 }
 
 // loadVariantSource reads the source model; a binary skinned body part is
@@ -292,6 +424,10 @@ func sameFile(a, b string) (bool, error) {
 func printVariantResult(r variantResult) {
 	if r.Error != "" {
 		fmt.Printf("%s  failed: %s\n", r.Target, r.Error)
+		return
+	}
+	if r.SameShape != "" {
+		fmt.Printf("%s  %s  (%s's fit: same shape)\n", r.Target, r.File, r.SameShape)
 		return
 	}
 	fmt.Printf("%s  %s\n", r.Target, r.File)

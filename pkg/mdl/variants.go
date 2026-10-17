@@ -3,6 +3,8 @@ package mdl
 import (
 	"fmt"
 	"math"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -48,12 +50,39 @@ type VariantOptions struct {
 	// was done instead.
 	Warn func(string)
 
+	// OutputDir, if set, is the folder the variants are written to. The
+	// file a variant is about to replace there (pmd0_robe200 in it, for
+	// pmh0_robe200 to pmd0) is not used as its bone template: it may be an
+	// earlier run's output, which would make each run depend on the last.
+	OutputDir string
+
 	// Width and Length adjust the fit for a variant that needs a touch more
 	// or less room: Width multiplies the scale across every bone (1.05 makes
 	// a robe 5% looser than the fit, a part 5% wider), Length the stretch
 	// along every bone. Zero means 1. Feet, hands, shoulder pads and belts,
 	// which scale in all three directions, take Width in all three.
 	Width, Length float64
+}
+
+// withoutDir returns locs without the folder dir ("" leaves them as they are).
+func withoutDir(locs []string, dir string) []string {
+	if dir == "" {
+		return locs
+	}
+	abs := func(p string) string {
+		if a, err := filepath.Abs(p); err == nil {
+			return filepath.Clean(a)
+		}
+		return filepath.Clean(p)
+	}
+	d := abs(dir)
+	out := make([]string, 0, len(locs))
+	for _, l := range locs {
+		if abs(l) != d {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // factors returns opts' Width and Length, with zero as 1.
@@ -103,7 +132,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	if srcPrefix == "" {
 		return nil, fmt.Errorf("%q does not start with a body prefix such as pmh0_", src.Name)
 	}
-	if len(target) != 4 || target[0] != 'p' {
+	if !bodyPrefix.MatchString(target) {
 		return nil, fmt.Errorf("target %q is not a body prefix such as pmd0", target)
 	}
 	if src.RootNode() == nil {
@@ -132,8 +161,23 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	// The target's bone copies, from a stock robe or cloak of that body.
 	var tmpl *Model
 	var tmplName string
-	for _, s := range append([]string{suffix}, templates...) {
-		ref := findModelResource(target+s, opts.Locs)
+	// After the source's number and the stock ones, any of that body's (a
+	// custom race may have other numbers).
+	candidates := append([]string{suffix}, templates...)
+	var others []string
+	for name := range listModels(opts.Locs) {
+		if strings.HasPrefix(name, target+"_"+kind) && VariantKind(name) == kind {
+			others = append(others, name[len(target):])
+		}
+	}
+	sort.Strings(others)
+	candidates = append(candidates, others...)
+	for _, s := range candidates {
+		locs := opts.Locs
+		if s == suffix {
+			locs = withoutDir(locs, opts.OutputDir)
+		}
+		ref := findModelResource(target+s, locs)
 		if ref == nil {
 			continue
 		}
@@ -146,7 +190,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		break
 	}
 	if tmpl == nil {
-		return nil, fmt.Errorf("no %s for %s to take the bones from (tried %s%s and %s%s to %s); pass the game install or a hak with them", kind, target, target, suffix, target, templates[0], templates[len(templates)-1])
+		return nil, fmt.Errorf("no %s of %s to take the bones from (no %s_%s* found); pass the game install or a hak with them", kind, target, target, kind)
 	}
 
 	srcW := newWorldTransforms(src)
@@ -173,8 +217,8 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		}
 	}
 
-	srcSkel, _ := loadSkeleton(srcPrefix, opts.Locs)
-	dstSkel, _ := loadSkeleton(target, opts.Locs)
+	srcSkel, _ := loadBodySkeleton(srcPrefix, opts.Locs)
+	dstSkel, _ := loadBodySkeleton(target, opts.Locs)
 	if srcSkel == nil || dstSkel == nil {
 		warn(fmt.Sprintf("skeleton %s or %s not found: shins and forearms keep their source length", srcPrefix, target))
 	}
@@ -391,8 +435,8 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 		default:
 			continue
 		}
-		a := partSpread(srcPrefix+"_"+part+"001", locs)
-		b := partSpread(target+"_"+part+"001", locs)
+		a := partSpread(basePart(srcPrefix, part, locs), locs)
+		b := partSpread(basePart(target, part, locs), locs)
 		if a == nil || b == nil || a[0] <= 0 || a[1] <= 0 {
 			missing = append(missing, part)
 			continue
@@ -529,6 +573,17 @@ func (r rigid) unapply(v [3]float64) [3]float64 {
 	return quatRotate(quatConj(r.rot), [3]float64{v[0] - r.pos[0], v[1] - r.pos[1], v[2] - r.pos[2]})
 }
 
+// compose returns r applied after s.
+func (r rigid) compose(s rigid) rigid {
+	return rigid{rot: quatMul(r.rot, s.rot), pos: r.apply(s.pos)}
+}
+
+// inverse returns the transform that undoes r.
+func (r rigid) inverse() rigid {
+	c := quatConj(r.rot)
+	return rigid{rot: c, pos: quatRotate(c, scale3(r.pos, -1))}
+}
+
 func newWorldTransforms(m *Model) worldTransforms {
 	c := newCompiler(m)
 	if root := m.RootNode(); root != nil {
@@ -598,8 +653,8 @@ func cloakWidening(kind string, src *Model, srcPrefix, target string, tmplW worl
 	if kind != "cloak" {
 		return cloakWiden{}
 	}
-	_, sa, okA := partStats(srcPrefix+"_chest001", locs)
-	cb, sb, okB := partStats(target+"_chest001", locs)
+	_, sa, okA := partStats(basePart(srcPrefix, "chest", locs), locs)
+	cb, sb, okB := partStats(basePart(target, "chest", locs), locs)
 	torso, okT := tmplW.lookup("torso_g")
 	if !okA || !okB || !okT || sa[0] <= 1e-4 {
 		warn(fmt.Sprintf("base chest %s_chest001 or %s_chest001, or the template's torso_g, not found: the cloak keeps its width", srcPrefix, target))

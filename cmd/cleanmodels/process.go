@@ -47,6 +47,8 @@ type Event struct {
 	// Preview and Body are a variant's preview models (variants --preview-dir).
 	Preview string `json:"preview,omitempty"`
 	Body    string `json:"body,omitempty"`
+	// SameShape: the variant is this body's fit, renamed (variants).
+	SameShape string `json:"sameShape,omitempty"`
 }
 
 type pivotOpts struct {

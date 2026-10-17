@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -114,7 +115,7 @@ func TestVariantRefitsToTargetBones(t *testing.T) {
 
 func TestVariantNeedsATemplate(t *testing.T) {
 	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
-	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe for pmd0") {
+	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe of pmd0") {
 		t.Errorf("want a missing-template error, got %v", err)
 	}
 	if _, err := Variant(&Model{Name: "robe003"}, "pmd0", VariantOptions{}); err == nil {
@@ -500,5 +501,66 @@ func TestRobeHides(t *testing.T) {
 	}
 	if hidden, note = robeHides("pmd0_chest003", []string{dir}); hidden != nil || note != "" {
 		t.Errorf("a chest is not a robe: hidden %v, note %q", hidden, note)
+	}
+}
+
+func TestVariantBodies(t *testing.T) {
+	dir := t.TempDir()
+	write := func(m *Model) {
+		if err := WriteFile(m, filepath.Join(dir, m.Name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	skel := func(name string, foot float32) {
+		sk := skeletonTestModel(name, foot)
+		write(sk)
+	}
+	// Humans: phenotype 15 (a fighting style) has the same skeleton and only
+	// robes; phenotype 2 the same skeleton but its own parts. Brownies (a
+	// custom race, b) have parts in phenotype 2 but no skeleton for it.
+	skel("pmh0", 0.4)
+	skel("pmh2", 0.4)
+	skel("pmh15", 0.4)
+	skel("pmb0", 0.2)
+	sq := []Vec3{{0, 0, 0}, {0.1, 0, 0}, {0, 0.1, 0}}
+	for _, n := range []string{"pmh0_legl001", "pmh0_belt001", "pmh0_robe003", "pmh2_legl001", "pmh2_robe003", "pmh15_robe003", "pmh15_robe004", "pmb0_legl001", "pmb2_legl001", "pmb2_legl002", "pmh0_head001"} {
+		write(partTestModel(n, sq))
+	}
+	writeFile("phenotype.2da", "2DA V2.0\n\n   Label DefaultPhenoType\n0  Normal 0\n2  Large 0\n15 Kensai 0\n")
+	writeFile("appearance.2da", "2DA V2.0\n\n   LABEL RACE MODELTYPE\n0  Dwarf D P\n1  Ogre c_ogre F\n2  Brownie** B P\n")
+
+	got := map[string]Body{}
+	var order []string
+	for _, b := range VariantBodies([]string{dir}) {
+		got[b.Prefix] = b
+		order = append(order, b.Prefix)
+	}
+	if want := []string{"pmh0", "pmh2", "pmh15", "pmb0", "pmb2"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("bodies %v, want %v (stock races first, heads not counted)", order, want)
+	}
+	h15 := got["pmh15"]
+	if h15.SameShape != "pmh0" || h15.PartsFrom != "pmh0" || h15.Slots["robe"] != 2 || h15.PhenotypeName != "Kensai" {
+		t.Errorf("pmh15: %+v; want same shape as pmh0, pmh0's parts, 2 robes, Kensai", h15)
+	}
+	if h2 := got["pmh2"]; h2.SameShape != "" || h2.PartsFrom != "pmh2" {
+		t.Errorf("pmh2 (same skeleton, its own parts, but no belt) is its own shape: %+v", h2)
+	}
+	b2 := got["pmb2"]
+	if b2.Skeleton || b2.SkeletonFrom != "pmb0" || b2.RaceName != "Brownie" || b2.Slots["legl"] != 2 || b2.SameShape != "" {
+		t.Errorf("pmb2: %+v; want no skeleton of its own (the game uses pmb0), Brownie, 2 thighs, its own shape", b2)
+	}
+	if n := basePart("pmh15", "legl", []string{dir}); n != "pmh0_legl001" {
+		t.Errorf("basePart(pmh15, legl) = %s, want pmh0_legl001 (DefaultPhenoType)", n)
+	}
+	if k := VariantKind("pmh0_cloak_012"); k != "cloak" {
+		t.Errorf("VariantKind(pmh0_cloak_012) = %q", k)
+	}
+	if k := VariantKind("pmh0_head001"); k != "" {
+		t.Errorf("VariantKind(pmh0_head001) = %q, want none", k)
 	}
 }

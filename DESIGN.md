@@ -171,6 +171,7 @@ Field rules:
 - `type` is always present and stable: `start`, `done`, `error`, `summary`, and `source` (`variants --preview-dir` only).
 - `file` is the model's base name (for `variants`, the version's).
 - `result` matches `Result` in `process.go` exactly. Only present on `done`.
+- `sameShape` (variants): this body got that body's fit, renamed (same skeleton joints and base parts); no preview is written for it.
 - `source`, `target`, `output` (absolute path of the file written), `preview` and `body` (absolute paths of the preview models; a preview that could not be made is a warning instead, and `body` can be missing) are only set by `variants`. On a `source` event, `message` holds its preview's notes, `; `-separated.
 - Empty arrays are omitted (`omitempty`); consumers must treat missing as empty.
 - `error` on `Result` is set if the file failed to process; other arrays may still be populated.
