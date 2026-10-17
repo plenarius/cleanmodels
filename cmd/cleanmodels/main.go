@@ -22,6 +22,7 @@ var subcommands = map[string]func([]string) int{
 	"compile":   cmdCompile,
 	"decompile": cmdDecompile,
 	"report":    cmdReport,
+	"robes":     cmdRobes,
 }
 
 func main() {
@@ -73,6 +74,7 @@ Commands:
   compile     Compile ASCII MDL to binary
   decompile   Decompile binary MDL to ASCII
   report      Submit a bug report with model files
+  robes       Make a robe's variants for other races and phenotypes
 
 Run 'cleanmodels <command> --help' for command-specific flags.
 Run 'cleanmodels --version' (or -v) for the version, commit, and build date.

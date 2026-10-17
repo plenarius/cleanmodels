@@ -240,6 +240,22 @@ cleanmodels decompile -f mystery_file.bin output.mdl
 |---|---|---|
 | `--force` | `-f` | Treat input as binary even if auto-detection fails |
 
+### robes — variants of a robe for other races and phenotypes
+
+```bash
+cleanmodels robes pmh0_robe200.mdl                  # every race, phenotypes 0 and 2, next to the source
+cleanmodels robes --to pmd0,pmo0 --compile pmh0_robe200.mdl haks/robes/
+```
+
+A robe is made once per body: `pmh0_robe200` is worn by male humans in phenotype 0, `pmd0_robe200` by male dwarves, and so on. `robes` makes those variants from one robe. Each variant takes its bone positions from a stock robe of that body (`pmd0_robe003`), stretches the cloth along each bone to the body's limb lengths (from the race skeletons), and widens or narrows it across each bone by half the difference in the stock body parts' width. A skirt follows the thighs, not the boots. Names, node names and the supermodel take the new prefix; bitmaps are kept, as in Bioware's own variants. Everything it reads comes from the game install (`--game-dir`, found by itself on usual Steam and GOG installs) or `--resource-dir`.
+
+Checked against Bioware's own variants of the stock robes 003, 004, 006 and 030 (the same meshes, refitted by Bioware): 3.9 cm mean distance per vertex over every race and gender in phenotypes 0 and 2. Bioware also restyled some by hand (shorter sleeves on dwarves); `robes` keeps the source's design. Make male variants from a male robe and female from a female one: the meshes differ. Test robes in game from `override/` or a hak: a robe loaded from `development/` shows its palette colours in the wrong places, even Bioware's own.
+
+| Flag | Description |
+|---|---|
+| `--to LIST` | Comma-separated bodies (`pmd0,pme2`). Default: halfling, dwarf, elf, gnome, human and half-orc in phenotypes 0 and 2, the source's gender, except the source's own body |
+| `--compile` | Write compiled (binary) models instead of ASCII |
+
 ### Common flags
 
 These flags work with all subcommands:
@@ -299,6 +315,8 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 **Validation** — 56 checks across structural integrity, geometry correctness (including skin bones and weights), parameter bounds, animation consistency, emitter configuration, and tile-specific rules.
 
 **Repair** — Walkmesh pivot point reconstruction, AABB tree rebuilding, tilefade slice computation, degenerate face removal, animation length clamping, and more.
+
+**Robe variants** — `robes` refits a robe made for one body to the other races and phenotypes, using the game's own skeletons, body parts and robes.
 
 **Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
 
