@@ -22,15 +22,16 @@ import (
 //     (the offset to its child bones; for shins and forearms, which have no
 //     child in a robe, the offset to the foot or hand in the race skeletons),
 //     and only on the far side of the joint;
-//   - across the bone (x and y) by half of how much wider or narrower the
+//   - across the bone (x and y) by part of how much wider or narrower the
 //     target race's stock body part on that bone is (chest, pelvis, thighs,
-//     arms). Shins take the thighs' value: a skirt hangs from the thighs, and
-//     dwarf boots would otherwise flare the hem.
+//     arms; see robeGirth). Shins take the thighs' value: a skirt hangs from
+//     the thighs, and dwarf boots would otherwise flare the hem.
 //
 // Normals go through the inverse transpose of the same maps. Checked against
 // Bioware's own variants of the stock robes 003, 004, 006 and 030 (same mesh,
 // vertices matched by their UVs): 3.9 cm mean distance over every race and
-// gender in phenotypes 0 and 2, against 4.7 cm for moving the bones alone and
+// gender in phenotypes 0 and 2 (and 1.8 cm against a server's hand-made
+// brownie versions), against 4.7 cm for moving the bones alone and
 // up to 33 cm for the unchanged human robe. In game (everything embedded in
 // a test module, which outranks Beamdog's HD patch haks), generated robes,
 // cloaks, classic and HD armour parts for human, dwarf, half-orc, elf and
@@ -55,6 +56,11 @@ type VariantOptions struct {
 	// pmh0_robe200 to pmd0) is not used as its bone template: it may be an
 	// earlier run's output, which would make each run depend on the last.
 	OutputDir string
+
+	// Shape, if set, narrows or widens the variant by body region after the
+	// fit: factors by ShapeRegions name (shoulders, chest, waist, hips, hem),
+	// 1 meaning unchanged. See variants_shape.go.
+	Shape map[string]float64
 
 	// Width and Length adjust the fit for a variant that needs a touch more
 	// or less room: Width multiplies the scale across every bone (1.05 makes
@@ -107,10 +113,25 @@ var boneTemplates = map[string][]string{
 	"cloak": {"_cloak_001", "_cloak_002", "_cloak_003", "_cloak_004", "_cloak_005", "_cloak_006", "_cloak_007"},
 }
 
-// girthStrength is the share of the body parts' width ratio applied
-// across each bone. Robes hang looser than skin; half the ratio fitted
-// Bioware's variants best (3.9 cm mean against 4.0 cm at full strength).
-const girthStrength = 0.5
+// robeGirth returns the across-bone scale of a robe for r, how much wider
+// the target body's base part is than the source's (target over source).
+// Robes hang looser than skin, so a body of about the same size passes on
+// three quarters of the difference; one half or twice as wide (a custom
+// race: a brownie, a half-ogre) all of it, blended in between (for r from
+// 1.3 to 2, and 1/1.3 to 1/2). Against Bioware's own race versions of the
+// stock robes 003, 004, 006 and 030: 3.89 cm mean per vertex (3.87 for half
+// the difference, the earlier rule). Against a server's hand-made custom
+// race versions of the same robes: brownies (110 robes, width 0.3 to 0.5 of
+// a human's) 1.77 cm, against 4.21 for half; half-ogres (108, 1.6 to 2.4
+// times) 7.05 cm, against 9.49.
+func robeGirth(r float64) float64 {
+	if r <= 0 {
+		return 1
+	}
+	t := (math.Abs(math.Log(r)) - math.Log(1.3)) / (math.Log(2) - math.Log(1.3))
+	t = math.Max(0, math.Min(1, t))
+	return 1 + (0.75+0.25*t)*(r-1)
+}
 
 // VariantPrefix returns the body prefix of a robe or body part model's name
 // (pmh0 for pmh0_robe003), or "" when the name does not start with one.
@@ -139,7 +160,11 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		return nil, fmt.Errorf("%s has no node tree", src.Name)
 	}
 	if partAttachNode(src.Name) != "" {
-		return partVariant(src, srcPrefix, target, opts, warn)
+		out, err := partVariant(src, srcPrefix, target, opts, warn)
+		if err == nil {
+			applyShape(out, target, opts.Shape, opts.Locs, warn)
+		}
+		return out, err
 	}
 	kind := strings.TrimRight(partKind(src.Name), "_")
 	templates, ok := boneTemplates[kind]
@@ -305,6 +330,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 			dst.Mesh.Normals = normals
 		}
 	}
+	applyShape(out, target, opts.Shape, opts.Locs, warn)
 	return out, nil
 }
 
@@ -441,7 +467,7 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 			missing = append(missing, part)
 			continue
 		}
-		g[bone] = [2]float64{1 + girthStrength*(b[0]/a[0]-1), 1 + girthStrength*(b[1]/a[1]-1)}
+		g[bone] = [2]float64{robeGirth(b[0] / a[0]), robeGirth(b[1] / a[1])}
 	}
 	for _, side := range []string{"l", "r"} {
 		if s, ok := g[side+"thigh_g"]; ok {

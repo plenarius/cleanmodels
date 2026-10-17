@@ -254,7 +254,7 @@ cleanmodels variants --list-bodies --resource-dir my_races.hak pmh0_robe200.mdl 
 
 Robes, cloaks and armour parts are made once per body: `pmh0_chest200` is worn by male humans in phenotype 0, `pmd0_chest200` by male dwarves, and so on. `variants` makes those from one model, fitted to each body with the game's own data; everything it reads comes from the game install (`--game-dir`, found by itself on usual Steam and GOG installs) or `--resource-dir`. Names, node names and the supermodel take the new prefix; bitmaps are kept, as in Bioware's own versions.
 
-- **Robes** take their bone positions from a stock robe of the target body (`pmd0_robe003`), stretch the cloth along each bone to the body's limb lengths (from the race skeletons), and widen or narrow it across each bone by half the difference in the stock body parts' width. A skirt follows the thighs, not the boots.
+- **Robes** take their bone positions from a stock robe of the target body (`pmd0_robe003`), stretch the cloth along each bone to the body's limb lengths (from the race skeletons), and widen or narrow it across each bone by three quarters of the difference in the stock body parts' width, all of it for a body half or twice as wide (a custom race). A skirt follows the thighs, not the boots.
 - **Cloaks** are refitted like robes, with a stock cloak of the target body as the bone template (`pmd0_cloak_001`), and widened across the body with the chest.
 - **Armour parts** (chest, pelvis, belt, neck, shoulders, biceps, forearms, hands, thighs, shins, feet) are stretched along the bone they hang from to the target skeleton's bone length and scaled across it to the target race's base body part for that slot (`pmd0_chest001`), about that part's centre. Feet, hands, shoulder pads and belts scale in all three directions. Skinned parts (Beamdog's HD parts) are refitted the same way in the space of each skeleton bone they are weighted to, and blended by their weights.
 
@@ -262,7 +262,7 @@ Checked against Bioware's and Beamdog's own versions (the same meshes, refitted 
 
 **Which bodies.** Without `--to`, `variants` makes a version for every body of the source's gender that has models of the same kind in the game install and the `--resource-dir` folders and haks: the six stock races, and any custom race whose parts you pass (named from `appearance.2da`); phenotypes 0 and 2 for armour parts; for robes and cloaks also the mounted phenotypes and any others that ship robes or cloaks (fighting styles), since each of those has its own copy. Bodies of the same shape (the same skeleton joints within 1 cm and the same base parts) are fitted once and the others get that fit, renamed: with the stock data a male robe goes to 35 other bodies, fitted 23 times. `--list-bodies` shows them. Skeletons and base parts are found the way the game finds them: a phenotype without a skeleton of its own uses the race's phenotype 0 skeleton, and a body part a phenotype lacks comes from its `phenotype.2da` `DefaultPhenoType`. A body whose robes have no legs (a centaur-like race) keeps the source's skirt where it was: give it its own design.
 
-If a version needs a touch more room (a body showing through), make that one again with `--to` and `--width` or `--length`, and `--overwrite`.
+If a version needs a touch more room (a body showing through), or another silhouette (narrower shoulders, a tighter waist), make that one again with `--to` and `--width`, `--length` or `--shape`, and `--overwrite`.
 
 Two things to know when you ship or test them:
 
@@ -276,6 +276,7 @@ Two things to know when you ship or test them:
 | `--compile` | Write compiled (binary) models instead of ASCII |
 | `--width F` | Multiply the fit's width across every bone (`1.05`: 5% looser, `0.95`: tighter); 0.5 to 2, default 1. Feet, hands, shoulder pads and belts take it in all three directions |
 | `--length F` | Multiply the fit's stretch along every bone; 0.5 to 2, default 1 |
+| `--shape LIST` | Narrow or widen by body region after the fit: `shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1` (factors 0.5 to 2). Each region's height and centre come from the body's joints; heights in between blend; vertices on the arms are left alone, so sleeves stay on them |
 | `--preview-dir DIR` | Also write, per variant, two static preview models to DIR: `<name>.fit.mdl` (the variant where the game shows it on its body) and `<name>.body.mdl` (that body's base parts, without the variant's slot, or for a robe without the parts its row in `parts_robe.2da` hides). With `--json-lines` the source gets the same, on its own body. cleanmodels-qt's *Make Variants* shows these |
 
 ### Common flags

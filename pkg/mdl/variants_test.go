@@ -564,3 +564,57 @@ func TestVariantBodies(t *testing.T) {
 		t.Errorf("VariantKind(pmh0_head001) = %q, want none", k)
 	}
 }
+
+func TestApplyShape(t *testing.T) {
+	m := &Model{Name: "pmh0_robe999", Classification: "CHARACTER", AnimationScale: 1}
+	add := func(n *Node) { n.Orientation = Vec4{0, 0, 1, 0}; n.Scale = 1; m.Nodes = append(m.Nodes, n) }
+	add(&Node{Name: "pmh0_robe999", Parent: "NULL"})
+	add(&Node{Name: "torso_g", Parent: "pmh0_robe999", Position: Vec3{0, 0, 1.2}})
+	add(&Node{Name: "lbicep_g", Parent: "torso_g", Position: Vec3{-0.2, 0, 0.3}})
+	add(&Node{Name: "rbicep_g", Parent: "torso_g", Position: Vec3{0.2, 0, 0.3}})
+	add(&Node{Name: "lthigh_g", Parent: "torso_g", Position: Vec3{-0.1, 0, -0.2}})
+	add(&Node{Name: "rthigh_g", Parent: "torso_g", Position: Vec3{0.1, 0, -0.2}})
+	mesh := NewMeshData()
+	mesh.Verts = []Vec3{
+		{0.3, 0.1, 1.5}, // cape at the shoulders
+		{0.2, 0, 1.35},  // chest
+		{0.2, 0, 1.2},   // waist
+		{0.35, 0, 1.3},  // sleeve
+		{0.25, 0, 0.1},  // hem
+		{0.25, 0, 0.55}, // halfway from hips (1.0) to hem (0.1)
+	}
+	mesh.TVerts = make([]Vec3, len(mesh.Verts))
+	mesh.Faces = []Face{{Verts: [3]int32{0, 1, 2}}, {Verts: [3]int32{3, 4, 5}}}
+	torso := VertexWeight{Bones: []string{"torso_g"}, Weights: []float32{1}}
+	add(&Node{Name: "robe", Parent: "pmh0_robe999", Mesh: mesh, Skin: &SkinData{Weights: []VertexWeight{
+		torso, torso, torso, {Bones: []string{"lbicep_g"}, Weights: []float32{1}}, torso, torso,
+	}}})
+
+	var warned []string
+	applyShape(m, "pmh0", map[string]float64{"shoulders": 0.5, "waist": 0.5, "hem": 1.5}, nil, func(s string) { warned = append(warned, s) })
+	if len(warned) > 0 {
+		t.Fatalf("warnings: %q", warned)
+	}
+	got := m.Nodes[len(m.Nodes)-1].Mesh.Verts
+	want := []Vec3{
+		{0.15, 0.05, 1.5}, // halved about the shoulder centre (0, 0)
+		{0.2, 0, 1.35},    // chest: its own region, factor 1
+		{0.1, 0, 1.2},     // halved about torso_g
+		{0.35, 0, 1.3},    // on the arm: unchanged
+		{0.375, 0, 0.1},   // hem 1.5 about the hips' centre
+		{0.3125, 0, 0.55}, // halfway: hips 1, hem 1.5 -> 1.25
+	}
+	for i := range want {
+		if !near(got[i], want[i]) {
+			t.Errorf("vertex %d at %v, want %v", i, got[i], want[i])
+		}
+	}
+	if _, err := ParseShape("waist=0.8, hem=1.1"); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []string{"belly=0.9", "waist=3", "waist"} {
+		if _, err := ParseShape(bad); err == nil {
+			t.Errorf("ParseShape(%q): want an error", bad)
+		}
+	}
+}

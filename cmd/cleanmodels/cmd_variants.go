@@ -45,6 +45,7 @@ func cmdVariants(args []string) int {
 	compile := fs.Bool("compile", false, "write compiled (binary) models instead of ASCII")
 	width := fs.Float64("width", 1, "multiply the fit's width across every bone (1.05: 5% looser)")
 	length := fs.Float64("length", 1, "multiply the fit's stretch along every bone")
+	shapeFlag := fs.String("shape", "", "narrow or widen by body region after the fit: shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1 (factors 0.5 to 2; sleeves stay on the arms)")
 	previewDir := fs.String("preview-dir", "", "also write, per variant, static preview models of it in place on its body and of the bare body (for viewers such as cleanmodels-qt)")
 
 	var cf commonFlags
@@ -75,6 +76,11 @@ func cmdVariants(args []string) int {
 			fmt.Fprintf(os.Stderr, "cleanmodels: --%s %g: give a factor from 0.5 to 2\n", f.name, f.v)
 			return exitUsage
 		}
+	}
+	shape, err := mdl.ParseShape(*shapeFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: --shape %v\n", err)
+		return exitUsage
 	}
 	pos := fs.Args()
 	if *listBodies && len(pos) == 0 {
@@ -174,6 +180,7 @@ func cmdVariants(args []string) int {
 			Warn:      func(s string) { f.warnings = append(f.warnings, s) },
 			Width:     *width,
 			Length:    *length,
+			Shape:     shape,
 		})
 		fitted[body] = f
 		return f
