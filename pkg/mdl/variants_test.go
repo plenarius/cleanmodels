@@ -54,7 +54,7 @@ func near(a, b Vec3) bool {
 	return math.Abs(float64(a.X-b.X)) < 1e-5 && math.Abs(float64(a.Y-b.Y)) < 1e-5 && math.Abs(float64(a.Z-b.Z)) < 1e-5
 }
 
-func TestRobeVariantRefitsToTargetBones(t *testing.T) {
+func TestVariantRefitsToTargetBones(t *testing.T) {
 	dir := t.TempDir()
 	// The target body: hips at 0.7 instead of 1.0, thigh 0.3 instead of 0.4,
 	// shin 0.3 instead of 0.4, and a foot half as far below the shin.
@@ -69,7 +69,7 @@ func TestRobeVariantRefitsToTargetBones(t *testing.T) {
 	}
 	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
 	var warnings []string
-	out, err := RobeVariant(src, "pmd0", RobeOptions{Locs: []string{dir}, Warn: func(s string) { warnings = append(warnings, s) }})
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(s string) { warnings = append(warnings, s) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,22 +112,22 @@ func TestRobeVariantRefitsToTargetBones(t *testing.T) {
 	}
 }
 
-func TestRobeVariantNeedsATemplate(t *testing.T) {
+func TestVariantNeedsATemplate(t *testing.T) {
 	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
-	if _, err := RobeVariant(src, "pmd0", RobeOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe for pmd0") {
+	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe for pmd0") {
 		t.Errorf("want a missing-template error, got %v", err)
 	}
-	if _, err := RobeVariant(&Model{Name: "robe003"}, "pmd0", RobeOptions{}); err == nil {
+	if _, err := Variant(&Model{Name: "robe003"}, "pmd0", VariantOptions{}); err == nil {
 		t.Error("want an error for a name without a body prefix")
 	}
 }
 
-// TestRobeVariantMatchesBioware generates the dwarf robe 3 from the human
+// TestVariantMatchesBioware generates the dwarf robe 3 from the human
 // one and compares it with Bioware's own dwarf robe 3, vertex by vertex
 // (the same mesh: vertices matched by the UVs their faces use). The
 // prototype this was ported from measured 2.5 cm mean; generated robes look
 // right in game. Needs the game install; skipped without it.
-func TestRobeVariantMatchesBioware(t *testing.T) {
+func TestVariantMatchesBioware(t *testing.T) {
 	game := os.Getenv("NWN_ROOT")
 	if game == "" {
 		home, _ := os.UserHomeDir()
@@ -150,7 +150,7 @@ func TestRobeVariantMatchesBioware(t *testing.T) {
 	}
 	src, ref := load("pmh0_robe003"), load("pmd0_robe003")
 	var warnings []string
-	out, err := RobeVariant(src, "pmd0", RobeOptions{Locs: locs, Warn: func(s string) { warnings = append(warnings, s) }})
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, Warn: func(s string) { warnings = append(warnings, s) }})
 	if err != nil {
 		t.Fatal(err)
 	}

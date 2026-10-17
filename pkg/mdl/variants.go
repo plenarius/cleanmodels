@@ -13,7 +13,7 @@ import (
 // (pmd0_robe003) is the same mesh refitted to that body: the bone copies sit
 // where that body's are, and the cloth follows them.
 //
-// RobeVariant does the refit. For each vertex it blends, over the bones the
+// Variant does the refit. For each vertex it blends, over the bones the
 // vertex is weighted to, the vertex moved from the source bone to the target
 // bone, after two scalings in the bone's space:
 //   - along the bone, by how much longer or shorter the target's bone is
@@ -32,8 +32,8 @@ import (
 // up to 33 cm for the unchanged human robe. Generated dwarf and half-orc robes
 // look like Bioware's in game while idle, casting, sitting and walking.
 
-// RobeOptions configures RobeVariant.
-type RobeOptions struct {
+// VariantOptions configures Variant.
+type VariantOptions struct {
 	// Locs are searched, in order, for the target's bone template (a stock
 	// robe of the target body), the source and target skeletons and their
 	// stock body parts: directories, .hak/.erf/.mod archives or a game
@@ -50,27 +50,27 @@ type RobeOptions struct {
 // the target body's bone template: the stock robes that exist for every body.
 var robeTemplates = []string{"_robe003", "_robe004", "_robe005", "_robe006"}
 
-// robeGirthStrength is the share of the body parts' width ratio applied
+// girthStrength is the share of the body parts' width ratio applied
 // across each bone. Robes hang looser than skin; half the ratio fitted
 // Bioware's variants best (3.9 cm mean against 4.0 cm at full strength).
-const robeGirthStrength = 0.5
+const girthStrength = 0.5
 
-// RobePrefix returns the body prefix of a robe model's name (pmh0 for
+// VariantPrefix returns the body prefix of a robe model's name (pmh0 for
 // pmh0_robe003), or "" when the name does not start with one.
-func RobePrefix(name string) string { return partSkeletonName(name) }
+func VariantPrefix(name string) string { return partSkeletonName(name) }
 
-// RobeVariant returns a copy of src, a robe for one body, refitted to the body
+// Variant returns a copy of src, a robe for one body, refitted to the body
 // with prefix target (pmd0 for a male dwarf in phenotype 0). The copy is
 // named like src with the prefix replaced (pmh0_robe003 -> pmd0_robe003),
 // node names and the supermodel included. Bitmaps are kept, as in Bioware's
 // own variants.
-func RobeVariant(src *Model, target string, opts RobeOptions) (*Model, error) {
+func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	warn := opts.Warn
 	if warn == nil {
 		warn = func(string) {}
 	}
 	target = strings.ToLower(strings.TrimSpace(target))
-	srcPrefix := RobePrefix(src.Name)
+	srcPrefix := VariantPrefix(src.Name)
 	if srcPrefix == "" {
 		return nil, fmt.Errorf("%q does not start with a body prefix such as pmh0_", src.Name)
 	}
@@ -141,10 +141,10 @@ func RobeVariant(src *Model, target string, opts RobeOptions) (*Model, error) {
 	if srcSkel == nil || dstSkel == nil {
 		warn(fmt.Sprintf("skeleton %s or %s not found: shins and forearms keep their source length", srcPrefix, target))
 	}
-	axes := robeBoneAxes(src, tmplNodes, bones, srcSkel, dstSkel)
-	girth := robeGirth(srcPrefix, target, opts.Locs, warn)
+	axes := boneAxes(src, tmplNodes, bones, srcSkel, dstSkel)
+	girth := bodyGirth(srcPrefix, target, opts.Locs, warn)
 
-	out := cloneRobe(src, srcPrefix, target)
+	out := cloneForBody(src, srcPrefix, target)
 	// Bone copies (and any other node the template has) take the template's
 	// placement.
 	for _, n := range out.Nodes {
@@ -237,18 +237,18 @@ func blendBones(p [3]float64, ws VertexWeight, move func(bone string, p [3]float
 	return scale3(acc, 1/tot)
 }
 
-// robeAxis is a bone's stretch: unit direction in the bone's space and the
+// boneAxis is a bone's stretch: unit direction in the bone's space and the
 // target/source length ratio along it.
-type robeAxis struct {
+type boneAxis struct {
 	dir   [3]float64
 	ratio float64
 }
 
-// robeBoneAxes works out each bone's stretch from the offsets to its children
+// boneAxes works out each bone's stretch from the offsets to its children
 // (source robe against template robe); a bone with no child in the robe takes
 // it from the race skeletons (shin -> foot, forearm -> hand), and failing
 // that from its parent.
-func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcSkel, dstSkel *skeleton) map[string]robeAxis {
+func boneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcSkel, dstSkel *skeleton) map[string]boneAxis {
 	children := map[string][]*Node{}
 	parentOf := map[string]string{}
 	for _, n := range src.Nodes {
@@ -256,9 +256,9 @@ func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcS
 		children[p] = append(children[p], n)
 		parentOf[strings.ToLower(n.Name)] = p
 	}
-	fromOffsets := func(a, b [][3]float64) (robeAxis, bool) {
+	fromOffsets := func(a, b [][3]float64) (boneAxis, bool) {
 		if len(a) == 0 {
-			return robeAxis{}, false
+			return boneAxis{}, false
 		}
 		var sa, sb [3]float64
 		for i := range a {
@@ -266,9 +266,9 @@ func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcS
 		}
 		la, lb := len3(sa)/float64(len(a)), len3(sb)/float64(len(b))
 		if la < 1e-4 {
-			return robeAxis{}, false
+			return boneAxis{}, false
 		}
-		return robeAxis{dir: norm3(sa), ratio: lb / la}, true
+		return boneAxis{dir: norm3(sa), ratio: lb / la}, true
 	}
 	skelOffsets := func(name string) (a, b [][3]float64) {
 		if srcSkel == nil || dstSkel == nil {
@@ -286,9 +286,9 @@ func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcS
 		return a, b
 	}
 
-	axes := map[string]robeAxis{}
-	var get func(name string, depth int) robeAxis
-	get = func(name string, depth int) robeAxis {
+	axes := map[string]boneAxis{}
+	var get func(name string, depth int) boneAxis
+	get = func(name string, depth int) boneAxis {
 		if ax, ok := axes[name]; ok {
 			return ax
 		}
@@ -307,7 +307,7 @@ func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcS
 			ax, ok = fromOffsets(skelOffsets(name))
 		}
 		if !ok {
-			ax = robeAxis{dir: [3]float64{0, 0, 1}, ratio: 1}
+			ax = boneAxis{dir: [3]float64{0, 0, 1}, ratio: 1}
 			if p := parentOf[name]; p != "" && depth < 64 {
 				if _, isBone := tmpl[p]; isBone {
 					ax = get(p, depth+1)
@@ -323,10 +323,10 @@ func robeBoneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcS
 	return axes
 }
 
-// robeGirthScales holds the across-bone scale per bone (x, y).
-type robeGirthScales map[string][2]float64
+// girthScales holds the across-bone scale per bone (x, y).
+type girthScales map[string][2]float64
 
-func (g robeGirthScales) of(bone string) [2]float64 {
+func (g girthScales) of(bone string) [2]float64 {
 	if s, ok := g[bone]; ok {
 		return s
 	}
@@ -335,8 +335,8 @@ func (g robeGirthScales) of(bone string) [2]float64 {
 
 // robeGirth compares the source and target bodies' stock body parts (part
 // 001) on each bone: the spread of their vertices across the bone.
-func robeGirth(srcPrefix, target string, locs []string, warn func(string)) robeGirthScales {
-	g := robeGirthScales{}
+func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girthScales {
+	g := girthScales{}
 	var missing []string
 	for part, bone := range partAttachNodes {
 		switch part {
@@ -350,7 +350,7 @@ func robeGirth(srcPrefix, target string, locs []string, warn func(string)) robeG
 			missing = append(missing, part)
 			continue
 		}
-		g[bone] = [2]float64{1 + robeGirthStrength*(b[0]/a[0]-1), 1 + robeGirthStrength*(b[1]/a[1]-1)}
+		g[bone] = [2]float64{1 + girthStrength*(b[0]/a[0]-1), 1 + girthStrength*(b[1]/a[1]-1)}
 	}
 	for _, side := range []string{"l", "r"} {
 		if s, ok := g[side+"thigh_g"]; ok {
@@ -404,7 +404,7 @@ func partSpread(name string, locs []string) []float64 {
 // cloneRobe copies src with the body prefix renamed in the model, node and
 // parent names and the supermodel. Skin meshes are copied so their vertices
 // and normals can be replaced; everything else is shared with src.
-func cloneRobe(src *Model, from, to string) *Model {
+func cloneForBody(src *Model, from, to string) *Model {
 	rename := func(s string) string {
 		if len(s) > len(from) && strings.EqualFold(s[:len(from)+1], from+"_") {
 			return to + s[len(from):]

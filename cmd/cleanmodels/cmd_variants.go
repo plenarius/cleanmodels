@@ -12,12 +12,12 @@ import (
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
-// robeRaces are the races robes are made for, by the letter in the body
+// variantRaces are the races robes are made for, by the letter in the body
 // prefix: halfling, dwarf, elf, gnome, human (also half-elf), half-orc.
-const robeRaces = "adegho"
+const variantRaces = "adegho"
 
-// robeResult is one variant's outcome, as printed by --json and --json-lines.
-type robeResult struct {
+// variantResult is one variant's outcome, as printed by --json and --json-lines.
+type variantResult struct {
 	Source   string   `json:"source"`
 	Target   string   `json:"target"`
 	File     string   `json:"file,omitempty"`
@@ -25,8 +25,8 @@ type robeResult struct {
 	Error    string   `json:"error,omitempty"`
 }
 
-func cmdRobes(args []string) int {
-	fs := flag.NewFlagSet("cleanmodels robes", flag.ContinueOnError)
+func cmdVariants(args []string) int {
+	fs := flag.NewFlagSet("cleanmodels variants", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	to := fs.String("to", "", "comma-separated bodies to make variants for (pmd0,pme2,...); default: every race in phenotypes 0 and 2, same gender as the source")
@@ -36,7 +36,7 @@ func cmdRobes(args []string) int {
 	cf.register(fs)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: cleanmodels robes [flags] <robe.mdl> [output-dir]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: cleanmodels variants [flags] <model.mdl> [output-dir]\n\n")
 		fmt.Fprintf(os.Stderr, "Make a robe's variants for other races and phenotypes: pmh0_robe003.mdl gives\npmd0_robe003.mdl, pme0_robe003.mdl and so on. Each variant takes its bone positions\nfrom a stock robe of that body and is fitted using the race skeletons and stock body\nparts, all read from the game install (--game-dir) or --resource-dir. The output\ndirectory defaults to the robe's own. An existing file is not overwritten unless\n--overwrite is given.\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		fs.PrintDefaults()
@@ -65,17 +65,17 @@ func cmdRobes(args []string) int {
 	var o procOpts
 	cf.apply(&o)
 
-	src, err := loadRobe(input)
+	src, err := loadVariantSource(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", wrapWithSuggestion(err, input))
 		return exitErrors
 	}
-	srcPrefix := mdl.RobePrefix(src.Name)
+	srcPrefix := mdl.VariantPrefix(src.Name)
 	if srcPrefix == "" || len(srcPrefix) != 4 {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %s: model %q is not named like a robe for a body (pmh0_robe003)\n", input, src.Name)
 		return exitErrors
 	}
-	targets, err := robeTargets(*to, srcPrefix)
+	targets, err := variantTargets(*to, srcPrefix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
 		return exitUsage
@@ -88,16 +88,16 @@ func cmdRobes(args []string) int {
 	superDirs, resDirs := lookupDirs(input, o)
 	suffix := src.Name[len(srcPrefix):]
 	failed := 0
-	var results []robeResult
+	var results []variantResult
 	for _, target := range targets {
-		res := robeResult{Source: input, Target: target}
-		out, err := mdl.RobeVariant(src, target, mdl.RobeOptions{
+		res := variantResult{Source: input, Target: target}
+		out, err := mdl.Variant(src, target, mdl.VariantOptions{
 			Locs: superDirs,
 			Warn: func(s string) { res.Warnings = append(res.Warnings, s) },
 		})
 		if err == nil {
 			res.File = filepath.Join(outDir, target+suffix+".mdl")
-			err = writeRobe(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
+			err = writeVariant(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
 		}
 		if err != nil {
 			res.Error = err.Error()
@@ -109,7 +109,7 @@ func cmdRobes(args []string) int {
 			b, _ := json.Marshal(res)
 			fmt.Println(string(b))
 		} else if !o.jsonOut && !o.quiet {
-			printRobeResult(res)
+			printVariantResult(res)
 		} else if o.quiet && res.Error != "" {
 			fmt.Fprintf(os.Stderr, "%s: %s\n", target, res.Error)
 		}
@@ -126,10 +126,10 @@ func cmdRobes(args []string) int {
 	return exitOK
 }
 
-// robeTargets returns the bodies to make variants for: the --to list, or
+// variantTargets returns the bodies to make variants for: the --to list, or
 // every race in phenotypes 0 and 2 of the source's gender, without the
 // source's own body.
-func robeTargets(list, srcPrefix string) ([]string, error) {
+func variantTargets(list, srcPrefix string) ([]string, error) {
 	var targets []string
 	if list != "" {
 		for _, t := range strings.Split(list, ",") {
@@ -141,7 +141,7 @@ func robeTargets(list, srcPrefix string) ([]string, error) {
 		}
 		return targets, nil
 	}
-	for _, race := range robeRaces {
+	for _, race := range variantRaces {
 		for _, pheno := range "02" {
 			t := string([]rune{'p', rune(srcPrefix[1]), race, pheno})
 			if t != srcPrefix {
@@ -152,7 +152,7 @@ func robeTargets(list, srcPrefix string) ([]string, error) {
 	return targets, nil
 }
 
-func loadRobe(path string) (*mdl.Model, error) {
+func loadVariantSource(path string) (*mdl.Model, error) {
 	bin, err := isBinaryMDL(path)
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func loadRobe(path string) (*mdl.Model, error) {
 	return res.Model, nil
 }
 
-func writeRobe(m *mdl.Model, path, input string, compile, overwrite bool, superDirs, resDirs []string, res *robeResult) error {
+func writeVariant(m *mdl.Model, path, input string, compile, overwrite bool, superDirs, resDirs []string, res *variantResult) error {
 	if same, _ := sameFile(path, input); same {
 		return fmt.Errorf("%s is the input robe; give an output directory", path)
 	}
@@ -199,7 +199,7 @@ func sameFile(a, b string) (bool, error) {
 	return os.SameFile(sa, sb), nil
 }
 
-func printRobeResult(r robeResult) {
+func printVariantResult(r variantResult) {
 	if r.Error != "" {
 		fmt.Printf("%s  failed: %s\n", r.Target, r.Error)
 		return

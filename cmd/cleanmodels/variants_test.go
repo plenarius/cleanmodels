@@ -10,8 +10,8 @@ import (
 	"github.com/plenarius/cleanmodels/pkg/mdl"
 )
 
-func TestRobeTargets(t *testing.T) {
-	got, err := robeTargets("", "pmh0")
+func TestVariantTargets(t *testing.T) {
+	got, err := variantTargets("", "pmh0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,20 +19,20 @@ func TestRobeTargets(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("default targets for pmh0: %v, want %v", got, want)
 	}
-	if got, _ := robeTargets("", "pfe2"); len(got) != 11 || got[0] != "pfa0" {
+	if got, _ := variantTargets("", "pfe2"); len(got) != 11 || got[0] != "pfa0" {
 		t.Errorf("default targets for pfe2: %v", got)
 	}
-	if got, _ := robeTargets(" PMD0, pme2 ", "pmh0"); !reflect.DeepEqual(got, []string{"pmd0", "pme2"}) {
+	if got, _ := variantTargets(" PMD0, pme2 ", "pmh0"); !reflect.DeepEqual(got, []string{"pmd0", "pme2"}) {
 		t.Errorf("--to list: %v", got)
 	}
-	if _, err := robeTargets("dwarf", "pmh0"); err == nil {
+	if _, err := variantTargets("dwarf", "pmh0"); err == nil {
 		t.Error("want an error for a target that is not a body prefix")
 	}
 }
 
-// robeFixture writes a small robe (pmh0_robe999, one skin on two bones) and
+// variantFixture writes a small robe (pmh0_robe999, one skin on two bones) and
 // pmd0's copy of it, the bone template, with lower hips.
-func robeFixture(t *testing.T, dir string) string {
+func variantFixture(t *testing.T, dir string) string {
 	t.Helper()
 	write := func(name string, hip float32, skin bool) string {
 		m := &mdl.Model{Name: name, SuperModel: name[:4], Classification: "CHARACTER", AnimationScale: 1}
@@ -62,12 +62,12 @@ func robeFixture(t *testing.T, dir string) string {
 	return write("pmh0_robe999", 1, true)
 }
 
-func TestRobesCommandWritesVariants(t *testing.T) {
+func TestVariantsCommandWritesVariants(t *testing.T) {
 	dir := t.TempDir()
-	src := robeFixture(t, dir)
+	src := variantFixture(t, dir)
 	out := filepath.Join(dir, "out")
 	var code int
-	stdout, _ := captureStdio(t, func() { code = cmdRobes([]string{"--to", "pmd0", src, out}) })
+	stdout, _ := captureStdio(t, func() { code = cmdVariants([]string{"--to", "pmd0", src, out}) })
 	if code != exitOK {
 		t.Fatalf("exit %d: %s", code, stdout)
 	}
@@ -86,11 +86,11 @@ func TestRobesCommandWritesVariants(t *testing.T) {
 	}
 
 	// Again: the file exists now and is kept without --overwrite.
-	captureStdio(t, func() { code = cmdRobes([]string{"--to", "pmd0", src, out}) })
+	captureStdio(t, func() { code = cmdVariants([]string{"--to", "pmd0", src, out}) })
 	if code != exitErrors {
 		t.Errorf("second run without --overwrite: exit %d, want %d", code, exitErrors)
 	}
-	captureStdio(t, func() { code = cmdRobes([]string{"--overwrite", "--compile", "--to", "pmd0", src, out}) })
+	captureStdio(t, func() { code = cmdVariants([]string{"--overwrite", "--compile", "--to", "pmd0", src, out}) })
 	if code != exitOK {
 		t.Errorf("--overwrite --compile: exit %d", code)
 	}
@@ -99,11 +99,11 @@ func TestRobesCommandWritesVariants(t *testing.T) {
 	}
 }
 
-func TestRobesCommandMissingTemplate(t *testing.T) {
+func TestVariantsCommandMissingTemplate(t *testing.T) {
 	dir := t.TempDir()
-	src := robeFixture(t, dir)
+	src := variantFixture(t, dir)
 	var code int
-	stdout, _ := captureStdio(t, func() { code = cmdRobes([]string{"--to", "pme0", "--game-dir", dir, src, dir}) })
+	stdout, _ := captureStdio(t, func() { code = cmdVariants([]string{"--to", "pme0", "--game-dir", dir, src, dir}) })
 	if code != exitErrors || !strings.Contains(stdout, "no robe for pme0") {
 		t.Errorf("exit %d, output %q: want a failure naming the missing template", code, stdout)
 	}
