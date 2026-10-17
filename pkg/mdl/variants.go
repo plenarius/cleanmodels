@@ -29,8 +29,7 @@ import (
 // Bioware's own variants of the stock robes 003, 004, 006 and 030 (same mesh,
 // vertices matched by their UVs): 3.9 cm mean distance over every race and
 // gender in phenotypes 0 and 2, against 4.7 cm for moving the bones alone and
-// up to 33 cm for the unchanged human robe. Generated dwarf and half-orc robes
-// look like Bioware's in game while idle, casting, sitting and walking.
+// up to 33 cm for the unchanged human robe.
 
 // VariantOptions configures Variant.
 type VariantOptions struct {
