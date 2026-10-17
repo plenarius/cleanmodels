@@ -73,6 +73,9 @@ cleanmodels repair -a -r tiles/ repaired/
 
 # Decompile a binary MDL to ASCII
 cleanmodels decompile plc_torch.mdl plc_torch.mdl
+
+# Make a robe's versions for every other race and phenotype
+cleanmodels variants pmh0_robe200.mdl
 ```
 
 A repair lists every change it made, and compile and decompile work in both directions:
