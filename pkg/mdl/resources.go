@@ -20,8 +20,9 @@ import (
 //     resources are read out of the BIF files the key files list, which is where
 //     the stock body-part skeletons (pmh0, pfh0, ...) live.
 //
-// Only models (.mdl), materials (.mtr) and tables (.2da, for capart.2da) are
-// indexed from archives.
+// Only models (.mdl), materials (.mtr), tables (.2da, for capart.2da) and,
+// for variant previews, palette textures (.plt) and TGA images are indexed
+// from archives.
 
 const (
 	resTypeMDL uint16 = 2002
@@ -72,7 +73,9 @@ func openArchive(loc string) *archive {
 	return l.a
 }
 
-func wantedType(t uint16) bool { return t == resTypeMDL || t == resTypeMTR || t == resType2DA }
+func wantedType(t uint16) bool {
+	return t == resTypeMDL || t == resTypeMTR || t == resType2DA || t == resTypePLT || t == resTypeTGA
+}
 
 func readAt(path string, off, size int64) ([]byte, error) {
 	f, err := os.Open(path)
@@ -140,7 +143,7 @@ func readGameInstall(root string) (*archive, error) {
 	if entries, err := os.ReadDir(filepath.Join(root, "ovr")); err == nil {
 		for _, e := range entries {
 			ext := strings.ToLower(filepath.Ext(e.Name()))
-			typ, ok := map[string]uint16{".mdl": resTypeMDL, ".mtr": resTypeMTR, ".2da": resType2DA}[ext]
+			typ, ok := map[string]uint16{".mdl": resTypeMDL, ".mtr": resTypeMTR, ".2da": resType2DA, ".plt": resTypePLT, ".tga": resTypeTGA}[ext]
 			if e.IsDir() || !ok {
 				continue
 			}

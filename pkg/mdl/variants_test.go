@@ -242,7 +242,7 @@ func TestVariantRefitsBodyPart(t *testing.T) {
 	// The preview: the thigh where the dwarf skeleton hangs it (lthigh_g at
 	// (-0.1, 0, 0.6)), and a body of the base parts found, without a thigh.
 	write(partTestModel("pmd0_shinl001", []Vec3{{0, 0, 0}, {0, 0, -0.1}, {0.1, 0, 0}}))
-	fit, body, notes, err := VariantPreview(out, "pmd0", []string{dir})
+	fit, body, notes, err := VariantPreview(out, "pmd0", []string{dir}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,5 +616,43 @@ func TestApplyShape(t *testing.T) {
 		if _, err := ParseShape(bad); err == nil {
 			t.Errorf("ParseShape(%q): want an error", bad)
 		}
+	}
+}
+
+func TestPreviewTexture(t *testing.T) {
+	dir := t.TempDir()
+	out := t.TempDir()
+	// A 2x1 PLT: shade 255 of cloth 1, shade 0 of metal 1.
+	plt := append([]byte("PLT V1  \x0a\x00\x00\x00\x00\x00\x00\x00"), 2, 0, 0, 0, 1, 0, 0, 0, 255, 4, 0, 2)
+	if err := os.WriteFile(filepath.Join(dir, "pmh0_chest999.plt"), plt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The cloth palette: row 52 (from the top) is red at every shade.
+	pal := make([]byte, 18+256*176*4)
+	pal[2], pal[12], pal[13], pal[14], pal[16], pal[17] = 2, 0, 1, 176, 32, 8
+	for x := 0; x < 256; x++ {
+		off := 18 + ((175-52)*256+x)*4 // bottom-left origin
+		pal[off], pal[off+1], pal[off+2], pal[off+3] = 0, 0, 200, 255
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pal_cloth01.tga"), pal, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// pmd0_chest999 has no texture of its own: the game, and the preview,
+	// take the human's.
+	names := partTextureNames("pmd0_chest999", "somebitmap")
+	if want := []string{"pmd0_chest999", "pmh0_chest999", "somebitmap"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("texture names %v, want %v", names, want)
+	}
+	if got := previewTexture(names, []string{dir}, out, map[string]bool{}); got != "pmh0_chest999" {
+		t.Fatalf("previewTexture = %q", got)
+	}
+	tga, err := os.ReadFile(filepath.Join(out, "pmh0_chest999.tga"))
+	if err != nil || len(tga) != 18+2*4 {
+		t.Fatalf("TGA: %v, %d bytes", err, len(tga))
+	}
+	// BGRA: the cloth pixel red from the palette; metal 1's palette is not
+	// there, so grey shade 0 (black).
+	if got := tga[18:26]; !reflect.DeepEqual(got, []byte{0, 0, 200, 255, 0, 0, 0, 255}) {
+		t.Errorf("pixels %v", got)
 	}
 }

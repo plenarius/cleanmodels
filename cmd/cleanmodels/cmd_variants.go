@@ -388,7 +388,7 @@ func writeVariant(m *mdl.Model, path, input string, compile, overwrite bool, sup
 // absolute paths in res. A preview that cannot be made is a warning: the
 // variant itself is written.
 func writePreview(m *mdl.Model, target, name, dir string, locs []string, res *variantResult) {
-	fit, body, notes, err := mdl.VariantPreview(m, target, locs)
+	fit, body, notes, err := mdl.VariantPreview(m, target, locs, dir)
 	if err != nil {
 		res.Warnings = append(res.Warnings, "no preview: "+err.Error())
 		return

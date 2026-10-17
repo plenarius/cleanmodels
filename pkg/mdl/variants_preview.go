@@ -19,7 +19,12 @@ import (
 // the skeleton's own meshes, without the slot v replaces, or for a robe, without the parts
 // its row in parts_robe.2da hides. notes says what could not be shown that
 // way (a base part or the robe's row not found).
-func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, notes []string, err error) {
+//
+// When textureDir is set, the variant is textured as in game: its palette
+// texture (found by its name, as the game finds it; see partTextureNames) is
+// coloured with fixed preview colours and written there as <texture>.tga,
+// and the fit's meshes name it. The body is left untextured.
+func VariantPreview(v *Model, target string, locs []string, textureDir string) (fit, body *Model, notes []string, err error) {
 	target = strings.ToLower(strings.TrimSpace(target))
 	sk, err := loadBodySkeleton(target, locs)
 	if err != nil {
@@ -70,10 +75,22 @@ func VariantPreview(v *Model, target string, locs []string) (fit, body *Model, n
 		place = r
 	}
 	bakeInto(fit, v, place)
-	// Without its (PLT) textures the cloth would draw in the source's white;
-	// mid grey shows its shape under any light.
+	// Textured where its palette texture is found; mid grey otherwise (the
+	// source's white would hide its shape under the viewer's light).
+	written := map[string]bool{}
 	for _, n := range fit.Nodes[1:] {
-		n.Mesh.Diffuse, n.Mesh.Ambient = Vec3{0.6, 0.6, 0.6}, Vec3{0.6, 0.6, 0.6}
+		tex := ""
+		if textureDir != "" {
+			tex = previewTexture(partTextureNames(v.Name, n.Mesh.Bitmap), locs, textureDir, written)
+		}
+		if tex != "" {
+			n.Mesh.Bitmap = tex
+			n.Mesh.Diffuse, n.Mesh.Ambient = Vec3{1, 1, 1}, Vec3{0.8, 0.8, 0.8}
+		} else {
+			n.Mesh.Bitmap = "null"
+			n.Mesh.Diffuse, n.Mesh.Ambient = Vec3{0.6, 0.6, 0.6}, Vec3{0.6, 0.6, 0.6}
+		}
+		n.Mesh.Texture1, n.Mesh.Texture2, n.Mesh.MaterialName = "", "", ""
 	}
 
 	body = newPreviewModel(target + "_body")

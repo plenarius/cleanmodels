@@ -277,7 +277,7 @@ Two things to know when you ship or test them:
 | `--width F` | Multiply the fit's width across every bone (`1.05`: 5% looser, `0.95`: tighter); 0.5 to 2, default 1. Feet, hands, shoulder pads and belts take it in all three directions |
 | `--length F` | Multiply the fit's stretch along every bone; 0.5 to 2, default 1 |
 | `--shape LIST` | Narrow or widen by body region after the fit: `shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1` (factors 0.5 to 2). Each region's height and centre come from the body's joints; heights in between blend; vertices on the arms are left alone, so sleeves stay on them |
-| `--preview-dir DIR` | Also write, per variant, two static preview models to DIR: `<name>.fit.mdl` (the variant where the game shows it on its body) and `<name>.body.mdl` (that body's base parts, without the variant's slot, or for a robe without the parts its row in `parts_robe.2da` hides). With `--json-lines` the source gets the same, on its own body. cleanmodels-qt's *Make Variants* shows these |
+| `--preview-dir DIR` | Also write, per variant, two static preview models to DIR: `<name>.fit.mdl` (the variant where the game shows it on its body) and `<name>.body.mdl` (that body's base parts, without the variant's slot, or for a robe without the parts its row in `parts_robe.2da` hides). The variant is textured: its palette texture, found as the game finds it (see above), coloured with fixed colours and written there as a TGA. With `--json-lines` the source gets the same, on its own body. cleanmodels-qt's *Make Variants* shows these |
 
 ### Common flags
 
