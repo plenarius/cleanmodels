@@ -255,7 +255,14 @@ func TestVariantsBodyGroups(t *testing.T) {
 
 	out := filepath.Join(dir, "out")
 	stdout, _ = captureStdio(t, func() { code = cmdVariants([]string{"--json-lines", "--game-dir", dir, src, out}) })
-	if code != exitOK || !strings.Contains(stdout, `pmd15_robe999.mdl","sameShape":"pmd0"}`) || !strings.Contains(stdout, `"2 of 2 variants written"`) {
+	sameAs := ""
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["type"] == "done" && e["target"] == "pmd15" {
+			sameAs, _ = e["sameShape"].(string)
+		}
+	}
+	if code != exitOK || sameAs != "pmd0" || !strings.Contains(stdout, `"2 of 2 variants written"`) {
 		t.Fatalf("exit %d, output %s: want pmd0 and pmd15, pmd15 as pmd0's shape", code, stdout)
 	}
 	a, err1 := os.ReadFile(filepath.Join(out, "pmd0_robe999.mdl"))

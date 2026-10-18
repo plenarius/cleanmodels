@@ -31,6 +31,9 @@ type variantResult struct {
 	// LearnedFrom is how many existing versions of an armour part's slot its
 	// fit was learned from; 0 for the measured fit.
 	LearnedFrom int `json:"learnedFrom,omitempty"`
+	// Adjusts lists the adjustments that change this variant (width, length,
+	// shape regions; mdl.VariantAdjustments).
+	Adjusts []string `json:"adjusts,omitempty"`
 	// Action is what --dry-run would do: write, replace, or skip (exists).
 	Action string `json:"action,omitempty"`
 	// SameShape is set when the variant is that body's, renamed (mdl.Body).
@@ -176,7 +179,8 @@ func cmdVariants(args []string) int {
 	type made struct {
 		m        *mdl.Model
 		warnings []string
-		learned  int // pairs the fit was learned from (0: measured)
+		learned  int      // pairs the fit was learned from (0: measured)
+		adjusts  []string // the adjustments that change it
 		err      error
 	}
 	fitted := map[string]made{}
@@ -194,6 +198,9 @@ func cmdVariants(args []string) int {
 			Shape:     shape,
 			Learned:   func(pairs int) { f.learned = pairs },
 		})
+		if f.err == nil {
+			f.adjusts = mdl.VariantAdjustments(f.m, body, superDirs)
+		}
 		fitted[body] = f
 		return f
 	}
@@ -209,7 +216,7 @@ func cmdVariants(args []string) int {
 		case rep == "" || *to != "" && !slices.Contains(targets, rep) && rep != srcPrefix:
 			// Its own shape, or one asked for alone: fit it itself.
 			f := fit(target)
-			out, err, res.LearnedFrom = f.m, f.err, f.learned
+			out, err, res.LearnedFrom, res.Adjusts = f.m, f.err, f.learned, f.adjusts
 			res.Warnings = append([]string(nil), f.warnings...)
 		case rep == srcPrefix:
 			res.SameShape = rep
@@ -221,7 +228,7 @@ func cmdVariants(args []string) int {
 				err = fmt.Errorf("same shape as %s, which failed: %v", rep, f.err)
 			} else {
 				out = mdl.RenameBody(f.m, rep, target)
-				res.LearnedFrom = f.learned
+				res.LearnedFrom, res.Adjusts = f.learned, f.adjusts
 			}
 		}
 		if err == nil && *dryRun {
@@ -249,7 +256,7 @@ func cmdVariants(args []string) int {
 		}
 		results = append(results, res)
 		if o.jsonLines {
-			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target, SameShape: res.SameShape, LearnedFrom: res.LearnedFrom}
+			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target, SameShape: res.SameShape, LearnedFrom: res.LearnedFrom, Adjusts: res.Adjusts}
 			if res.Error != "" {
 				evt.Type, evt.Message = "error", res.Error
 			} else {

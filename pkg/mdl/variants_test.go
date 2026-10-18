@@ -612,6 +612,10 @@ func TestApplyShape(t *testing.T) {
 			t.Errorf("vertex %d at %v, want %v", i, got[i], want[i])
 		}
 	}
+	// Every region holds some of this robe; it runs along its bones.
+	if got, want := VariantAdjustments(m, "pmh0", nil), []string{"width", "length", "shoulders", "chest", "waist", "hips", "hem"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("adjustments %v, want %v", got, want)
+	}
 	if _, err := ParseShape("waist=0.8, hem=1.1"); err != nil {
 		t.Error(err)
 	}

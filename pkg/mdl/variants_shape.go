@@ -27,58 +27,64 @@ var armBones = map[string]bool{
 	"lhand_g": true, "rhand_g": true, "lshoulder_g": true, "rshoulder_g": true,
 }
 
-// shapeControl is one region: its height, centre (x, y) and factor.
+// shapeControl is one region: its name, height, centre (x, y) and factor.
 type shapeControl struct {
+	region       string
 	z, cx, cy, f float64
 }
 
-// applyShape scales out, a variant for the body target, by region. It
-// returns without change when every factor is 1.
-func applyShape(out *Model, target string, shape map[string]float64, locs []string, warn func(string)) {
-	changed := false
-	for _, f := range shape {
-		if f != 0 && f != 1 {
-			changed = true
-		}
-	}
-	if !changed {
-		return
-	}
-	factor := func(region string) float64 {
-		if f := shape[region]; f > 0 {
-			return f
-		}
-		return 1
-	}
+// shapeFrame places a model's regions: the transform from each mesh node to
+// the body's space and the regions' controls, top to bottom.
+type shapeFrame struct {
+	attach   string
+	world    func(n *Node) rigid
+	controls []shapeControl
+}
 
+// newShapeFrame places the regions for m, a variant for the body target, or
+// returns why it cannot.
+func newShapeFrame(m *Model, target string, locs []string) (*shapeFrame, string) {
 	// The model's space: a robe or cloak is drawn in its own (its bone
 	// copies give the joints); a body part hangs from its skeleton node.
-	w := newWorldTransforms(out)
+	w := newWorldTransforms(m)
 	place := rigid{rot: [4]float64{0, 0, 0, 1}}
-	attach := partAttachNode(out.Name)
+	attach := partAttachNode(m.Name)
 	var sk *skeleton
 	if attach != "" {
 		sk, _ = loadBodySkeleton(target, locs)
 		if sk == nil {
-			warn("shape: skeleton " + target + " not found: the shape is not applied")
-			return
+			return nil, "skeleton " + target + " not found"
 		}
 		i, ok := sk.attachIndex(attach)
 		if !ok {
-			warn("shape: skeleton " + target + " has no " + attach + ": the shape is not applied")
-			return
+			return nil, "skeleton " + target + " has no " + attach
 		}
 		place = rigid{rot: sk.rot[i], pos: sk.pos[i]}
 	}
+	// A robe's or cloak's own bone copies first; a joint it has no copy of
+	// (a cloak has no arms) from the body's skeleton, whose space a cloak's
+	// shares.
+	var fallback *skeleton
 	joint := func(name string) ([3]float64, bool) {
-		if sk != nil {
-			if i, ok := sk.index[name]; ok {
-				return sk.pos[i], true
+		if sk == nil {
+			if r, ok := w.lookup(name); ok {
+				return r.pos, true
+			}
+			if fallback == nil {
+				fallback, _ = loadBodySkeleton(target, locs)
+			}
+			if fallback == nil {
+				return [3]float64{}, false
+			}
+			if i, ok := fallback.index[name]; ok {
+				return fallback.pos[i], true
 			}
 			return [3]float64{}, false
 		}
-		r, ok := w.lookup(name)
-		return r.pos, ok
+		if i, ok := sk.index[name]; ok {
+			return sk.pos[i], true
+		}
+		return [3]float64{}, false
 	}
 	pair := func(a, b string) ([3]float64, bool) {
 		pa, okA := joint(a)
@@ -96,72 +102,104 @@ func applyShape(out *Model, target string, shape map[string]float64, locs []stri
 	shoulders, okS := pair("lbicep_g", "rbicep_g")
 	waist, okW := joint("torso_g")
 	if !okS || !okW || shoulders[2] <= waist[2] {
-		warn("shape: the model has no upper arm or torso_g bones above each other to place the regions by: the shape is not applied")
-		return
+		return nil, "the model has no upper arm or torso_g bones above each other to place the regions by"
 	}
-	controls := []shapeControl{
-		{shoulders[2], shoulders[0], shoulders[1], factor("shoulders")},
-		{(shoulders[2] + waist[2]) / 2, (shoulders[0] + waist[0]) / 2, (shoulders[1] + waist[1]) / 2, factor("chest")},
-		{waist[2], waist[0], waist[1], factor("waist")},
+	fr := &shapeFrame{attach: attach, world: func(n *Node) rigid { return place.compose(w.of(n.Name)) }}
+	fr.controls = []shapeControl{
+		{"shoulders", shoulders[2], shoulders[0], shoulders[1], 1},
+		{"chest", (shoulders[2] + waist[2]) / 2, (shoulders[0] + waist[0]) / 2, (shoulders[1] + waist[1]) / 2, 1},
+		{"waist", waist[2], waist[0], waist[1], 1},
 	}
 	low := waist
 	if hips, ok := pair("lthigh_g", "rthigh_g"); ok && hips[2] < waist[2] {
-		controls = append(controls, shapeControl{hips[2], hips[0], hips[1], factor("hips")})
+		fr.controls = append(fr.controls, shapeControl{"hips", hips[2], hips[0], hips[1], 1})
 		low = hips
 	}
-
-	// World transform of each mesh node, and the hem: the lowest vertex.
-	world := func(n *Node) rigid { return place.compose(w.of(n.Name)) }
+	// The hem: the lowest vertex.
 	hem := math.Inf(1)
-	for _, n := range out.Nodes {
+	for _, n := range m.Nodes {
 		if n.Mesh == nil || n.Aabb != nil {
 			continue
 		}
-		x := world(n)
+		x := fr.world(n)
 		for _, v := range n.Mesh.Verts {
 			hem = math.Min(hem, x.apply(vec3d(v))[2])
 		}
 	}
 	if hem < low[2]-1e-3 {
-		controls = append(controls, shapeControl{hem, low[0], low[1], factor("hem")})
+		fr.controls = append(fr.controls, shapeControl{"hem", hem, low[0], low[1], 1})
 	}
-	sort.Slice(controls, func(i, j int) bool { return controls[i].z > controls[j].z })
-	at := func(z float64) shapeControl {
-		if z >= controls[0].z {
-			return controls[0]
-		}
-		for i := 1; i < len(controls); i++ {
-			if z >= controls[i].z {
-				a, b := controls[i-1], controls[i]
-				t := (z - b.z) / (a.z - b.z)
-				return shapeControl{z, b.cx + t*(a.cx-b.cx), b.cy + t*(a.cy-b.cy), b.f + t*(a.f-b.f)}
-			}
-		}
-		return controls[len(controls)-1]
+	sort.Slice(fr.controls, func(i, j int) bool { return fr.controls[i].z > fr.controls[j].z })
+	return fr, ""
+}
+
+// at returns the blended control at height z, and the share each region has
+// in it (by index into controls).
+func (fr *shapeFrame) at(z float64) (shapeControl, [2]int, float64) {
+	cs := fr.controls
+	if z >= cs[0].z {
+		return cs[0], [2]int{0, 0}, 1
 	}
+	for i := 1; i < len(cs); i++ {
+		if z >= cs[i].z {
+			a, b := cs[i-1], cs[i]
+			t := (z - b.z) / (a.z - b.z)
+			return shapeControl{"", z, b.cx + t*(a.cx-b.cx), b.cy + t*(a.cy-b.cy), b.f + t*(a.f-b.f)}, [2]int{i - 1, i}, t
+		}
+	}
+	last := len(cs) - 1
+	return cs[last], [2]int{last, last}, 1
+}
+
+// armShare is the part of a vertex's weight on the arm bones.
+func armShare(n *Node, vi int) float64 {
+	if n.Skin == nil || vi >= len(n.Skin.Weights) {
+		return 0
+	}
+	ws := n.Skin.Weights[vi]
+	var on, tot float64
+	for i, b := range ws.Bones {
+		if i >= len(ws.Weights) || ws.Weights[i] <= 0 {
+			continue
+		}
+		tot += float64(ws.Weights[i])
+		if armBones[strings.ToLower(b)] {
+			on += float64(ws.Weights[i])
+		}
+	}
+	if tot == 0 {
+		return 0
+	}
+	return on / tot
+}
+
+// applyShape scales out, a variant for the body target, by region. It
+// returns without change when every factor is 1.
+func applyShape(out *Model, target string, shape map[string]float64, locs []string, warn func(string)) {
+	changed := false
+	for _, f := range shape {
+		if f != 0 && f != 1 {
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	fr, why := newShapeFrame(out, target, locs)
+	if fr == nil {
+		warn("shape: " + why + ": the shape is not applied")
+		return
+	}
+	for i := range fr.controls {
+		if f := shape[fr.controls[i].region]; f > 0 {
+			fr.controls[i].f = f
+		}
+	}
+	attach, world := fr.attach, fr.world
+	at := func(z float64) shapeControl { c, _, _ := fr.at(z); return c }
 
 	if armBones[attach] {
 		return // arm parts (upper arms, forearms, hands, shoulder pads) stay on the arm
-	}
-	armShare := func(n *Node, vi int) float64 {
-		if n.Skin == nil || vi >= len(n.Skin.Weights) {
-			return 0
-		}
-		ws := n.Skin.Weights[vi]
-		var on, tot float64
-		for i, b := range ws.Bones {
-			if i >= len(ws.Weights) || ws.Weights[i] <= 0 {
-				continue
-			}
-			tot += float64(ws.Weights[i])
-			if armBones[strings.ToLower(b)] {
-				on += float64(ws.Weights[i])
-			}
-		}
-		if tot == 0 {
-			return 0
-		}
-		return on / tot
 	}
 
 	for _, n := range out.Nodes {
@@ -223,4 +261,55 @@ func ParseShape(s string) (map[string]float64, error) {
 		shape[k] = f
 	}
 	return shape, nil
+}
+
+// minShapeShare is the least share of some vertex a region must have to count
+// as changing a model (VariantAdjustments).
+const minShapeShare = 0.25
+
+// VariantAdjustments lists the adjustments that change the variant m (made
+// for the body target): "width" always; "length" unless the part scales the
+// same in every direction (feet, hands, shoulder pads, belts); and each
+// ShapeRegions region that holds some of its vertices (not counting the
+// arms, which a shape leaves alone). For a GUI to offer only those.
+func VariantAdjustments(m *Model, target string, locs []string) []string {
+	adj := []string{"width"}
+	if !partScalesAllAxes[partKind(m.Name)] {
+		adj = append(adj, "length")
+	}
+	fr, _ := newShapeFrame(m, target, locs)
+	if fr == nil || armBones[fr.attach] {
+		return adj
+	}
+	used := make([]bool, len(fr.controls))
+	for _, n := range m.Nodes {
+		if n.Mesh == nil || n.Aabb != nil || n.Mesh.Render == 0 {
+			continue
+		}
+		x := fr.world(n)
+		for vi, v := range n.Mesh.Verts {
+			k := 1 - armShare(n, vi)
+			if k < 0.1 {
+				continue
+			}
+			_, idx, t := fr.at(x.apply(vec3d(v))[2])
+			// The region above takes t of the blend, the one below 1-t; a
+			// region counts where it has at least minShapeShare of a vertex
+			// (a foot's top is 13% "hips": not enough to offer the slider).
+			if idx[0] == idx[1] || k*t >= minShapeShare {
+				used[idx[0]] = true
+			}
+			if idx[0] != idx[1] && k*(1-t) >= minShapeShare {
+				used[idx[1]] = true
+			}
+		}
+	}
+	for _, r := range ShapeRegions {
+		for i, c := range fr.controls {
+			if c.region == r && used[i] {
+				adj = append(adj, r)
+			}
+		}
+	}
+	return adj
 }
