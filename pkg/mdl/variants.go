@@ -68,6 +68,10 @@ type VariantOptions struct {
 	// along every bone. Zero means 1. Feet, hands, shoulder pads and belts,
 	// which scale in all three directions, take Width in all three.
 	Width, Length float64
+
+	// noLearn keeps armour parts to the measured fit (no learnedSlotFit):
+	// for judging the learned fit against it.
+	noLearn bool
 }
 
 // withoutDir returns locs without the folder dir ("" leaves them as they are).

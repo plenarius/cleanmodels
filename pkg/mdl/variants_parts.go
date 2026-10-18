@@ -78,6 +78,13 @@ func isBodyJoint(name string) bool {
 func partVariant(src *Model, srcPrefix, target string, opts VariantOptions, warn func(string)) (*Model, error) {
 	locs := opts.Locs
 	width, length := opts.factors()
+	if !opts.noLearn {
+		// The race versions of this slot that exist show how it is done
+		// for this body (variants_learned.go).
+		if f := learnedSlotFit(srcPrefix, target, partKind(src.Name), locs); f != nil {
+			return learnedVariant(src, srcPrefix, target, f, width, length), nil
+		}
+	}
 	attach := partAttachNode(src.Name)
 	srcSkel, _ := loadBodySkeleton(srcPrefix, locs)
 	dstSkel, _ := loadBodySkeleton(target, locs)

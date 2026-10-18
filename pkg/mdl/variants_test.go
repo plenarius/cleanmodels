@@ -286,7 +286,8 @@ func TestVariantPartsMatchBioware(t *testing.T) {
 	}
 	for _, part := range []string{"legl005", "chest060", "handl005"} {
 		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
-		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
+		// The measured fit; the learned one is TestVariantLearnedMatchesBioware.
+		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -655,5 +656,49 @@ func TestPreviewTexture(t *testing.T) {
 	// there, so grey shade 0 (black).
 	if got := tga[18:26]; !reflect.DeepEqual(got, []byte{0, 0, 200, 255, 0, 0, 0, 255}) {
 		t.Errorf("pixels %v", got)
+	}
+}
+
+// TestVariantLearnedMatchesBioware predicts Bioware's dwarf versions of stock
+// parts as variants does, with each part's own pair left out of what is
+// learned: the learned fit where it is chosen for the slot, the measured fit
+// elsewhere. It must not be worse than the measured fit alone. Needs the
+// game install.
+func TestVariantLearnedMatchesBioware(t *testing.T) {
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		home, _ := os.UserHomeDir()
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	locs := []string{game}
+	if sk, _ := loadSkeleton("pmh0", locs); sk == nil {
+		t.Skip("game install not available")
+	}
+	var chosen, measured float64
+	used := 0
+	parts := []string{"legl005", "chest060", "handl005", "forel007", "shinl003", "neck004", "pelvis010", "bicepl005"}
+	for _, part := range parts {
+		slot, num := partKind("pmh0_"+part), strings.TrimLeft(part, "abcdefghijklmnopqrstuvwxyz")
+		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
+		meas, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, how := meas, "measured"
+		if f := learnSlot("pmh0", "pmd0", slot, locs, num); f != nil {
+			out, how = learnedVariant(src, "pmh0", "pmd0", f, 1, 1), fmt.Sprintf("learned from %d other pairs", f.pairs)
+			used++
+		}
+		if err := Compile(out, &bytes.Buffer{}); err != nil {
+			t.Fatalf("%s: compile: %v", part, err)
+		}
+		c, m := pairDistance(out, ref, nil)*100, pairDistance(meas, ref, nil)*100
+		t.Logf("pmd0_%s vs Bioware's: %.2f cm (%s), measured %.2f cm", part, c, how, m)
+		chosen += c / float64(len(parts))
+		measured += m / float64(len(parts))
+	}
+	t.Logf("mean: %.2f cm with learned fits for %d of %d slots, measured %.2f cm", chosen, used, len(parts), measured)
+	if used == 0 || chosen > measured {
+		t.Errorf("learned fits used for %d slots, %.2f cm against %.2f cm measured", used, chosen, measured)
 	}
 }
