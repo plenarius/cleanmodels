@@ -36,3 +36,15 @@ NWN community modders who build, fix, and maintain 3D model files (.mdl) for Nev
 3. **Approachable complexity** — Deep options exist (pivot repair, tilefade slicing, walkmesh material remapping) but the default "all fixes" path should produce a good result without configuration. Subcommands group complexity so the common path is simple.
 4. **Explain what changed** — Every fix, warning, and repair should produce a human-readable message. The JSON-lines protocol is the contract between CLI and GUI.
 5. **Stay focused** — NWN MDL files only. No scope creep into other formats, game engines, or unrelated tooling.
+
+## Python port of the decompiler
+
+`python/cleanmodels` is a Python port of the decompiler and ASCII writer
+(`binary.go`, `writer.go` and what they use), for tools that can't ship the Go
+binary, such as Neverblender in Blender. It must write exactly what `cleanmodels
+decompile` writes. **A change to the decompiler, the writer, or anything they
+call needs the same change in `python/`**; CI's `python` job runs
+`python/parity_test.py` against the Go build of the same commit and fails
+otherwise. See `python/README.md` for the file-by-file mapping. Float formatting
+is ported from the Go release in `go.mod` (Go 1.26 uses Dragonbox); a Go upgrade
+that changes `strconv` shows up in the parity test's float check.
