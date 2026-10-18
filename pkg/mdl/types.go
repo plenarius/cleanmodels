@@ -9,6 +9,10 @@
 //   - EE extensions: plenarius/cleanmodels/load_binary.pl
 //   - ASCII parameters: plenarius/cleanmodels/load_models.pl paramtype/3 (lines 648-898)
 //   - ASCII output: plenarius/cleanmodels/output_models.pl
+//
+// The Prolog sources (the *.pl files cited in "Ref:" comments throughout this
+// package, with their line numbers) are no longer in the tree. They are kept
+// at the build3.7.0-HEAD tag, the last Prolog release.
 package mdl
 
 import (

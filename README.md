@@ -41,6 +41,8 @@ The builds are also on the [Neverwinter Vault](https://neverwintervault.org/proj
 
 > **Looking for the legacy Prolog version?** The last Prolog-based release is
 > [build3.7.0-HEAD](https://github.com/plenarius/cleanmodels/releases/tag/build3.7.0-HEAD).
+> Its sources (the `.pl` files cited in code comments) are at
+> [that tag](https://github.com/plenarius/cleanmodels/tree/build3.7.0-HEAD).
 > The GUI companion is at [cleanmodels-qt](https://github.com/plenarius/cleanmodels-qt).
 
 ## Building from source
