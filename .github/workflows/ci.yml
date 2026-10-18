@@ -41,6 +41,32 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+  python:
+    # The Python port of the decompiler (python/) must write exactly what the Go
+    # decompiler writes; see python/README.md.
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.10" # Blender 3.3's
+          - os: ubuntu-latest
+            python: "3.13"
+          - os: windows-latest
+            python: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Parity with the Go decompiler
+        run: python python/parity_test.py
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test

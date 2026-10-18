@@ -277,6 +277,14 @@ suite skips these (see `hakBinaryOnlySkipList` in
 path (rather than a directory), batch mode will overwrite the same
 destination file once per input. Use directory output for batch mode.
 
+## Python port
+
+`python/cleanmodels` mirrors this pipeline (`binary.py`, `writer.py`) for
+tools that can't ship the Go binary. Its output is checked byte for byte
+against `cleanmodels decompile` in CI (`python/parity_test.py`): every binary
+fixture, 40 corruptions of each, and float formatting. Changes here need the
+same change there; see `python/README.md`.
+
 ## Useful entry points
 
 

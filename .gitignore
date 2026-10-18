@@ -19,3 +19,7 @@ Thumbs.db
 
 # Dependency
 vendor/
+
+# Python
+__pycache__/
+*.pyc
