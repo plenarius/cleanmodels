@@ -78,21 +78,24 @@ func isBodyJoint(name string) bool {
 func partVariant(src *Model, srcPrefix, target string, opts VariantOptions, warn func(string)) (*Model, error) {
 	locs := opts.Locs
 	width, length := opts.factors()
+	byMass := opts.byMass
 	if !opts.noLearn {
-		// The race versions of this slot that exist show how it is done
-		// for this body (variants_learned.go).
-		if f := learnedSlotFit(srcPrefix, target, partKind(src.Name), locs); f != nil {
+		// The race versions of this slot that exist show which fit works
+		// for this body, or are the fit (variants_learned.go).
+		c := slotChoiceFor(srcPrefix, target, partKind(src.Name), locs)
+		if c.fit != nil {
 			if opts.Learned != nil {
-				opts.Learned(f.pairs)
+				opts.Learned(c.fit.pairs)
 			}
-			return learnedVariant(src, srcPrefix, target, f, width, length), nil
+			return learnedVariant(src, srcPrefix, target, c.fit, width, length), nil
 		}
+		byMass = c.byMass
 	}
 	attach := partAttachNode(src.Name)
 	srcSkel, _ := loadBodySkeleton(srcPrefix, locs)
 	dstSkel, _ := loadBodySkeleton(target, locs)
 	newFits := func(strength float64) *boneFits {
-		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength, width: width, length: length}
+		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength, width: width, length: length, byMass: byMass}
 	}
 	rigidFit := newFits(1).of(attach, partKind(src.Name))
 	fits := newFits(skinGirthStrength)
@@ -213,6 +216,7 @@ type boneFits struct {
 	warned            map[string]bool
 	strength          float64 // share of the base parts' width ratio applied
 	width, length     float64 // VariantOptions.Width and Length
+	byMass            bool    // fit to the base parts' centres of mass and spreads, not their boxes
 }
 
 // of returns the fit of bone, whose body part slot is slot ("" to look it up
@@ -244,8 +248,12 @@ func (fs *boneFits) of(bone, slot string) *boneFit {
 	}
 	if slot != "" {
 		na, nb := basePart(fs.srcPrefix, slot, fs.locs), basePart(fs.target, slot, fs.locs)
-		ca, sa, okA := partStats(na, fs.locs)
-		cb, sb, okB := partStats(nb, fs.locs)
+		stats := partBox
+		if fs.byMass {
+			stats = partStats
+		}
+		ca, sa, okA := stats(na, fs.locs)
+		cb, sb, okB := stats(nb, fs.locs)
 		if !okA || !okB {
 			var missing []string
 			if !okA {

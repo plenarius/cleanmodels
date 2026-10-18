@@ -286,8 +286,9 @@ func TestVariantPartsMatchBioware(t *testing.T) {
 	}
 	for _, part := range []string{"legl005", "chest060", "handl005"} {
 		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
-		// The measured fit; the learned one is TestVariantLearnedMatchesBioware.
-		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
+		// The measured fit by centres of mass; the slot choice (learned,
+		// boxes, mass) is TestVariantLearnedMatchesBioware.
+		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, byMass: true, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -680,14 +681,20 @@ func TestVariantLearnedMatchesBioware(t *testing.T) {
 	for _, part := range parts {
 		slot, num := partKind("pmh0_"+part), strings.TrimLeft(part, "abcdefghijklmnopqrstuvwxyz")
 		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
-		meas, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true})
+		meas, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, byMass: true})
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, how := meas, "measured"
-		if f := learnSlot("pmh0", "pmd0", slot, locs, num); f != nil {
-			out, how = learnedVariant(src, "pmh0", "pmd0", f, 1, 1), fmt.Sprintf("learned from %d other pairs", f.pairs)
+		choice := chooseSlot("pmh0", "pmd0", slot, locs, num)
+		out, how := meas, "measured by mass"
+		if choice.fit != nil {
+			out, how = learnedVariant(src, "pmh0", "pmd0", choice.fit, 1, 1), fmt.Sprintf("learned from %d other pairs", choice.fit.pairs)
 			used++
+		} else if !choice.byMass {
+			if out, err = Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true}); err != nil {
+				t.Fatal(err)
+			}
+			how = "measured by boxes"
 		}
 		if err := Compile(out, &bytes.Buffer{}); err != nil {
 			t.Fatalf("%s: compile: %v", part, err)
@@ -697,7 +704,7 @@ func TestVariantLearnedMatchesBioware(t *testing.T) {
 		chosen += c / float64(len(parts))
 		measured += m / float64(len(parts))
 	}
-	t.Logf("mean: %.2f cm with learned fits for %d of %d slots, measured %.2f cm", chosen, used, len(parts), measured)
+	t.Logf("mean: %.2f cm with learned fits for %d of %d slots, measured by mass %.2f cm", chosen, used, len(parts), measured)
 	if used == 0 || chosen > measured {
 		t.Errorf("learned fits used for %d slots, %.2f cm against %.2f cm measured", used, chosen, measured)
 	}

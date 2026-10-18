@@ -2,6 +2,7 @@ package mdl
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,22 +10,28 @@ import (
 	"sync"
 )
 
-// Learned slot fits. Bioware made its race versions of the stock armour parts
-// by hand, and servers do the same for custom races; every such pair in the
-// game install and the haks (pmh0_chest050 and pmd0_chest050: the same mesh,
-// refitted) shows how that body's version of that slot differs. For an armour
-// part, learnedSlotFit fits a scale and an offset per axis, in the part's own
-// space, to the pairs of the source's and target's slot found (up to
-// learnPairs of them, pooled with each pair counting the same), and uses it
-// instead of the measured fit (partVariant) when it fits those pairs better:
-// each pair is predicted from the others (leave one out) and compared with
-// the measured fit's result for it, and the learned fit must be closer by
-// learnMargin. A body with no such pairs keeps the measured fit.
+// Slot choices. Bioware made its race versions of the stock armour parts by
+// hand, and servers do the same for custom races; every such pair in the game
+// install and the haks (pmh0_chest050 and pmd0_chest050: the same mesh,
+// refitted) shows how that body's version of that slot should look. For an
+// armour part, slotChoiceFor tries three fits on the pairs of the source's
+// and target's slot found (up to learnPairs of them, the user's own folders
+// and haks first) and keeps the closest:
+//   - the measured fit (partVariant) to the base parts' bounding boxes;
+//   - the measured fit to their centres of mass and spreads;
+//   - a learned fit: a scale and an offset per axis in the part's own space,
+//     fitted to the pairs (pooled, each pair counting the same), judged by
+//     predicting each pair from the others (leave one out). It must beat
+//     the better measured fit by learnMargin.
+// A body with no pairs gets the measured fit by bounding boxes.
 //
 // Against Bioware's own race versions of the stock parts, each predicted
 // without its own pair: 0.52 cm mean per vertex in phenotype 0 and 1.90 cm in
-// phenotype 2, against 0.84 and 2.30 cm for the measured fit (and 0.74 cm for
-// NWNArmory's 2003 table in phenotype 0).
+// phenotype 2, against 0.84 and 2.30 cm for the measured fit alone (and 0.74
+// cm for NWNArmory's 2003 table in phenotype 0). Against a server's hand-made
+// custom race parts, the bounding boxes fit closer than the centres of mass
+// (a half-ogre's base chest has its mass in the hunched back, which pulled
+// armour backwards): wemic 0.70 cm against 2.55, half-ogre 4.1 against 6.6.
 
 const (
 	learnPairs  = 12
@@ -45,20 +52,32 @@ func (f slotFit) normal(n [3]float64) [3]float64 {
 	return norm3([3]float64{n[0] / f.s[0], n[1] / f.s[1], n[2] / f.s[2]})
 }
 
-// learnedFits caches learnedSlotFit by source body, target, slot and
-// locations (nil: none, or the measured fit is better). Read-only once stored.
-var learnedFits sync.Map
+// slotChoice is how a slot is fitted for a target body: the learned fit, or
+// (fit nil) the measured fit by the base parts' bounding boxes, or by their
+// centres of mass and spreads when byMass.
+type slotChoice struct {
+	fit    *slotFit
+	byMass bool
+}
 
-// learnedSlotFit returns the learned fit for slot from the body srcPrefix to
-// target, or nil.
-func learnedSlotFit(srcPrefix, target, slot string, locs []string) *slotFit {
+// slotChoices caches slotChoiceFor by source body, target, slot and
+// locations. Read-only once stored.
+var slotChoices sync.Map
+
+// slotChoiceFor returns how slot is fitted from the body srcPrefix to target.
+func slotChoiceFor(srcPrefix, target, slot string, locs []string) slotChoice {
 	key := strings.Join([]string{srcPrefix, target, slot, strings.Join(locs, "\x00")}, "\x01")
-	if v, ok := learnedFits.Load(key); ok {
-		return v.(*slotFit)
+	if v, ok := slotChoices.Load(key); ok {
+		return v.(slotChoice)
 	}
-	f := learnSlot(srcPrefix, target, slot, locs, "")
-	learnedFits.Store(key, f)
-	return f
+	c := chooseSlot(srcPrefix, target, slot, locs, "")
+	slotChoices.Store(key, c)
+	return c
+}
+
+// learnSlot returns the learned fit chooseSlot picks, or nil.
+func learnSlot(srcPrefix, target, slot string, locs []string, skip string) *slotFit {
+	return chooseSlot(srcPrefix, target, slot, locs, skip).fit
 }
 
 // isGameInstall reports whether loc is a game install (data/nwn_base.key).
@@ -85,9 +104,12 @@ type pairSums struct {
 	src, dst         *Model
 }
 
-// learnSlot works out learnedSlotFit, without the pair of part number skip
-// (for testing it against that pair).
-func learnSlot(srcPrefix, target, slot string, locs []string, skip string) *slotFit {
+// chooseSlot works out slotChoiceFor, without the pair of part number skip
+// (for testing it against that pair). With no pairs, it is the measured fit by
+// bounding boxes: against a server's hand-made custom race parts it is closer
+// than by centres of mass (a half-ogre's chest has its mass in the hunched
+// back, which pulled the armour backwards).
+func chooseSlot(srcPrefix, target, slot string, locs []string, skip string) slotChoice {
 	names := listModels(locs)
 	var nums []string
 	for name := range names {
@@ -143,27 +165,37 @@ func learnSlot(srcPrefix, target, slot string, locs []string, skip string) *slot
 		}
 		ps = append(ps, p)
 	}
-	if len(ps) < 2 {
-		return nil
+	if len(ps) == 0 {
+		return slotChoice{}
 	}
-	// Leave one out: predict each pair from the others, and compare with
-	// the measured fit on it.
-	var learned, measured float64
+	// Each fit on the pairs: the measured ones by box and by mass, and the
+	// learned one predicting each pair from the others (leave one out).
+	var box, mass, learned float64
 	for i, p := range ps {
-		f := fitPairs(ps, i)
-		learned += pairDistance(p.src, p.dst, &f)
-		out, err := partVariant(p.src, srcPrefix, target, VariantOptions{Locs: locs, noLearn: true}, func(string) {})
-		if err != nil {
-			return nil
+		for _, byMass := range []bool{false, true} {
+			out, err := partVariant(p.src, srcPrefix, target, VariantOptions{Locs: locs, noLearn: true, byMass: byMass}, func(string) {})
+			if err != nil {
+				return slotChoice{}
+			}
+			if d := pairDistance(out, p.dst, nil); byMass {
+				mass += d
+			} else {
+				box += d
+			}
 		}
-		measured += pairDistance(out, p.dst, nil)
+		if len(ps) >= 2 {
+			f := fitPairs(ps, i)
+			learned += pairDistance(p.src, p.dst, &f)
+		}
 	}
-	if learned >= learnMargin*measured {
-		return nil
+	c := slotChoice{byMass: mass < box}
+	best := math.Min(box, mass)
+	if len(ps) >= 2 && learned < learnMargin*best {
+		f := fitPairs(ps, -1)
+		f.pairs = len(ps)
+		c.fit = &f
 	}
-	f := fitPairs(ps, -1)
-	f.pairs = len(ps)
-	return &f
+	return c
 }
 
 // fitPairs solves the pooled per-axis least squares, without pair skip.
