@@ -34,8 +34,10 @@ type variantResult struct {
 	// Adjusts lists the adjustments that change this variant (width, length,
 	// shape regions; mdl.VariantAdjustments).
 	Adjusts []string `json:"adjusts,omitempty"`
-	// Action is what --dry-run would do: write, replace, or skip (exists).
+	// Action is what --dry-run would do: "write", "replace" or "skip", and
+	// Reason why, for a skip.
 	Action string `json:"action,omitempty"`
+	Reason string `json:"reason,omitempty"`
 	// SameShape is set when the variant is that body's, renamed (mdl.Body).
 	SameShape string   `json:"sameShape,omitempty"`
 	Preview   string   `json:"preview,omitempty"`
@@ -239,7 +241,7 @@ func cmdVariants(args []string) int {
 			} else if _, statErr := os.Stat(res.File); statErr == nil {
 				res.Action = "replace"
 				if !o.overwrite {
-					res.Action = "skip: it exists, add --overwrite to replace it"
+					res.Action, res.Reason = "skip", "it exists; add --overwrite to replace it"
 				}
 			}
 		} else if err == nil {
@@ -478,6 +480,9 @@ func printVariantResult(r variantResult) {
 	line := r.Target + "  " + r.File
 	if r.Action != "" {
 		line += "  would " + r.Action
+		if r.Reason != "" {
+			line += ": " + r.Reason
+		}
 	}
 	if len(how) > 0 {
 		line += "  (" + strings.Join(how, "; ") + ")"

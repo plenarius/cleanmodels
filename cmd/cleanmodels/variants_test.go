@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -322,6 +323,15 @@ func TestVariantsDryRun(t *testing.T) {
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Errorf("--dry-run created %s", out)
+	}
+	// With the file there: a skip, with the reason on its own.
+	captureStdio(t, func() { code = cmdVariants([]string{"--to", "pmd0", "--game-dir", dir, src, out}) })
+	stdout, _ = captureStdio(t, func() {
+		code = cmdVariants([]string{"--dry-run", "--json", "--to", "pmd0", "--game-dir", dir, src, out})
+	})
+	results = nil
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil || len(results) != 1 || results[0]["action"] != "skip" || !strings.Contains(fmt.Sprint(results[0]["reason"]), "--overwrite") {
+		t.Errorf("dry run over an existing file: %s", stdout)
 	}
 	captureStdio(t, func() { code = cmdVariants([]string{"--dry-run", "--json-lines", src}) })
 	if code != exitUsage {

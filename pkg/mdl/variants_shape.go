@@ -12,11 +12,14 @@ import (
 // that needs a different silhouette (a less square brownie robe). Each
 // region's height and centre come from the body's joints: the shoulders from
 // the upper arms (lbicep_g, rbicep_g), the waist from torso_g, the chest
-// halfway between, the hips from the thighs, the hem at the model's lowest
-// vertex. A vertex is scaled across the body (x and y) about the centre line
-// by its height's factor, blended linearly between the regions around it.
-// Vertices on the arms (weighted to the upper arm, forearm, hand or shoulder
-// bones; arm body parts) are left where they are, so sleeves stay on the arms.
+// halfway between, the hips from the thighs, and, for a robe or cloak, the
+// hem at its lowest vertex. A vertex is scaled across the body (x and y) about
+// the centre line by its height's factor, blended linearly between the
+// regions around it. Vertices on the arms (weighted to the upper arm,
+// forearm, hand or shoulder bones; arm body parts) are left where they are,
+// so sleeves stay on the arms. An armour part has no hem: the regions shape
+// the torso, fading out below the hips over as far again as from the hips to
+// the waist, so shins and feet are left to Width and Length.
 
 // ShapeRegions are the regions VariantOptions.Shape takes, top to bottom.
 var ShapeRegions = []string{"shoulders", "chest", "waist", "hips", "hem"}
@@ -36,7 +39,7 @@ type shapeControl struct {
 // shapeFrame places a model's regions: the transform from each mesh node to
 // the body's space and the regions' controls, top to bottom.
 type shapeFrame struct {
-	attach   string
+	attach   string // the skeleton node a body part hangs from; "" for a robe or cloak
 	world    func(n *Node) rigid
 	controls []shapeControl
 }
@@ -115,7 +118,13 @@ func newShapeFrame(m *Model, target string, locs []string) (*shapeFrame, string)
 		fr.controls = append(fr.controls, shapeControl{"hips", hips[2], hips[0], hips[1], 1})
 		low = hips
 	}
-	// The hem: the lowest vertex.
+	// The hem, a robe's or cloak's lowest vertex. A body part has none: its
+	// regions are the torso's (shoulders to hips), and below the hips
+	// (shins, feet) it is left to Width and Length.
+	if attach != "" {
+		sort.Slice(fr.controls, func(i, j int) bool { return fr.controls[i].z > fr.controls[j].z })
+		return fr, ""
+	}
 	hem := math.Inf(1)
 	for _, n := range m.Nodes {
 		if n.Mesh == nil || n.Aabb != nil {
@@ -134,11 +143,23 @@ func newShapeFrame(m *Model, target string, locs []string) (*shapeFrame, string)
 }
 
 // at returns the blended control at height z, and the share each region has
-// in it (by index into controls).
+// in it (by index into controls). Below a body part's lowest region there is
+// none: factor 1, indices -1.
 func (fr *shapeFrame) at(z float64) (shapeControl, [2]int, float64) {
 	cs := fr.controls
 	if z >= cs[0].z {
 		return cs[0], [2]int{0, 0}, 1
+	}
+	if fr.attach != "" && z < cs[len(cs)-1].z {
+		// Fade out over the span below the lowest region, as far as from
+		// the region above it, so a thigh's top still follows the hips.
+		last := cs[len(cs)-1]
+		span := cs[len(cs)-2].z - last.z
+		t := 1 - (last.z-z)/span
+		if t <= 0 {
+			return shapeControl{"", z, last.cx, last.cy, 1}, [2]int{-1, -1}, 0
+		}
+		return shapeControl{"", z, last.cx, last.cy, 1 + t*(last.f-1)}, [2]int{len(cs) - 1, -1}, t
 	}
 	for i := 1; i < len(cs); i++ {
 		if z >= cs[i].z {
@@ -294,12 +315,12 @@ func VariantAdjustments(m *Model, target string, locs []string) []string {
 			}
 			_, idx, t := fr.at(x.apply(vec3d(v))[2])
 			// The region above takes t of the blend, the one below 1-t; a
-			// region counts where it has at least minShapeShare of a vertex
-			// (a foot's top is 13% "hips": not enough to offer the slider).
-			if idx[0] == idx[1] || k*t >= minShapeShare {
+			// region counts where it has at least minShapeShare of a vertex.
+			// An index of -1 is no region (below a body part's torso).
+			if idx[0] >= 0 && (idx[0] == idx[1] || k*t >= minShapeShare) {
 				used[idx[0]] = true
 			}
-			if idx[0] != idx[1] && k*(1-t) >= minShapeShare {
+			if idx[1] >= 0 && idx[0] != idx[1] && k*(1-t) >= minShapeShare {
 				used[idx[1]] = true
 			}
 		}

@@ -272,12 +272,12 @@ Two things to know when you ship or test them:
 | Flag | Description |
 |---|---|
 | `--to LIST` | Comma-separated bodies (`pmd0,pme2,pmh15`). Default: every body found of the source's gender with models of the source's kind, except the source's own body (see above); with no game install, the stock races in phenotypes 0 and 2 |
-| `--dry-run` | Make nothing: list each version's file, whether it would be written, replace one or be skipped (it exists, no `--overwrite`), and how it would be fitted |
+| `--dry-run` | Make nothing: list each version's file, whether it would be written, replace one or be skipped (it exists, no `--overwrite`), and how it would be fitted. With `--json`, `action` is `write`, `replace` or `skip`, and `reason` says why for a skip |
 | `--list-bodies` | List the bodies found, with race, phenotype, part count, shape group and fallbacks (with `--json`, an array). Given a model, the bodies it would get versions for, and its own |
 | `--compile` | Write compiled (binary) models instead of ASCII |
 | `--width F` | Multiply the fit's width across every bone (`1.05`: 5% looser, `0.95`: tighter); 0.5 to 2, default 1. Feet, hands, shoulder pads and belts take it in all three directions |
 | `--length F` | Multiply the fit's stretch along every bone; 0.5 to 2, default 1 |
-| `--shape LIST` | Narrow or widen by body region after the fit: `shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1` (factors 0.5 to 2). Each region's height and centre come from the body's joints; heights in between blend; vertices on the arms are left alone, so sleeves stay on them |
+| `--shape LIST` | Narrow or widen by body region after the fit: `shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1` (factors 0.5 to 2). Each region's height and centre come from the body's joints; heights in between blend; vertices on the arms are left alone, so sleeves stay on them. For armour parts the regions are the torso's (no hem): shins and feet are left to `--width` and `--length` |
 | `--preview-dir DIR` | Also write, per variant, two static preview models to DIR: `<name>.fit.mdl` (the variant where the game shows it on its body) and `<name>.body.mdl` (that body's base parts, without the variant's slot, or for a robe without the parts its row in `parts_robe.2da` hides). The variant is textured: its palette texture, found as the game finds it (see above), coloured with fixed colours and written there as a TGA. With `--json-lines` the source gets the same, on its own body. cleanmodels-qt's *Make Variants* shows these |
 
 ### Common flags
