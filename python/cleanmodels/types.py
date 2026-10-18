@@ -4,6 +4,8 @@ Every float is a float32 value held in a Python float (exactly representable).
 Vectors are tuples: Vec3 (x, y, z), Vec4 (x, y, z, w).
 """
 
+from .gostr import equal_fold
+
 VEC3_ZERO = (0.0, 0.0, 0.0)
 
 
@@ -33,6 +35,7 @@ class MeshData:
         self.verts = []
         self.faces = []
         self.normals = []
+        self.corner_normals = []  # per-face-corner normals, filled in by the compiler
         self.tangents = []
         self.colors = []
         self.tverts = []
@@ -117,6 +120,16 @@ class EmitterData:
         self.inherit_local = 0
         self.splat = 0
         self.inherit_part = 0
+        # NWMax-only properties, read from ASCII but not written
+        self.p2p_type = ""
+        self.render_sel = 0
+        self.blend_sel = 0
+        self.update_sel = 0
+        self.spawn_type_sel = 0
+        self.opacity = 0
+        self.icon_size = 0
+        self.lock_axes = 0
+        self.chunky = 0
         # Controller-animatable values, keyed by controller name
         self.floats = {name: 0.0 for name in EMITTER_FLOAT_FIELDS}
         self.colors = {name: VEC3_ZERO for name in EMITTER_COLOR_FIELDS}
@@ -316,15 +329,14 @@ class Model:
         self.warnings = []
 
     def find_node(self, name):
-        lname = name.lower()
         for n in self.nodes:
-            if n.name.lower() == lname:
+            if equal_fold(n.name, name):
                 return n
         return None
 
     def root_node(self):
         for n in self.nodes:
-            if n.parent.lower() == "null":
+            if equal_fold(n.parent, "NULL"):
                 return n
         return None
 

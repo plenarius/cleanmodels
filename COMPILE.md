@@ -341,6 +341,15 @@ binaries that exceed engine limits if asked; the `bone_limit` and
 `triangle_limit` checks (`pkg/checks/geometry.go`) flag them but don't
 refuse compilation.
 
+## Python port
+
+`python/cleanmodels` mirrors the ASCII parser (`parser.py`) and the compiler
+(`compiler*.py` and what they call) for tools that can't ship the Go binary,
+such as Neverblender. CI checks them byte for byte against the Go build of the
+same commit (`python/parity_parse.py`, `python/parity_compile.py`): every
+fixture and mutations of each, compiled bytes and warnings included. Changes
+here need the same change there; see `python/README.md`.
+
 ## Useful entry points
 
 

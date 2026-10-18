@@ -42,8 +42,8 @@ jobs:
         run: go test -race -count=1 ./...
 
   python:
-    # The Python port of the decompiler (python/) must write exactly what the Go
-    # decompiler writes; see python/README.md.
+    # The Python port (python/) must do exactly what the Go code does: the
+    # decompiler, the ASCII parser and the compiler; see python/README.md.
     strategy:
       matrix:
         include:
@@ -66,6 +66,12 @@ jobs:
 
       - name: Parity with the Go decompiler
         run: python python/parity_test.py
+
+      - name: Parity with the Go parser
+        run: python python/parity_parse.py
+
+      - name: Parity with the Go compiler
+        run: python python/parity_compile.py
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
