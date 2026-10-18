@@ -38,6 +38,17 @@ type Event struct {
 	Message string `json:"message,omitempty"`
 	Fixes   int    `json:"fixes,omitempty"`
 	*Result `json:"result,omitempty"`
+
+	// variants: the model the version is made from, the body it is for
+	// (pmd0) and the file written.
+	Source string `json:"source,omitempty"`
+	Target string `json:"target,omitempty"`
+	Output string `json:"output,omitempty"`
+	// Preview and Body are a variant's preview models (variants --preview-dir).
+	Preview string `json:"preview,omitempty"`
+	Body    string `json:"body,omitempty"`
+	// SameShape: the variant is this body's fit, renamed (variants).
+	SameShape string `json:"sameShape,omitempty"`
 }
 
 type pivotOpts struct {

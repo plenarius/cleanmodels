@@ -75,12 +75,14 @@ func isBodyJoint(name string) bool {
 // bound in game to the creature skeleton, so each vertex is refitted the same
 // way in the space of every skeleton bone it is weighted to, moved to the
 // target skeleton's bone, and blended by its weights.
-func partVariant(src *Model, srcPrefix, target string, locs []string, warn func(string)) (*Model, error) {
+func partVariant(src *Model, srcPrefix, target string, opts VariantOptions, warn func(string)) (*Model, error) {
+	locs := opts.Locs
+	width, length := opts.factors()
 	attach := partAttachNode(src.Name)
-	srcSkel, _ := loadSkeleton(srcPrefix, locs)
-	dstSkel, _ := loadSkeleton(target, locs)
+	srcSkel, _ := loadBodySkeleton(srcPrefix, locs)
+	dstSkel, _ := loadBodySkeleton(target, locs)
 	newFits := func(strength float64) *boneFits {
-		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength}
+		return &boneFits{srcPrefix: srcPrefix, target: target, locs: locs, srcSkel: srcSkel, dstSkel: dstSkel, warn: warn, cache: map[string]*boneFit{}, strength: strength, width: width, length: length}
 	}
 	rigidFit := newFits(1).of(attach, partKind(src.Name))
 	fits := newFits(skinGirthStrength)
@@ -200,6 +202,7 @@ type boneFits struct {
 	cache             map[string]*boneFit
 	warned            map[string]bool
 	strength          float64 // share of the base parts' width ratio applied
+	width, length     float64 // VariantOptions.Width and Length
 }
 
 // of returns the fit of bone, whose body part slot is slot ("" to look it up
@@ -230,11 +233,18 @@ func (fs *boneFits) of(bone, slot string) *boneFit {
 		}
 	}
 	if slot != "" {
-		base := slot + "001"
-		ca, sa, okA := partStats(fs.srcPrefix+"_"+base, fs.locs)
-		cb, sb, okB := partStats(fs.target+"_"+base, fs.locs)
+		na, nb := basePart(fs.srcPrefix, slot, fs.locs), basePart(fs.target, slot, fs.locs)
+		ca, sa, okA := partStats(na, fs.locs)
+		cb, sb, okB := partStats(nb, fs.locs)
 		if !okA || !okB {
-			fs.note("base body part "+fs.srcPrefix+"_"+base+" or "+fs.target+"_"+base+" not found", ": the part keeps its width there")
+			var missing []string
+			if !okA {
+				missing = append(missing, na)
+			}
+			if !okB {
+				missing = append(missing, nb)
+			}
+			fs.note("base body part "+strings.Join(missing, " and ")+" not found", ": the part keeps its width there")
 		} else {
 			for k := range f.g {
 				if (k < 2 || allAxes) && sa[k] > 1e-4 {
@@ -242,6 +252,14 @@ func (fs *boneFits) of(bone, slot string) *boneFit {
 					f.ca[k], f.cb[k] = ca[k], ca[k]+fs.strength*(cb[k]-ca[k])
 				}
 			}
+		}
+	}
+	if !allAxes {
+		f.ax.ratio *= fs.length
+	}
+	for k := range f.g {
+		if k < 2 || allAxes {
+			f.g[k] *= fs.width
 		}
 	}
 	fs.cache[key] = f

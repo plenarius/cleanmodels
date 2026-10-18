@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -114,7 +115,7 @@ func TestVariantRefitsToTargetBones(t *testing.T) {
 
 func TestVariantNeedsATemplate(t *testing.T) {
 	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
-	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe for pmd0") {
+	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe of pmd0") {
 		t.Errorf("want a missing-template error, got %v", err)
 	}
 	if _, err := Variant(&Model{Name: "robe003"}, "pmd0", VariantOptions{}); err == nil {
@@ -223,6 +224,43 @@ func TestVariantRefitsBodyPart(t *testing.T) {
 	}
 	if src.Nodes[1].Mesh.Verts[0] != (Vec3{0.1, 0, -0.2}) {
 		t.Error("source part was changed")
+	}
+
+	// Width and Length on top of the fit: x and y 1.1 times further from the
+	// centre, z below the hip 1.2 times further.
+	adj, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Width: 1.1, Length: 1.2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAdj := []Vec3{{0.1*1.5*1.1 + 0.01, 0, -0.2 * 0.75 * 1.2}, {0.01, 0.15 * 1.1, 0.05}, {0.01, 0, -0.4 * 0.75 * 1.2}}
+	for i, v := range adj.Nodes[1].Mesh.Verts {
+		if !near(v, wantAdj[i]) {
+			t.Errorf("Width/Length: vertex %d at %v, want %v", i, v, wantAdj[i])
+		}
+	}
+
+	// The preview: the thigh where the dwarf skeleton hangs it (lthigh_g at
+	// (-0.1, 0, 0.6)), and a body of the base parts found, without a thigh.
+	write(partTestModel("pmd0_shinl001", []Vec3{{0, 0, 0}, {0, 0, -0.1}, {0.1, 0, 0}}))
+	fit, body, notes, err := VariantPreview(out, "pmd0", []string{dir}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fit.Nodes) != 2 || fit.Nodes[1].Skin != nil {
+		t.Fatalf("fit has %d nodes, want the root and one plain mesh", len(fit.Nodes))
+	}
+	for i, v := range fit.Nodes[1].Mesh.Verts {
+		w := Vec3{want[i].X - 0.1, want[i].Y, want[i].Z + 0.6}
+		if !near(v, w) {
+			t.Errorf("fit vertex %d at %v, want %v", i, v, w)
+		}
+	}
+	if len(body.Nodes) != 2 || !near(body.Nodes[1].Mesh.Verts[1], Vec3{-0.1, 0, 0.2}) {
+		t.Errorf("body: %d nodes, want the root and the shin at lshin_g (-0.1, 0, 0.3)", len(body.Nodes))
+	}
+	if len(notes) != 1 || strings.Contains(notes[0], "pmd0_legl001") || strings.Contains(notes[0], "pmd0_belt001") ||
+		!strings.Contains(notes[0], "pmd0_footl001") || strings.Contains(notes[0], "pmd0_chest001") {
+		t.Errorf("notes %q: want the missing base parts (the foot), without the thigh (the variant's slot), the belt (not in a bare body) or the chest (no torso_g in this skeleton)", notes)
 	}
 
 	// A skinned part needs its attach bone in both skeletons (these have no neck_g).
@@ -446,5 +484,176 @@ func TestVariantHDPartsMatchBeamdog(t *testing.T) {
 		if mean > 5 {
 			t.Errorf("pmd0_%s: %.2f cm from Beamdog's, want under 5", c.part, mean)
 		}
+	}
+}
+
+func TestRobeHides(t *testing.T) {
+	dir := t.TempDir()
+	table := "2DA V2.0\n\n   HIDECHEST HIDEHANDR HIDEHEAD\n0  1 0 0\n3  1 1 ****\n"
+	if err := os.WriteFile(filepath.Join(dir, "parts_robe.2da"), []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hidden, note := robeHides("pmd0_robe003", []string{dir})
+	if note != "" || !hidden["chest"] || !hidden["handr"] || hidden["head"] || len(hidden) != 2 {
+		t.Errorf("robe 3: hidden %v, note %q; want chest and right hand", hidden, note)
+	}
+	if hidden, note = robeHides("pmd0_robe039", []string{dir}); hidden != nil || !strings.Contains(note, "no row 39") {
+		t.Errorf("robe 39 (no row): hidden %v, note %q", hidden, note)
+	}
+	if hidden, note = robeHides("pmd0_chest003", []string{dir}); hidden != nil || note != "" {
+		t.Errorf("a chest is not a robe: hidden %v, note %q", hidden, note)
+	}
+}
+
+func TestVariantBodies(t *testing.T) {
+	dir := t.TempDir()
+	write := func(m *Model) {
+		if err := WriteFile(m, filepath.Join(dir, m.Name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	skel := func(name string, foot float32) {
+		sk := skeletonTestModel(name, foot)
+		write(sk)
+	}
+	// Humans: phenotype 15 (a fighting style) has the same skeleton and only
+	// robes; phenotype 2 the same skeleton but its own parts. Brownies (a
+	// custom race, b) have parts in phenotype 2 but no skeleton for it.
+	skel("pmh0", 0.4)
+	skel("pmh2", 0.4)
+	skel("pmh15", 0.4)
+	skel("pmb0", 0.2)
+	sq := []Vec3{{0, 0, 0}, {0.1, 0, 0}, {0, 0.1, 0}}
+	for _, n := range []string{"pmh0_legl001", "pmh0_belt001", "pmh0_robe003", "pmh2_legl001", "pmh2_robe003", "pmh15_robe003", "pmh15_robe004", "pmb0_legl001", "pmb2_legl001", "pmb2_legl002", "pmh0_head001"} {
+		write(partTestModel(n, sq))
+	}
+	writeFile("phenotype.2da", "2DA V2.0\n\n   Label DefaultPhenoType\n0  Normal 0\n2  Large 0\n15 Kensai 0\n")
+	writeFile("appearance.2da", "2DA V2.0\n\n   LABEL RACE MODELTYPE\n0  Dwarf D P\n1  Ogre c_ogre F\n2  Brownie** B P\n")
+
+	got := map[string]Body{}
+	var order []string
+	for _, b := range VariantBodies([]string{dir}) {
+		got[b.Prefix] = b
+		order = append(order, b.Prefix)
+	}
+	if want := []string{"pmh0", "pmh2", "pmh15", "pmb0", "pmb2"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("bodies %v, want %v (stock races first, heads not counted)", order, want)
+	}
+	h15 := got["pmh15"]
+	if h15.SameShape != "pmh0" || h15.PartsFrom != "pmh0" || h15.Slots["robe"] != 2 || h15.PhenotypeName != "Kensai" {
+		t.Errorf("pmh15: %+v; want same shape as pmh0, pmh0's parts, 2 robes, Kensai", h15)
+	}
+	if h2 := got["pmh2"]; h2.SameShape != "" || h2.PartsFrom != "pmh2" {
+		t.Errorf("pmh2 (same skeleton, its own parts, but no belt) is its own shape: %+v", h2)
+	}
+	b2 := got["pmb2"]
+	if b2.Skeleton || b2.SkeletonFrom != "pmb0" || b2.RaceName != "Brownie" || b2.Slots["legl"] != 2 || b2.SameShape != "" {
+		t.Errorf("pmb2: %+v; want no skeleton of its own (the game uses pmb0), Brownie, 2 thighs, its own shape", b2)
+	}
+	if n := basePart("pmh15", "legl", []string{dir}); n != "pmh0_legl001" {
+		t.Errorf("basePart(pmh15, legl) = %s, want pmh0_legl001 (DefaultPhenoType)", n)
+	}
+	if k := VariantKind("pmh0_cloak_012"); k != "cloak" {
+		t.Errorf("VariantKind(pmh0_cloak_012) = %q", k)
+	}
+	if k := VariantKind("pmh0_head001"); k != "" {
+		t.Errorf("VariantKind(pmh0_head001) = %q, want none", k)
+	}
+}
+
+func TestApplyShape(t *testing.T) {
+	m := &Model{Name: "pmh0_robe999", Classification: "CHARACTER", AnimationScale: 1}
+	add := func(n *Node) { n.Orientation = Vec4{0, 0, 1, 0}; n.Scale = 1; m.Nodes = append(m.Nodes, n) }
+	add(&Node{Name: "pmh0_robe999", Parent: "NULL"})
+	add(&Node{Name: "torso_g", Parent: "pmh0_robe999", Position: Vec3{0, 0, 1.2}})
+	add(&Node{Name: "lbicep_g", Parent: "torso_g", Position: Vec3{-0.2, 0, 0.3}})
+	add(&Node{Name: "rbicep_g", Parent: "torso_g", Position: Vec3{0.2, 0, 0.3}})
+	add(&Node{Name: "lthigh_g", Parent: "torso_g", Position: Vec3{-0.1, 0, -0.2}})
+	add(&Node{Name: "rthigh_g", Parent: "torso_g", Position: Vec3{0.1, 0, -0.2}})
+	mesh := NewMeshData()
+	mesh.Verts = []Vec3{
+		{0.3, 0.1, 1.5}, // cape at the shoulders
+		{0.2, 0, 1.35},  // chest
+		{0.2, 0, 1.2},   // waist
+		{0.35, 0, 1.3},  // sleeve
+		{0.25, 0, 0.1},  // hem
+		{0.25, 0, 0.55}, // halfway from hips (1.0) to hem (0.1)
+	}
+	mesh.TVerts = make([]Vec3, len(mesh.Verts))
+	mesh.Faces = []Face{{Verts: [3]int32{0, 1, 2}}, {Verts: [3]int32{3, 4, 5}}}
+	torso := VertexWeight{Bones: []string{"torso_g"}, Weights: []float32{1}}
+	add(&Node{Name: "robe", Parent: "pmh0_robe999", Mesh: mesh, Skin: &SkinData{Weights: []VertexWeight{
+		torso, torso, torso, {Bones: []string{"lbicep_g"}, Weights: []float32{1}}, torso, torso,
+	}}})
+
+	var warned []string
+	applyShape(m, "pmh0", map[string]float64{"shoulders": 0.5, "waist": 0.5, "hem": 1.5}, nil, func(s string) { warned = append(warned, s) })
+	if len(warned) > 0 {
+		t.Fatalf("warnings: %q", warned)
+	}
+	got := m.Nodes[len(m.Nodes)-1].Mesh.Verts
+	want := []Vec3{
+		{0.15, 0.05, 1.5}, // halved about the shoulder centre (0, 0)
+		{0.2, 0, 1.35},    // chest: its own region, factor 1
+		{0.1, 0, 1.2},     // halved about torso_g
+		{0.35, 0, 1.3},    // on the arm: unchanged
+		{0.375, 0, 0.1},   // hem 1.5 about the hips' centre
+		{0.3125, 0, 0.55}, // halfway: hips 1, hem 1.5 -> 1.25
+	}
+	for i := range want {
+		if !near(got[i], want[i]) {
+			t.Errorf("vertex %d at %v, want %v", i, got[i], want[i])
+		}
+	}
+	if _, err := ParseShape("waist=0.8, hem=1.1"); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []string{"belly=0.9", "waist=3", "waist"} {
+		if _, err := ParseShape(bad); err == nil {
+			t.Errorf("ParseShape(%q): want an error", bad)
+		}
+	}
+}
+
+func TestPreviewTexture(t *testing.T) {
+	dir := t.TempDir()
+	out := t.TempDir()
+	// A 2x1 PLT: shade 255 of cloth 1, shade 0 of metal 1.
+	plt := append([]byte("PLT V1  \x0a\x00\x00\x00\x00\x00\x00\x00"), 2, 0, 0, 0, 1, 0, 0, 0, 255, 4, 0, 2)
+	if err := os.WriteFile(filepath.Join(dir, "pmh0_chest999.plt"), plt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The cloth palette: row 52 (from the top) is red at every shade.
+	pal := make([]byte, 18+256*176*4)
+	pal[2], pal[12], pal[13], pal[14], pal[16], pal[17] = 2, 0, 1, 176, 32, 8
+	for x := 0; x < 256; x++ {
+		off := 18 + ((175-52)*256+x)*4 // bottom-left origin
+		pal[off], pal[off+1], pal[off+2], pal[off+3] = 0, 0, 200, 255
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pal_cloth01.tga"), pal, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// pmd0_chest999 has no texture of its own: the game, and the preview,
+	// take the human's.
+	names := partTextureNames("pmd0_chest999", "somebitmap")
+	if want := []string{"pmd0_chest999", "pmh0_chest999", "somebitmap"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("texture names %v, want %v", names, want)
+	}
+	if got := previewTexture(names, []string{dir}, out, map[string]bool{}); got != "pmh0_chest999" {
+		t.Fatalf("previewTexture = %q", got)
+	}
+	tga, err := os.ReadFile(filepath.Join(out, "pmh0_chest999.tga"))
+	if err != nil || len(tga) != 18+2*4 {
+		t.Fatalf("TGA: %v, %d bytes", err, len(tga))
+	}
+	// BGRA: the cloth pixel red from the palette; metal 1's palette is not
+	// there, so grey shade 0 (black).
+	if got := tga[18:26]; !reflect.DeepEqual(got, []byte{0, 0, 200, 255, 0, 0, 0, 255}) {
+		t.Errorf("pixels %v", got)
 	}
 }
