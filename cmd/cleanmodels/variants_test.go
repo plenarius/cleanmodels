@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -255,7 +256,14 @@ func TestVariantsBodyGroups(t *testing.T) {
 
 	out := filepath.Join(dir, "out")
 	stdout, _ = captureStdio(t, func() { code = cmdVariants([]string{"--json-lines", "--game-dir", dir, src, out}) })
-	if code != exitOK || !strings.Contains(stdout, `pmd15_robe999.mdl","sameShape":"pmd0"}`) || !strings.Contains(stdout, `"2 of 2 variants written"`) {
+	sameAs := ""
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		var e map[string]any
+		if json.Unmarshal([]byte(line), &e) == nil && e["type"] == "done" && e["target"] == "pmd15" {
+			sameAs, _ = e["sameShape"].(string)
+		}
+	}
+	if code != exitOK || sameAs != "pmd0" || !strings.Contains(stdout, `"2 of 2 variants written"`) {
 		t.Fatalf("exit %d, output %s: want pmd0 and pmd15, pmd15 as pmd0's shape", code, stdout)
 	}
 	a, err1 := os.ReadFile(filepath.Join(out, "pmd0_robe999.mdl"))
@@ -297,5 +305,36 @@ func TestVariantsIgnoresEarlierOutput(t *testing.T) {
 		if code != exitOK || !strings.Contains(stdout, "bone lthigh_g is not in pmd0_robe999") {
 			t.Errorf("run %d: exit %d, output %q: want the missing-bone warning", run, code, stdout)
 		}
+	}
+}
+
+// TestVariantsDryRun: --dry-run writes nothing and says what it would do.
+func TestVariantsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	src := variantFixture(t, dir)
+	out := filepath.Join(dir, "out")
+	var code int
+	stdout, _ := captureStdio(t, func() {
+		code = cmdVariants([]string{"--dry-run", "--json", "--to", "pmd0", "--game-dir", dir, src, out})
+	})
+	var results []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &results); code != exitOK || err != nil || len(results) != 1 || results[0]["action"] != "write" {
+		t.Fatalf("exit %d, %v, output %s: want one result that would be written", code, err, stdout)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("--dry-run created %s", out)
+	}
+	// With the file there: a skip, with the reason on its own.
+	captureStdio(t, func() { code = cmdVariants([]string{"--to", "pmd0", "--game-dir", dir, src, out}) })
+	stdout, _ = captureStdio(t, func() {
+		code = cmdVariants([]string{"--dry-run", "--json", "--to", "pmd0", "--game-dir", dir, src, out})
+	})
+	results = nil
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil || len(results) != 1 || results[0]["action"] != "skip" || !strings.Contains(fmt.Sprint(results[0]["reason"]), "--overwrite") {
+		t.Errorf("dry run over an existing file: %s", stdout)
+	}
+	captureStdio(t, func() { code = cmdVariants([]string{"--dry-run", "--json-lines", src}) })
+	if code != exitUsage {
+		t.Errorf("--dry-run --json-lines: exit %d, want a usage error", code)
 	}
 }

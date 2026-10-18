@@ -286,7 +286,9 @@ func TestVariantPartsMatchBioware(t *testing.T) {
 	}
 	for _, part := range []string{"legl005", "chest060", "handl005"} {
 		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
-		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
+		// The measured fit by centres of mass; the slot choice (learned,
+		// boxes, mass) is TestVariantLearnedMatchesBioware.
+		out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, byMass: true, Warn: func(s string) { t.Errorf("%s: %s", part, s) }})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -610,6 +612,10 @@ func TestApplyShape(t *testing.T) {
 			t.Errorf("vertex %d at %v, want %v", i, got[i], want[i])
 		}
 	}
+	// Every region holds some of this robe; it runs along its bones.
+	if got, want := VariantAdjustments(m, "pmh0", nil), []string{"width", "length", "shoulders", "chest", "waist", "hips", "hem"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("adjustments %v, want %v", got, want)
+	}
 	if _, err := ParseShape("waist=0.8, hem=1.1"); err != nil {
 		t.Error(err)
 	}
@@ -655,5 +661,109 @@ func TestPreviewTexture(t *testing.T) {
 	// there, so grey shade 0 (black).
 	if got := tga[18:26]; !reflect.DeepEqual(got, []byte{0, 0, 200, 255, 0, 0, 0, 255}) {
 		t.Errorf("pixels %v", got)
+	}
+}
+
+// TestVariantLearnedMatchesBioware predicts Bioware's dwarf versions of stock
+// parts as variants does, with each part's own pair left out of what is
+// learned: the learned fit where it is chosen for the slot, the measured fit
+// elsewhere. It must not be worse than the measured fit alone. Needs the
+// game install.
+func TestVariantLearnedMatchesBioware(t *testing.T) {
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		home, _ := os.UserHomeDir()
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	locs := []string{game}
+	if sk, _ := loadSkeleton("pmh0", locs); sk == nil {
+		t.Skip("game install not available")
+	}
+	var chosen, measured float64
+	used := 0
+	parts := []string{"legl005", "chest060", "handl005", "forel007", "shinl003", "neck004", "pelvis010", "bicepl005"}
+	for _, part := range parts {
+		slot, num := partKind("pmh0_"+part), strings.TrimLeft(part, "abcdefghijklmnopqrstuvwxyz")
+		src, ref := loadGameModel(t, locs, "pmh0_"+part), loadGameModel(t, locs, "pmd0_"+part)
+		meas, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true, byMass: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		choice := chooseSlot("pmh0", "pmd0", slot, locs, num)
+		out, how := meas, "measured by mass"
+		if choice.fit != nil {
+			out, how = learnedVariant(src, "pmh0", "pmd0", choice.fit, 1, 1), fmt.Sprintf("learned from %d other pairs", choice.fit.pairs)
+			used++
+		} else if !choice.byMass {
+			if out, err = Variant(src, "pmd0", VariantOptions{Locs: locs, noLearn: true}); err != nil {
+				t.Fatal(err)
+			}
+			how = "measured by boxes"
+		}
+		if err := Compile(out, &bytes.Buffer{}); err != nil {
+			t.Fatalf("%s: compile: %v", part, err)
+		}
+		c, m := pairDistance(out, ref, nil)*100, pairDistance(meas, ref, nil)*100
+		t.Logf("pmd0_%s vs Bioware's: %.2f cm (%s), measured %.2f cm", part, c, how, m)
+		chosen += c / float64(len(parts))
+		measured += m / float64(len(parts))
+	}
+	t.Logf("mean: %.2f cm with learned fits for %d of %d slots, measured by mass %.2f cm", chosen, used, len(parts), measured)
+	if used == 0 || chosen > measured {
+		t.Errorf("learned fits used for %d slots, %.2f cm against %.2f cm measured", used, chosen, measured)
+	}
+}
+
+// TestVariantLearnsFromPairs: where versions of a slot exist for both bodies
+// and the target's are a scale and offset of the source's, a new part gets
+// that fit, and Learned says how many pairs it came from.
+func TestVariantLearnsFromPairs(t *testing.T) {
+	dir := t.TempDir()
+	write := func(m *Model) {
+		if err := WriteFile(m, filepath.Join(dir, m.Name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, shin := range map[string]float32{"pmh0": 0.4, "pmd0": 0.3} {
+		sk := skeletonTestModel(name, 0.4)
+		sk.FindNode("lshin_g").Position = Vec3{0, 0, -shin}
+		write(sk)
+	}
+	fit := func(v Vec3) Vec3 { return Vec3{v.X*1.3 + 0.02, v.Y * 1.1, v.Z*0.8 - 0.01} }
+	part := func(name string, verts []Vec3) *Model {
+		m := partTestModel(name, verts)
+		mesh := m.Nodes[1].Mesh
+		for i := range mesh.TVerts {
+			mesh.TVerts[i] = Vec3{float32(i) * 0.01, float32(len(name)) * 0.001, 0}
+		}
+		return m
+	}
+	shapes := [][]Vec3{
+		{{0.1, 0, -0.2}, {0, 0.1, -0.05}, {0, 0, -0.4}, {0.05, 0.05, -0.3}, {-0.05, 0.02, -0.1}, {0.02, -0.04, -0.25}},
+		{{0.12, 0.01, -0.22}, {0.01, 0.11, -0.06}, {0.02, 0, -0.38}, {0.06, 0.04, -0.31}, {-0.04, 0.03, -0.12}, {0.03, -0.05, -0.2}},
+		{{0.09, -0.01, -0.18}, {-0.01, 0.09, -0.04}, {0.01, 0.01, -0.42}, {0.04, 0.06, -0.29}, {-0.06, 0.01, -0.09}, {0.01, -0.03, -0.27}},
+	}
+	for i, verts := range shapes {
+		num := fmt.Sprintf("%03d", i+2)
+		write(part("pmh0_legl"+num, verts))
+		moved := make([]Vec3, len(verts))
+		for j, v := range verts {
+			moved[j] = fit(v)
+		}
+		write(part("pmd0_legl"+num, moved))
+	}
+	src := part("pmh0_legl050", []Vec3{{0.08, 0.02, -0.15}, {0, 0.07, -0.3}, {0.03, 0, -0.35}})
+	pairs := 0
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Learned: func(n int) { pairs = n }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pairs != 3 {
+		t.Errorf("learned from %d pairs, want 3", pairs)
+	}
+	for i, v := range out.Nodes[1].Mesh.Verts {
+		if w := fit(src.Nodes[1].Mesh.Verts[i]); !near(v, w) {
+			t.Errorf("vertex %d at %v, want %v (the pairs' fit)", i, v, w)
+		}
 	}
 }

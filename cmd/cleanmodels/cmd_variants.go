@@ -28,6 +28,16 @@ type variantResult struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
 	File   string `json:"file,omitempty"`
+	// LearnedFrom is how many existing versions of an armour part's slot its
+	// fit was learned from; 0 for the measured fit.
+	LearnedFrom int `json:"learnedFrom,omitempty"`
+	// Adjusts lists the adjustments that change this variant (width, length,
+	// shape regions; mdl.VariantAdjustments).
+	Adjusts []string `json:"adjusts,omitempty"`
+	// Action is what --dry-run would do: "write", "replace" or "skip", and
+	// Reason why, for a skip.
+	Action string `json:"action,omitempty"`
+	Reason string `json:"reason,omitempty"`
 	// SameShape is set when the variant is that body's, renamed (mdl.Body).
 	SameShape string   `json:"sameShape,omitempty"`
 	Preview   string   `json:"preview,omitempty"`
@@ -43,6 +53,7 @@ func cmdVariants(args []string) int {
 	to := fs.String("to", "", "comma-separated bodies to make variants for (pmd0,pme2,...); default: every body found (game install, --resource-dir) of the source's gender that has models of the source's kind")
 	listBodies := fs.Bool("list-bodies", false, "list the bodies found in the game install and --resource-dir, with their shape groups; given a model, the bodies it would get variants for (and its own)")
 	compile := fs.Bool("compile", false, "write compiled (binary) models instead of ASCII")
+	dryRun := fs.Bool("dry-run", false, "make nothing: list each variant's file, whether it would be written, replace one or be skipped (exists, no --overwrite), and how it would be fitted")
 	width := fs.Float64("width", 1, "multiply the fit's width across every bone (1.05: 5% looser)")
 	length := fs.Float64("length", 1, "multiply the fit's stretch along every bone")
 	shapeFlag := fs.String("shape", "", "narrow or widen by body region after the fit: shoulders=0.9,chest=1,waist=0.85,hips=1,hem=1.1 (factors 0.5 to 2; sleeves stay on the arms)")
@@ -76,6 +87,10 @@ func cmdVariants(args []string) int {
 			fmt.Fprintf(os.Stderr, "cleanmodels: --%s %g: give a factor from 0.5 to 2\n", f.name, f.v)
 			return exitUsage
 		}
+	}
+	if *dryRun && *cf.jsonLines {
+		fmt.Fprintf(os.Stderr, "cleanmodels: --dry-run lists what would be done; use it with --json or plain output, not --json-lines\n")
+		return exitUsage
 	}
 	shape, err := mdl.ParseShape(*shapeFlag)
 	if err != nil {
@@ -138,8 +153,8 @@ func cmdVariants(args []string) int {
 		sameShape[b.Prefix] = b.SameShape
 	}
 	for _, d := range []string{outDir, *previewDir} {
-		if d == "" {
-			continue
+		if d == "" || *dryRun {
+			continue // a dry run makes nothing, folders included
 		}
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
@@ -166,6 +181,8 @@ func cmdVariants(args []string) int {
 	type made struct {
 		m        *mdl.Model
 		warnings []string
+		learned  int      // pairs the fit was learned from (0: measured)
+		adjusts  []string // the adjustments that change it
 		err      error
 	}
 	fitted := map[string]made{}
@@ -181,7 +198,11 @@ func cmdVariants(args []string) int {
 			Width:     *width,
 			Length:    *length,
 			Shape:     shape,
+			Learned:   func(pairs int) { f.learned = pairs },
 		})
+		if f.err == nil {
+			f.adjusts = mdl.VariantAdjustments(f.m, body, superDirs)
+		}
 		fitted[body] = f
 		return f
 	}
@@ -197,7 +218,8 @@ func cmdVariants(args []string) int {
 		case rep == "" || *to != "" && !slices.Contains(targets, rep) && rep != srcPrefix:
 			// Its own shape, or one asked for alone: fit it itself.
 			f := fit(target)
-			out, err, res.Warnings = f.m, f.err, f.warnings
+			out, err, res.LearnedFrom, res.Adjusts = f.m, f.err, f.learned, f.adjusts
+			res.Warnings = append([]string(nil), f.warnings...)
 		case rep == srcPrefix:
 			res.SameShape = rep
 			out = mdl.RenameBody(src, srcPrefix, target)
@@ -208,13 +230,25 @@ func cmdVariants(args []string) int {
 				err = fmt.Errorf("same shape as %s, which failed: %v", rep, f.err)
 			} else {
 				out = mdl.RenameBody(f.m, rep, target)
+				res.LearnedFrom, res.Adjusts = f.learned, f.adjusts
 			}
 		}
-		if err == nil {
+		if err == nil && *dryRun {
+			res.File = filepath.Join(outDir, name)
+			res.Action = "write"
+			if same, _ := sameFile(res.File, input); same {
+				err = fmt.Errorf("%s is the input model; give an output directory", res.File)
+			} else if _, statErr := os.Stat(res.File); statErr == nil {
+				res.Action = "replace"
+				if !o.overwrite {
+					res.Action, res.Reason = "skip", "it exists; add --overwrite to replace it"
+				}
+			}
+		} else if err == nil {
 			res.File = filepath.Join(outDir, name)
 			err = writeVariant(out, res.File, input, *compile, o.overwrite, superDirs, resDirs, &res)
 		}
-		if err == nil && *previewDir != "" && res.SameShape == "" {
+		if err == nil && !*dryRun && *previewDir != "" && res.SameShape == "" {
 			writePreview(out, target, target+suffix, *previewDir, superDirs, &res)
 		}
 		if err != nil {
@@ -224,7 +258,7 @@ func cmdVariants(args []string) int {
 		}
 		results = append(results, res)
 		if o.jsonLines {
-			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target, SameShape: res.SameShape}
+			evt := Event{File: name, Index: i + 1, Total: len(targets), Source: input, Target: target, SameShape: res.SameShape, LearnedFrom: res.LearnedFrom, Adjusts: res.Adjusts}
 			if res.Error != "" {
 				evt.Type, evt.Message = "error", res.Error
 			} else {
@@ -246,6 +280,9 @@ func cmdVariants(args []string) int {
 		}
 	}
 	summary := fmt.Sprintf("%d of %d variants written", len(targets)-failed, len(targets))
+	if *dryRun {
+		summary = fmt.Sprintf("dry run: %d of %d variants would be made, nothing written", len(targets)-failed, len(targets))
+	}
 	if o.jsonOut {
 		b, _ := json.MarshalIndent(results, "", "  ")
 		fmt.Println(string(b))
@@ -433,11 +470,27 @@ func printVariantResult(r variantResult) {
 		fmt.Printf("%s  failed: %s\n", r.Target, r.Error)
 		return
 	}
+	var how []string
+	if r.LearnedFrom > 0 {
+		how = append(how, fmt.Sprintf("learned from %d existing pairs", r.LearnedFrom))
+	}
 	if r.SameShape != "" {
-		fmt.Printf("%s  %s  (%s's fit: same shape)\n", r.Target, r.File, r.SameShape)
+		how = append(how, r.SameShape+"'s fit: same shape")
+	}
+	line := r.Target + "  " + r.File
+	if r.Action != "" {
+		line += "  would " + r.Action
+		if r.Reason != "" {
+			line += ": " + r.Reason
+		}
+	}
+	if len(how) > 0 {
+		line += "  (" + strings.Join(how, "; ") + ")"
+	}
+	fmt.Println(line)
+	if r.SameShape != "" {
 		return
 	}
-	fmt.Printf("%s  %s\n", r.Target, r.File)
 	for _, w := range r.Warnings {
 		fmt.Printf("    %s\n", w)
 	}

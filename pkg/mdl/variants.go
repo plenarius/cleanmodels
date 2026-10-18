@@ -68,6 +68,17 @@ type VariantOptions struct {
 	// along every bone. Zero means 1. Feet, hands, shoulder pads and belts,
 	// which scale in all three directions, take Width in all three.
 	Width, Length float64
+
+	// Learned, if set, is called when an armour part's fit was learned from
+	// versions of its slot that already exist for both bodies (see
+	// variants_learned.go), with how many pairs it was learned from. Not
+	// called for the measured fit.
+	Learned func(pairs int)
+
+	// noLearn keeps armour parts to the measured fit (no slot choice), by
+	// the base parts' bounding boxes, or their centres of mass and spreads
+	// when byMass: for judging the fits against each other.
+	noLearn, byMass bool
 }
 
 // withoutDir returns locs without the folder dir ("" leaves them as they are).
@@ -498,6 +509,41 @@ func partSpread(name string, locs []string) []float64 {
 
 // partStats returns the centre of a body part model's vertices and their RMS
 // spread about it along x, y and z; ok is false when the part is not found.
+// partBox returns the centre of a body part model's bounding box and its
+// size along x, y and z; ok is false when the part is not found.
+func partBox(name string, locs []string) (centre, size [3]float64, ok bool) {
+	ref := findModelResource(name, locs)
+	if ref == nil {
+		return centre, size, false
+	}
+	m, err := readModelRef(ref)
+	if err != nil {
+		return centre, size, false
+	}
+	w := newWorldTransforms(m)
+	lo := [3]float64{math.Inf(1), math.Inf(1), math.Inf(1)}
+	hi := [3]float64{math.Inf(-1), math.Inf(-1), math.Inf(-1)}
+	for _, n := range m.Nodes {
+		if n.Mesh == nil || n.Aabb != nil || n.Mesh.Render == 0 {
+			continue
+		}
+		t := w.of(n.Name)
+		for _, v := range n.Mesh.Verts {
+			p := t.apply(vec3d(v))
+			for k := 0; k < 3; k++ {
+				lo[k], hi[k] = math.Min(lo[k], p[k]), math.Max(hi[k], p[k])
+			}
+		}
+	}
+	if math.IsInf(lo[0], 1) {
+		return centre, size, false
+	}
+	for k := 0; k < 3; k++ {
+		centre[k], size[k] = (lo[k]+hi[k])/2, hi[k]-lo[k]
+	}
+	return centre, size, true
+}
+
 func partStats(name string, locs []string) (centre, spread [3]float64, ok bool) {
 	ref := findModelResource(name, locs)
 	if ref == nil {
