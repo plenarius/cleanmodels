@@ -49,6 +49,9 @@ type Event struct {
 	Body    string `json:"body,omitempty"`
 	// SameShape: the variant is this body's fit, renamed (variants).
 	SameShape string `json:"sameShape,omitempty"`
+	// LearnedFrom: an armour part's fit was learned from this many existing
+	// versions of its slot (variants); absent for the measured fit.
+	LearnedFrom int `json:"learnedFrom,omitempty"`
 }
 
 type pivotOpts struct {

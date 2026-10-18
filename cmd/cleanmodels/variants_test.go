@@ -299,3 +299,25 @@ func TestVariantsIgnoresEarlierOutput(t *testing.T) {
 		}
 	}
 }
+
+// TestVariantsDryRun: --dry-run writes nothing and says what it would do.
+func TestVariantsDryRun(t *testing.T) {
+	dir := t.TempDir()
+	src := variantFixture(t, dir)
+	out := filepath.Join(dir, "out")
+	var code int
+	stdout, _ := captureStdio(t, func() {
+		code = cmdVariants([]string{"--dry-run", "--json", "--to", "pmd0", "--game-dir", dir, src, out})
+	})
+	var results []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &results); code != exitOK || err != nil || len(results) != 1 || results[0]["action"] != "write" {
+		t.Fatalf("exit %d, %v, output %s: want one result that would be written", code, err, stdout)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("--dry-run created %s", out)
+	}
+	captureStdio(t, func() { code = cmdVariants([]string{"--dry-run", "--json-lines", src}) })
+	if code != exitUsage {
+		t.Errorf("--dry-run --json-lines: exit %d, want a usage error", code)
+	}
+}

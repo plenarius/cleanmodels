@@ -2,6 +2,8 @@ package mdl
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -59,6 +61,23 @@ func learnedSlotFit(srcPrefix, target, slot string, locs []string) *slotFit {
 	return f
 }
 
+// isGameInstall reports whether loc is a game install (data/nwn_base.key).
+func isGameInstall(loc string) bool {
+	_, err := os.Stat(filepath.Join(loc, "data", "nwn_base.key"))
+	return err == nil
+}
+
+// fromGameInstall reports whether ref was found in a game install among locs
+// (as opposed to a folder or hak of the user's).
+func fromGameInstall(ref *resourceRef, locs []string) bool {
+	for _, loc := range locs {
+		if isGameInstall(loc) && strings.HasPrefix(ref.id, loc+"#") {
+			return true
+		}
+	}
+	return false
+}
+
 // pairSums are one pair's weighted sums for the per-axis least squares.
 type pairSums struct {
 	sx, sy, sxx, sxy [3]float64
@@ -78,13 +97,28 @@ func learnSlot(srcPrefix, target, slot string, locs []string, skip string) *slot
 		}
 	}
 	sort.Strings(nums)
-	if len(nums) > learnPairs { // spread over the numbers
-		pick := make([]string, learnPairs)
-		for i := range pick {
-			pick[i] = nums[i*len(nums)/learnPairs]
+	// Pairs from the user's own folders and haks first (a version made by
+	// hand to show how this body should look), then the game install's,
+	// spread over their numbers.
+	var own, game []string
+	for _, num := range nums {
+		if ref := findModelResource(target+"_"+slot+num, locs); ref != nil && fromGameInstall(ref, locs) {
+			game = append(game, num)
+		} else {
+			own = append(own, num)
 		}
-		nums = pick
 	}
+	if len(own) >= learnPairs {
+		own = own[:learnPairs]
+	}
+	if room := learnPairs - len(own); len(game) > room {
+		pick := make([]string, room)
+		for i := range pick {
+			pick[i] = game[i*len(game)/room]
+		}
+		game = pick
+	}
+	nums = append(own, game...)
 	var ps []pairSums
 	for _, num := range nums {
 		a, errA := readModelRef(findModelResource(srcPrefix+"_"+slot+num, locs))

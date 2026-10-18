@@ -702,3 +702,57 @@ func TestVariantLearnedMatchesBioware(t *testing.T) {
 		t.Errorf("learned fits used for %d slots, %.2f cm against %.2f cm measured", used, chosen, measured)
 	}
 }
+
+// TestVariantLearnsFromPairs: where versions of a slot exist for both bodies
+// and the target's are a scale and offset of the source's, a new part gets
+// that fit, and Learned says how many pairs it came from.
+func TestVariantLearnsFromPairs(t *testing.T) {
+	dir := t.TempDir()
+	write := func(m *Model) {
+		if err := WriteFile(m, filepath.Join(dir, m.Name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, shin := range map[string]float32{"pmh0": 0.4, "pmd0": 0.3} {
+		sk := skeletonTestModel(name, 0.4)
+		sk.FindNode("lshin_g").Position = Vec3{0, 0, -shin}
+		write(sk)
+	}
+	fit := func(v Vec3) Vec3 { return Vec3{v.X*1.3 + 0.02, v.Y * 1.1, v.Z*0.8 - 0.01} }
+	part := func(name string, verts []Vec3) *Model {
+		m := partTestModel(name, verts)
+		mesh := m.Nodes[1].Mesh
+		for i := range mesh.TVerts {
+			mesh.TVerts[i] = Vec3{float32(i) * 0.01, float32(len(name)) * 0.001, 0}
+		}
+		return m
+	}
+	shapes := [][]Vec3{
+		{{0.1, 0, -0.2}, {0, 0.1, -0.05}, {0, 0, -0.4}, {0.05, 0.05, -0.3}, {-0.05, 0.02, -0.1}, {0.02, -0.04, -0.25}},
+		{{0.12, 0.01, -0.22}, {0.01, 0.11, -0.06}, {0.02, 0, -0.38}, {0.06, 0.04, -0.31}, {-0.04, 0.03, -0.12}, {0.03, -0.05, -0.2}},
+		{{0.09, -0.01, -0.18}, {-0.01, 0.09, -0.04}, {0.01, 0.01, -0.42}, {0.04, 0.06, -0.29}, {-0.06, 0.01, -0.09}, {0.01, -0.03, -0.27}},
+	}
+	for i, verts := range shapes {
+		num := fmt.Sprintf("%03d", i+2)
+		write(part("pmh0_legl"+num, verts))
+		moved := make([]Vec3, len(verts))
+		for j, v := range verts {
+			moved[j] = fit(v)
+		}
+		write(part("pmd0_legl"+num, moved))
+	}
+	src := part("pmh0_legl050", []Vec3{{0.08, 0.02, -0.15}, {0, 0.07, -0.3}, {0.03, 0, -0.35}})
+	pairs := 0
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Learned: func(n int) { pairs = n }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pairs != 3 {
+		t.Errorf("learned from %d pairs, want 3", pairs)
+	}
+	for i, v := range out.Nodes[1].Mesh.Verts {
+		if w := fit(src.Nodes[1].Mesh.Verts[i]); !near(v, w) {
+			t.Errorf("vertex %d at %v, want %v (the pairs' fit)", i, v, w)
+		}
+	}
+}

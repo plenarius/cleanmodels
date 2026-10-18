@@ -69,6 +69,12 @@ type VariantOptions struct {
 	// which scale in all three directions, take Width in all three.
 	Width, Length float64
 
+	// Learned, if set, is called when an armour part's fit was learned from
+	// versions of its slot that already exist for both bodies (see
+	// variants_learned.go), with how many pairs it was learned from. Not
+	// called for the measured fit.
+	Learned func(pairs int)
+
 	// noLearn keeps armour parts to the measured fit (no learnedSlotFit):
 	// for judging the learned fit against it.
 	noLearn bool

@@ -82,6 +82,9 @@ func partVariant(src *Model, srcPrefix, target string, opts VariantOptions, warn
 		// The race versions of this slot that exist show how it is done
 		// for this body (variants_learned.go).
 		if f := learnedSlotFit(srcPrefix, target, partKind(src.Name), locs); f != nil {
+			if opts.Learned != nil {
+				opts.Learned(f.pairs)
+			}
 			return learnedVariant(src, srcPrefix, target, f, width, length), nil
 		}
 	}
