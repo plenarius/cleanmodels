@@ -1,0 +1,64 @@
+# mdl-spec conformance probe zspec_numbers (CC0-1.0)
+# Number and word syntax: exponents, a leading '+', hexadecimal floats,
+# trailing junk after a number, a comma decimal, '1.#INF', TRUE/false for
+# integers, a fractional integer, a four-value colour, upper-case keywords,
+# a comment line inside a node and a comment after values.
+newmodel zspec_numbers
+setsupermodel zspec_numbers NULL
+classification character
+beginmodelgeom zspec_numbers
+node dummy zspec_numbers
+  parent NULL
+endnode
+node dummy n_exp
+  parent zspec_numbers
+  position 1e1 -2.5E-1 +3
+endnode
+node dummy n_hex
+  parent zspec_numbers
+  position 0x1p1 0x10 -0x.8p1
+endnode
+node dummy n_junk
+  parent zspec_numbers
+  position 1.5abc 2 3
+endnode
+node dummy n_comma
+  parent zspec_numbers
+  position 0,5 1 1
+endnode
+node dummy n_caps
+  PARENT zspec_numbers
+  # a comment line inside a node
+  POSITION 1 1 1 # a comment after the values
+  Scale 2 3 4
+endnode
+node trimesh n_mesh
+  parent zspec_numbers
+  bitmap zspec_t0
+  shininess 7abc
+  transparencyhint 2.9
+  shadow TRUE
+  beaming false
+  render yes
+  tilefade -1
+  diffuse 0.5 0.25 0.125 1
+  alpha .5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node light n_light
+  parent zspec_numbers
+  radius 1.#INF
+  multiplier 2
+  lightpriority 4.5
+endnode
+endmodelgeom zspec_numbers
+donemodel zspec_numbers

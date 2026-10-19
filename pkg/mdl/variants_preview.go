@@ -194,7 +194,7 @@ func newPreviewModel(name string) *Model {
 		SuperModel:     "NULL",
 		Classification: "character",
 		AnimationScale: 1,
-		Nodes:          []*Node{{Name: name, Parent: "NULL", Orientation: Vec4{W: 1}, Scale: 1}},
+		Nodes:          []*Node{{Name: name, Parent: "NULL", Orientation: Vec4{}, Scale: 1}},
 	}
 }
 
@@ -229,7 +229,7 @@ func bakeNodes(dst, m *Model, world func(name string) rigid) {
 		dst.Nodes = append(dst.Nodes, &Node{
 			Name:        fmt.Sprintf("%s_%d", root, len(dst.Nodes)),
 			Parent:      root,
-			Orientation: Vec4{W: 1},
+			Orientation: Vec4{},
 			Scale:       1,
 			Mesh:        &mesh,
 		})

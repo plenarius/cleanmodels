@@ -175,6 +175,20 @@ unnamed and warns, rather than naming them after the part's own nodes. It also w
 uninitialised slots an engine compile can leave): in game such a vertex is
 drawn at the origin.
 
+A 100-byte skin header (BioWare files and some EE ones) holds 17 bone list
+entries and one more word; the game copies 64 entries whatever the layout, so
+later entries are whatever follows the header. Where a weighted bone's list
+entry lies outside its tree, the bone is named from the `boneindexarray`
+instead, with a warning (stock `tni_udoor_19`: bone 17 reads 109 in a 46-node
+tree; finding 47).
+
+## Animmesh sets
+
+The binary stores an animmesh's `animverts` and `animtverts` vertex-major:
+each vertex in every set before the next vertex. The ASCII lists one whole set
+after another, so `readAnimMeshHeader` transposes them (`animSetMajor`), and
+the compiler transposes them back over its GPU vertices (finding 44).
+
 ## AABB walkmeshes
 
 `readAABBHeader` reads the root pointer, then `readAABBTree` walks the

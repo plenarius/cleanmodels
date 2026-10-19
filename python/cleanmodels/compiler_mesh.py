@@ -39,6 +39,7 @@ class ExpandedMesh:
         self.face_verts = []   # [a, b, c] GPU indices per kept face
         self.face_src = []     # face_verts[k] came from mesh.faces[face_src[k]]
         self.orig_vert = []    # GPU vertex -> source vertex index
+        self.orig_tvert = []   # GPU vertex -> source UV0 index, -1 without one
         self.faces_ptr_pos = 0
         self.index_count_list_ptr_pos = -1
         self.index_offset_list_ptr_pos = -1
@@ -78,7 +79,44 @@ def _has_nan(seq):
     return False
 
 
-def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=None, aabb_merge=False):
+def _zbits(v):
+    """f32bits: the float's bits, with -0 folded into +0."""
+    return 0 if v == 0 else f32_bits(v)
+
+
+def anim_sets(lst, n):
+    """animSets: how many sets lst holds for a mesh with n source entries."""
+    return len(lst) // n if n > 0 else 0
+
+
+def anim_merge_key(mesh, am, vert_idx, tv_idx):
+    """animMergeKey: the corner's vertex in every animverts set, then its tvert in every animtverts set."""
+    nv, nt = len(mesh.verts), len(mesh.tverts)
+    key = []
+    if 0 <= vert_idx < nv:
+        for s in range(anim_sets(am.anim_verts, nv)):
+            v = am.anim_verts[s * nv + vert_idx]
+            key.append((_zbits(v[0]), _zbits(v[1]), _zbits(v[2])))
+    key.append("|")
+    if 0 <= tv_idx < nt:
+        for s in range(anim_sets(am.anim_tverts, nt)):
+            v = am.anim_tverts[s * nt + tv_idx]
+            key.append((_zbits(v[0]), _zbits(v[1])))
+    return tuple(key)
+
+
+def anim_vertex_major(lst, n, orig):
+    """animVertexMajor: for each GPU vertex, its source entry in every set."""
+    sets = anim_sets(lst, n)
+    zero = (0.0, 0.0, 0.0)
+    out = []
+    for o in orig:
+        for s in range(sets):
+            out.append(lst[s * n + o] if 0 <= o < n else zero)
+    return out
+
+
+def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=None, aabb_merge=False, anim=None):
     """buildExpandedMeshOpts. Raises CompileError past 65535 GPU vertices."""
     verts = mesh.verts
     tverts, tverts1, tverts2, tverts3 = mesh.tverts, mesh.tverts1, mesh.tverts2, mesh.tverts3
@@ -113,7 +151,7 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
            or (constraints is not None and any(x != x for x in constraints)))
     kb = _bits if nan else (lambda v: v)
 
-    positions, origv = exp.positions, exp.orig_vert
+    positions, origv, origt = exp.positions, exp.orig_vert, exp.orig_tvert
     uvs, uvs1, uvs2, uvs3 = exp.uvs, exp.uvs1, exp.uvs2, exp.uvs3
     enor, ecol = exp.normals, exp.colors
     vkeys = []
@@ -122,11 +160,12 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
     def add_vertex(c):
         if len(positions) >= 65535:
             raise CompileError("mesh exceeds 65535 unique GPU vertices (%d); split the mesh" % len(positions))
-        key, vert_idx, pos, uv, uv1, uv2, uv3, nor, col = c
+        key, vert_idx, tv_idx, pos, uv, uv1, uv2, uv3, nor, col = c
         idx = len(positions)
         vkeys.append(key)
         positions.append(pos)
         origv.append(vert_idx)
+        origt.append(tv_idx)
         if has_uv:
             uvs.append(uv)
         if has_uv1:
@@ -158,12 +197,14 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
             uv_idx = fuvs[vi]
             pos = verts[vert_idx] if 0 <= vert_idx < nv else zero
             uv = uv1 = uv2 = uv3 = nor = col = zero
+            tv_idx = -1
             if has_uv:
                 ti = uv_idx
                 if has_tex_idx0 and fi < len(ti0):
                     ti = ti0[fi][vi]
                 if 0 <= ti < nt:
                     uv = tverts[ti]
+                    tv_idx = ti
             if has_uv1:
                 ti = ti1[fi][vi] if fi < len(ti1) else uv_idx
                 if 0 <= ti < nt1:
@@ -187,8 +228,9 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
                    kb(uv2[0]), kb(uv2[1]), kb(uv3[0]), kb(uv3[1]), kb(nor[0]), kb(nor[1]), kb(nor[2]),
                    kb(col[0]), kb(col[1]), kb(col[2]), mirror,
                    skin_keys[vert_idx] if 0 <= vert_idx < nsk else "",
-                   kb(constraints[vert_idx]) if 0 <= vert_idx < ncons else 0.0)
-            cs.append((key, vert_idx, pos, uv, uv1, uv2, uv3, nor, col))
+                   kb(constraints[vert_idx]) if 0 <= vert_idx < ncons else 0.0,
+                   anim_merge_key(mesh, anim, vert_idx, tv_idx) if anim is not None else "")
+            cs.append((key, vert_idx, tv_idx, pos, uv, uv1, uv2, uv3, nor, col))
 
         if aabb_merge:
             cand = []
@@ -332,7 +374,8 @@ class MeshMixin:
                 strip_degenerate=n is None or n.aabb is None,
                 skin_keys=skin_merge_keys(n.skin) if n is not None else None,
                 dangly=n.dangly if n is not None else None,
-                aabb_merge=n is not None and n.aabb is not None)
+                aabb_merge=n is not None and n.aabb is not None,
+                anim=self.merge_anim)
         except CompileError as e:
             self.err = e
             self.write_empty_mesh_header()

@@ -78,13 +78,15 @@ func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
 
 	var expanded *expandedMesh
 	if hasMesh {
+		c.mergeAnim = n.AnimMesh
 		expanded = c.writeMeshHeaderFull(n)
+		c.mergeAnim = nil
 	}
 	if hasSkin {
 		c.writeSkinHeader(n, expanded)
 	}
 	if hasAnimMesh {
-		animVertsPtrPos, animTVertsPtrPos, animNVertSets, animNTVertSets = c.writeAnimMeshHeader(n, nil)
+		animVertsPtrPos, animTVertsPtrPos, animNVertSets, animNTVertSets = c.writeAnimMeshHeader(n, nil, expanded)
 	}
 	if hasDangly {
 		c.writeDanglyHeader(n)
@@ -105,22 +107,8 @@ func (c *compiler) writeNode(n *Node, parentOff int32, count *int32) int32 {
 	if hasDangly {
 		c.writeDanglyConstraints(n)
 	}
-	if hasAnimMesh && n.AnimMesh != nil {
-		if animNVertSets > 0 {
-			off := int32(c.core.len())
-			c.core.patchU32(animVertsPtrPos, uint32(off))
-			for _, v := range n.AnimMesh.AnimVerts {
-				c.core.vec3(v)
-			}
-		}
-		if animNTVertSets > 0 {
-			off := int32(c.core.len())
-			c.core.patchU32(animTVertsPtrPos, uint32(off))
-			for _, v := range n.AnimMesh.AnimTVerts {
-				c.core.f32le(v.X)
-				c.core.f32le(v.Y)
-			}
-		}
+	if hasAnimMesh && n.AnimMesh != nil && expanded != nil {
+		c.writeAnimMeshData(n.Mesh, n.AnimMesh, expanded, animVertsPtrPos, animTVertsPtrPos, animNVertSets, animNTVertSets)
 	}
 
 	// ---- Controllers ----

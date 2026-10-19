@@ -1,0 +1,37 @@
+# mdl-spec conformance probe zspec_orient (CC0-1.0)
+# The orientation keyword (axis x y z, angle in radians): a zero axis, a
+# zero angle, an axis that is not unit length, a diagonal axis, a negative
+# angle and an angle over 2 pi.
+newmodel zspec_orient
+setsupermodel zspec_orient NULL
+classification character
+beginmodelgeom zspec_orient
+node dummy zspec_orient
+  parent NULL
+endnode
+node dummy o_zero_axis
+  parent zspec_orient
+  orientation 0 0 0 1
+endnode
+node dummy o_zero_angle
+  parent zspec_orient
+  orientation 0 0 1 0
+endnode
+node dummy o_unnorm
+  parent zspec_orient
+  orientation 0 0 2 1.5707963
+endnode
+node dummy o_diag
+  parent zspec_orient
+  orientation 1 1 0 3.1415927
+endnode
+node dummy o_neg
+  parent zspec_orient
+  orientation 0 0 1 -1
+endnode
+node dummy o_big
+  parent zspec_orient
+  orientation 0 1 0 7
+endnode
+endmodelgeom zspec_orient
+donemodel zspec_orient

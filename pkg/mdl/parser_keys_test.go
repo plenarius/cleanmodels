@@ -42,8 +42,9 @@ donemodel keys
 }
 
 // A key cannot be kept with an invented time or pose, so a key with no usable
-// time or too few values is skipped (and reported); a bad value inside an
-// otherwise good key is set to 0 (and reported). Neighbours stay in order.
+// time or too few values is skipped (and reported). Inside an otherwise good
+// key, the values are read as the game reads them (sscanf): "0/9" is 0, and
+// the values after it are set to 0 (reported). Neighbours stay in order.
 func TestCountedKeysSkipBadKeysAndKeepOrder(t *testing.T) {
 	node, errs := animNode(t, "dummy", `    positionkey 5
       0.0 0 0 0
@@ -58,10 +59,10 @@ func TestCountedKeysSkipBadKeysAndKeepOrder(t *testing.T) {
 	if keys[0].Time != 0 || keys[1].Time != 0.75 || keys[2].Time != 1.0 {
 		t.Errorf("times out of order or wrong: %+v", keys)
 	}
-	if keys[1].Value.X != 1 || keys[1].Value.Y != 0 || keys[1].Value.Z != 3 {
-		t.Errorf("bad value should be 0 with the good ones kept: %+v", keys[1].Value)
+	if keys[1].Value.X != 1 || keys[1].Value.Y != 0 || keys[1].Value.Z != 0 {
+		t.Errorf("the value read as 0 and the one after it should be 0: %+v", keys[1].Value)
 	}
-	for _, want := range []string{"key has 3 value(s), expected 4; the key is skipped", `key time "x" is not a usable number`, `"0/9" is not a usable number, set to 0`} {
+	for _, want := range []string{"key has 3 value(s), expected 4; the key is skipped", `key time "x" is not a usable number`, `"0/9" is read as 0, as the game reads it, and the values after it in the entry are set to 0`} {
 		if !hasError(errs, want) {
 			t.Errorf("missing warning %q in %+v", want, errs)
 		}
@@ -117,10 +118,11 @@ func TestBezierKeys(t *testing.T) {
 	if keys[0].TanIn != (Vec3{}) {
 		t.Errorf("row without tangents should have zero tangents: %+v", keys[0])
 	}
-	if keys[1].TanIn.Z != 0 || keys[1].TanIn.Y != 0.2 || keys[1].TanOut.X != 0.4 {
+	// The game stops reading the row at "q", so the values after it are 0 too.
+	if keys[1].TanIn != (Vec3{X: 0.1, Y: 0.2}) || keys[1].TanOut != (Vec3{}) {
 		t.Errorf("tangents = in %+v out %+v", keys[1].TanIn, keys[1].TanOut)
 	}
-	if !hasError(errs, `"q" is not a usable number, set to 0`) || !hasError(errs, "key has 3 value(s), expected 4") {
+	if !hasError(errs, `"q" is not a usable number, set to 0, as are the values after it`) || !hasError(errs, "key has 3 value(s), expected 4") {
 		t.Errorf("warnings = %+v", errs)
 	}
 }

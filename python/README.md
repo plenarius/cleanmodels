@@ -40,7 +40,7 @@ for file:
 | `compiler.py` | `compiler.go`, `compiler_dropped.go` (compiler) |
 | `compiler_node.py`, `compiler_mesh.py` | `compiler_node.go`, `compiler_mesh.go` |
 | `compiler_normals.py`, `compiler_tangents.py` | `compiler_normals.go`, `compiler_tangents.go` |
-| `compiler_controllers.py`, `compiler_tree.py`, `compiler_skinbind.py` | `compiler_controllers.go`, `compiler_tree.go`, `compiler_skinbind.go` |
+| `compiler_controllers.py`, `compiler_tree.py`, `compiler_order.py`, `compiler_skinbind.py` | `compiler_controllers.go`, `compiler_tree.go`, `compiler_order.go`, `compiler_skinbind.go` |
 | `supermodel.py`, `materials.py`, `compiler_skeleton.py` | `supermodel.go`, `materials.go`, `skeleton.go` and `twoda.go` (compile side) |
 | `vec.py`, `compiler_buf.py` | `vec.go`, `transforms.go` (modelBounds); `patchBuf` |
 | `types.py` | `types.go` |

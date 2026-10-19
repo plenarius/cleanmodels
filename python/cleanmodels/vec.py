@@ -5,6 +5,7 @@ ones are plain Python floats. Sin and Cos are Go's (gomath).
 """
 
 import math
+import struct
 
 from .compiler_tree import resolve_geom_tree
 from .f32 import f32
@@ -13,10 +14,26 @@ from .gomath import go_cos, go_sin
 
 def axis_angle_to_quat(aa):
     """vec.go axisAngleToQuat: axis-angle (x, y, z, angle) -> quaternion (x, y, z, w)."""
-    angle = aa[3]
-    s = go_sin(angle / 2)
-    c = go_cos(angle / 2)
-    return (f32(aa[0] * s), f32(aa[1] * s), f32(aa[2] * s), f32(c))
+    ax, ay, az = engine_normalize(aa[0], aa[1], aa[2])
+    half = f32(aa[3] * 0.5)
+    s = f32(go_sin(half))
+    c = f32(go_cos(half))
+    return (f32(ax * s), f32(ay * s), f32(az * s), c)
+
+
+_NORMALIZE_LOW = struct.unpack("<f", struct.pack("<I", 0x3F7FFF58))[0]
+_NORMALIZE_HIGH = struct.unpack("<f", struct.pack("<I", 0x3F800054))[0]
+
+
+def engine_normalize(x, y, z):
+    """vec.go engineNormalize: Vector::Normalize (0x5b3700) in float32."""
+    l2 = f32(f32(f32(x * x) + f32(y * y)) + f32(z * z))
+    if l2 == 1 or _NORMALIZE_LOW <= l2 <= _NORMALIZE_HIGH:
+        return x, y, z
+    if l2 == 0:
+        return 1.0, 0.0, 0.0
+    k = f32(math.sqrt(f32(1 / l2)))
+    return f32(x * k), f32(y * k), f32(z * k)
 
 
 def abs_f32(x):
@@ -33,14 +50,14 @@ def max_f(a, b):
 
 def rotation_matrix(axis):
     """The Rodrigues matrix RotateVectorAxisAngle builds, or None when it
-    returns its input unchanged (zero angle or zero axis)."""
+    returns its input unchanged (zero angle). A zero axis is +X."""
     angle = axis[3]
     if angle == 0:
         return None
     ax, ay, az = axis[0], axis[1], axis[2]
     r = math.sqrt(ax * ax + ay * ay + az * az)
     if r == 0:
-        return None
+        ax, r = 1.0, 1.0
     x, y, z = ax / r, ay / r, az / r
     c = go_cos(angle)
     s = go_sin(angle)

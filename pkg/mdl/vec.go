@@ -86,16 +86,41 @@ func maxF(a, b float32) float32 {
 	return b
 }
 
+// axisAngleToQuat converts an ASCII axis-angle to a quaternion as the game's
+// compiler does (AddGenericControllerSingle 0x4486f0, Parse(AurGenericKey)
+// 0x446ae0): the axis goes through engineNormalize, so a zero axis becomes +X
+// and a non-unit one is scaled to unit length, then sincosf of angle*0.5f
+// gives the float32 sine and cosine, and the axis is multiplied by the sine in
+// float32. The sine and cosine are Go's, rounded to float32.
 func axisAngleToQuat(aa Vec4) Vec4 {
-	angle := float64(aa.W)
-	s := math.Sin(angle / 2)
-	c := math.Cos(angle / 2)
-	return Vec4{
-		X: float32(float64(aa.X) * s),
-		Y: float32(float64(aa.Y) * s),
-		Z: float32(float64(aa.Z) * s),
-		W: float32(c),
+	ax, ay, az := engineNormalize(aa.X, aa.Y, aa.Z)
+	half := float64(aa.W * 0.5)
+	s := float32(math.Sin(half))
+	c := float32(math.Cos(half))
+	return Vec4{X: ax * s, Y: ay * s, Z: az * s, W: c}
+}
+
+// Bounds of the squared length Vector::Normalize leaves alone: 0.99999 and
+// 1.00001 as the float32 constants at 0x1306cc4 and 0x1306cc8.
+var (
+	normalizeLow  = math.Float32frombits(0x3f7fff58)
+	normalizeHigh = math.Float32frombits(0x3f800054)
+)
+
+// engineNormalize is Vector::Normalize (0x5b3700): the squared length is
+// summed in float32; a vector whose squared length is 1, or within
+// [normalizeLow, normalizeHigh], is returned unchanged; a zero vector becomes
+// (1, 0, 0); any other is multiplied by sqrt(1/length²), all in float32.
+func engineNormalize(x, y, z float32) (float32, float32, float32) {
+	l2 := float32(float32(x*x)+float32(y*y)) + float32(z*z)
+	if l2 == 1 || (l2 >= normalizeLow && l2 <= normalizeHigh) {
+		return x, y, z
 	}
+	if l2 == 0 {
+		return 1, 0, 0
+	}
+	k := float32(math.Sqrt(float64(float32(1 / l2))))
+	return x * k, y * k, z * k
 }
 
 func absF32(x float32) float32 {

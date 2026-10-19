@@ -1,0 +1,54 @@
+# mdl-spec conformance probe zspec_light (CC0-1.0)
+# Light: every header field, flare lists, static colour, radius,
+# multiplier, shadowradius and verticaldisplacement. The second light uses
+# nDynamicType and spellings the engine's parser may not know
+# (ambient_only, fading_light, negativelight, lensflares).
+newmodel zspec_light
+setsupermodel zspec_light NULL
+classification tile
+beginmodelgeom zspec_light
+node dummy zspec_light
+  parent NULL
+endnode
+node light lamp
+  parent zspec_light
+  position 0 0 2
+  color 1 0.5 0.25
+  radius 7.5
+  multiplier 1.5
+  shadowradius 3
+  verticaldisplacement 0.5
+  ambientonly 1
+  isdynamic 1
+  affectdynamic 0
+  shadow 0
+  lightpriority 3
+  generateflare 1
+  fadinglight 1
+  flareradius 2.5
+  texturenames 2
+    fxpa_lensflare
+    fxpa_lensring
+  flaresizes 2
+    0.5
+    1
+  flarepositions 2
+    0.25
+    0.75
+  flarecolorshifts 2
+    0 0 0
+    0.5 0.25 0
+endnode
+node light lamp_b
+  parent zspec_light
+  position 1 0 2
+  color 0.25 0.5 1
+  radius 4
+  nDynamicType 1
+  ambient_only 1
+  fading_light 1
+  negativelight 1
+  lensflares 1
+endnode
+endmodelgeom zspec_light
+donemodel zspec_light

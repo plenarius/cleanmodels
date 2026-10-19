@@ -1,0 +1,19 @@
+# cleanmodels engine probe zcm_deton (CC0-1.0): a static detonate on a geometry emitter
+newmodel zcm_deton
+setsupermodel zcm_deton NULL
+classification effect
+beginmodelgeom zcm_deton
+node dummy zcm_deton
+  parent NULL
+endnode
+node emitter spark
+  parent zcm_deton
+  update Explosion
+  render Normal
+  blend Normal
+  texture fxpa_flare
+  birthrate 10
+  detonate
+endnode
+endmodelgeom zcm_deton
+donemodel zcm_deton

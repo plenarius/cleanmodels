@@ -1,0 +1,99 @@
+# mdl-spec conformance probe zspec_transp (CC0-1.0)
+# Child order when a child mesh has transparencyhint > 0: the root's
+# children are meshes with hints 2, 1 and 0, a dummy and a light, in that
+# file order; 'keep' has two meshes with hint 0 under it, written in
+# reverse alphabetical order.
+newmodel zspec_transp
+setsupermodel zspec_transp NULL
+classification character
+beginmodelgeom zspec_transp
+node dummy zspec_transp
+  parent NULL
+endnode
+node trimesh m_two
+  parent zspec_transp
+  bitmap zspec_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d_dummy
+  parent zspec_transp
+endnode
+node trimesh m_one
+  parent zspec_transp
+  bitmap zspec_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m_zero
+  parent zspec_transp
+  bitmap zspec_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node light l_light
+  parent zspec_transp
+  radius 1
+endnode
+node dummy keep
+  parent zspec_transp
+endnode
+node trimesh k_z
+  parent keep
+  bitmap zspec_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh k_a
+  parent keep
+  bitmap zspec_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+endmodelgeom zspec_transp
+donemodel zspec_transp

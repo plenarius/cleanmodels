@@ -276,7 +276,9 @@ func (w *writer) writeNode(n *Node) {
 	if n.Position.X != 0 || n.Position.Y != 0 || n.Position.Z != 0 {
 		w.indent(4, "position %s", fmtVec3(n.Position))
 	}
-	if n.Orientation.X != 0 || n.Orientation.Y != 0 || n.Orientation.Z != 0 || (n.Orientation.W != 0 && n.Orientation.W != 1) {
+	// Only 0 0 0 0 is left out: the game reads a zero axis as +X, so
+	// "orientation 0 0 0 1" is a rotation of 1 radian (axisAngleToQuat).
+	if n.Orientation.X != 0 || n.Orientation.Y != 0 || n.Orientation.Z != 0 || n.Orientation.W != 0 {
 		w.indent(4, "orientation %s %s %s %s", fmtFloat(n.Orientation.X), fmtFloat(n.Orientation.Y), fmtFloat(n.Orientation.Z), fmtFloat(n.Orientation.W))
 	}
 	if n.Scale != 1.0 || n.isDeclared("scale") {
@@ -640,6 +642,9 @@ func (w *writer) writeEmitterData(n *Node, e *EmitterData) {
 	cf("p2p_bezier3", e.P2PBezier3)
 	cf("xsize", e.XSize)
 	cf("ysize", e.YSize)
+	if n.isDeclared("detonate") {
+		w.indent(4, "detonate")
+	}
 }
 
 func (w *writer) writeReferenceData(r *ReferenceData) {

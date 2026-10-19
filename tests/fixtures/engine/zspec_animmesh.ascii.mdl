@@ -1,0 +1,82 @@
+# mdl-spec conformance probe zspec_animmesh (CC0-1.0)
+# Animmesh: geometry node plus an animation with sampleperiod, animverts
+# (3 sets of 4 vertices) and animtverts. The animation node repeats the
+# mesh (verts, tverts, faces): without verts the engine divides by zero
+# (MdlNodeAnimMesh::InternalPostProcess 0x4578c9) and crashes.
+newmodel zspec_animmesh
+setsupermodel zspec_animmesh NULL
+classification character
+beginmodelgeom zspec_animmesh
+node dummy zspec_animmesh
+  parent NULL
+endnode
+node animmesh water
+  parent zspec_animmesh
+  bitmap zspec_t0
+  verts 4
+    -1 -1 0
+     1 -1 0
+     1  1 0
+    -1  1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+endnode
+endmodelgeom zspec_animmesh
+newanim animloop01 zspec_animmesh
+  length 1
+  transtime 0
+  animroot zspec_animmesh
+  node dummy zspec_animmesh
+    parent NULL
+  endnode
+  node animmesh water
+    parent zspec_animmesh
+    sampleperiod 0.5
+    verts 4
+      -1 -1 0
+       1 -1 0
+       1  1 0
+      -1  1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+    animverts 12
+      -1 -1 0
+       1 -1 0
+       1  1 0
+      -1  1 0
+      -1 -1 0.25
+       1 -1 0.25
+       1  1 0.5
+      -1  1 0.5
+      -1 -1 0
+       1 -1 0
+       1  1 0
+      -1  1 0
+    animtverts 12
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+      0.25 0 0
+      1.25 0 0
+      1.25 1 0
+      0.25 1 0
+      0.5 0 0
+      1.5 0 0
+      1.5 1 0
+      0.5 1 0
+  endnode
+doneanim animloop01 zspec_animmesh
+donemodel zspec_animmesh

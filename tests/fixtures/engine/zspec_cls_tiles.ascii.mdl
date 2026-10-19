@@ -1,0 +1,11 @@
+# mdl-spec conformance probe zspec_cls_tiles (CC0-1.0)
+# Classification keyword value 'Tiles'.
+newmodel zspec_cls_tiles
+setsupermodel zspec_cls_tiles NULL
+classification Tiles
+beginmodelgeom zspec_cls_tiles
+node dummy zspec_cls_tiles
+  parent NULL
+endnode
+endmodelgeom zspec_cls_tiles
+donemodel zspec_cls_tiles

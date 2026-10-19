@@ -1,0 +1,27 @@
+# mdl-spec conformance probe zspec_nodeorder (CC0-1.0)
+# Nodes declared out of depth-first order (a, b, a1, b1, a2): node numbers
+# and the order of each node's children.
+newmodel zspec_nodeorder
+setsupermodel zspec_nodeorder NULL
+classification character
+beginmodelgeom zspec_nodeorder
+node dummy zspec_nodeorder
+  parent NULL
+endnode
+node dummy a
+  parent zspec_nodeorder
+endnode
+node dummy b
+  parent zspec_nodeorder
+endnode
+node dummy a1
+  parent a
+endnode
+node dummy b1
+  parent b
+endnode
+node dummy a2
+  parent a
+endnode
+endmodelgeom zspec_nodeorder
+donemodel zspec_nodeorder

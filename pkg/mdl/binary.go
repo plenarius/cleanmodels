@@ -142,9 +142,29 @@ type nodeInfo struct {
 type pendingSkin struct {
 	node         *Node
 	bonePartNums []int16
-	bindCount    int // length of the boneindexarray
+	bindCount    int           // length of the boneindexarray
+	mapPos       map[int16]int // bone index -> its first tree position in the boneindexarray
 	skinWeights  [][4]float32
 	skinBoneRefs [][4]int16
+}
+
+// bonePos returns the tree position of bone ref: its bone list entry, unless
+// that lies outside the boneindexarray's tree and the boneindexarray places
+// the bone, in which case that position and true. A 100-byte skin header holds
+// 17 bone list entries and one more word, and the engine copies 64 entries
+// whatever the layout, so later entries are whatever follows the header
+// (stock tni_udoor_19: bone 17 reads 109 in a 46-node tree, while its
+// boneindexarray puts bone 17 at position 6; mdl-spec MDL-BIN-061). The game
+// skips such a bone; naming it from the boneindexarray keeps the bone the
+// author meant.
+func (ps pendingSkin) bonePos(ref int16) (int, bool) {
+	p := int(ps.bonePartNums[ref])
+	if p < 0 || p >= ps.bindCount {
+		if q, ok := ps.mapPos[ref]; ok {
+			return q, true
+		}
+	}
+	return p, false
 }
 
 func (d *decompiler) trackAlloc(bytes int64) bool {
@@ -547,7 +567,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 		PartNumber:   nodeNumber,
 		InheritColor: inheritColor,
 		Scale:        1.0,
-		Orientation:  Vec4{W: 1.0},
+		Orientation:  Vec4{},
 	}
 	d.nodeOrder = append(d.nodeOrder, nodeInfo{name: nodeName, partNumber: nodeNumber})
 
@@ -946,7 +966,7 @@ func (d *decompiler) readSkinHeader(node *Node) {
 
 	// int32 p_bone_mapping, count_bone_mapping (boneindexarray: one entry per
 	// tree position of the tree the skin is bound to)
-	d.skip(4)
+	pBoneMap, _ := d.readI32()
 	bindCount, _ := d.readI32()
 
 	// array_definition bone_quats (12), bone_vertex (12), bone_constants (12)
@@ -960,6 +980,20 @@ func (d *decompiler) readSkinHeader(node *Node) {
 	// Save position at end of header_skin so subsequent headers are read correctly.
 	headerEnd := d.pos()
 	defer func() { d.seek(headerEnd) }()
+
+	var mapPos map[int16]int
+	if absPtr := goToPointer(uint32(pBoneMap)); pBoneMap > 0 && bindCount > 0 &&
+		absPtr+int64(bindCount)*2 <= d.fileSize && d.trackAlloc(int64(bindCount)*2) {
+		if d.seek(absPtr) == nil {
+			mapPos = make(map[int16]int)
+			for p := 0; p < int(bindCount); p++ {
+				b, _ := d.readI16()
+				if _, seen := mapPos[b]; b >= 0 && !seen {
+					mapPos[b] = p
+				}
+			}
+		}
+	}
 
 	nVerts := len(node.Mesh.Verts)
 	if nVerts == 0 {
@@ -1004,6 +1038,7 @@ func (d *decompiler) readSkinHeader(node *Node) {
 		node:         node,
 		bonePartNums: bonePartNums,
 		bindCount:    int(bindCount),
+		mapPos:       mapPos,
 		skinWeights:  skinWeights,
 		skinBoneRefs: skinBoneRefs,
 	})
@@ -1031,8 +1066,28 @@ func (d *decompiler) readAnimMeshHeader(node *Node) {
 	if totalAnimTVerts > 0 && totalAnimTVerts <= int64(d.fileSize) && pAnimTVerts > 0 && nVerts > 0 {
 		d.readCoreVec2AsVec3Array(&node.AnimMesh.AnimTVerts, pAnimTVerts, int(totalAnimTVerts))
 	}
+	node.AnimMesh.AnimVerts = animSetMajor(node.AnimMesh.AnimVerts, nVerts)
+	node.AnimMesh.AnimTVerts = animSetMajor(node.AnimMesh.AnimTVerts, nVerts)
 
 	d.seek(headerEnd)
+}
+
+// animSetMajor turns an animmesh's sets from the binary's layout, each of the
+// n vertices in every set before the next vertex (animVertexMajor), to the
+// ASCII's, one whole set after another. A list that is not a whole number of
+// sets (a truncated file) is returned as it is.
+func animSetMajor(list []Vec3, n int) []Vec3 {
+	if n <= 0 || len(list)%n != 0 {
+		return list
+	}
+	sets := len(list) / n
+	out := make([]Vec3, len(list))
+	for v := 0; v < n; v++ {
+		for s := 0; s < sets; s++ {
+			out[s*n+v] = list[v*sets+s]
+		}
+	}
+	return out
 }
 
 // readDanglyHeader reads header_dangly (line 586).
@@ -1337,6 +1392,7 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 	}
 
 	unbound := 0
+	remapped := map[int16]int{}
 	for i := 0; i < nVerts; i++ {
 		w := VertexWeight{}
 		for j := 0; j < 4; j++ {
@@ -1345,11 +1401,13 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 			if weight == 0 || boneRef < 0 || int(boneRef) >= len(ps.bonePartNums) {
 				continue
 			}
-			partNum := ps.bonePartNums[boneRef]
-			if partNum < 0 {
+			idx, fromMap := ps.bonePos(boneRef)
+			if idx < 0 {
 				continue
 			}
-			idx := int(partNum)
+			if fromMap {
+				remapped[boneRef] = idx
+			}
 			if idx >= 0 && idx < len(names) && names[idx] != "" {
 				w.Bones = append(w.Bones, names[idx])
 				w.Weights = append(w.Weights, weight)
@@ -1359,6 +1417,19 @@ func (d *decompiler) resolveSkinWeights(ps pendingSkin) {
 		if len(w.Bones) == 0 {
 			unbound++
 		}
+	}
+	if len(remapped) > 0 {
+		refs := make([]int, 0, len(remapped))
+		for b := range remapped {
+			refs = append(refs, int(b))
+		}
+		sort.Ints(refs)
+		parts := make([]string, len(refs))
+		for i, b := range refs {
+			parts[i] = fmt.Sprintf("bone %d (list entry %d, tree position %d)", b, ps.bonePartNums[b], remapped[int16(b)])
+		}
+		d.warn(WarnGeneral, 0, ps.node.Name, "skin %q: %s: the bone list entry is outside the %d-node tree, read past the end of a short skin header, so the bone was named from the boneindexarray instead. The game skips such a bone, so the vertices it weights lose that influence in game",
+			ps.node.Name, strings.Join(parts, ", "), ps.bindCount)
 	}
 	if unbound > 0 && names != nil { // nil: the skeleton warning already covers it
 		d.warn(WarnGeneral, 0, ps.node.Name, "skin %q has %d of %d vertices with no valid bone influence (all weights zero, or bone references the file does not map, such as the uninitialised slots an engine compile can leave). In game such a vertex is drawn at the origin and tears the mesh; give it weights before compiling",
@@ -1380,7 +1451,7 @@ func (d *decompiler) skinBoundElsewhere(ps pendingSkin) (bool, []int) {
 			if ps.skinWeights[i][j] == 0 || ref < 0 || int(ref) >= len(ps.bonePartNums) {
 				continue
 			}
-			if p := int(ps.bonePartNums[ref]); p >= 0 && !seen[p] {
+			if p, _ := ps.bonePos(ref); p >= 0 && !seen[p] {
 				seen[p] = true
 				used = append(used, p)
 			}
@@ -1547,6 +1618,19 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		// count comes from the controller, not the byte). Orientation and
 		// detonate have no bezier form that can be read, so they are dropped
 		// with a warning rather than read with the wrong stride.
+		// Detonate keys are times only, whatever the byte says: the game's
+		// compiler writes 0, old BioWare files 1 or 0xff (mdl-spec MDL-CTRL-012,
+		// stock vwp_flash_blured), so the byte is neither a width nor a
+		// bezier flag for it.
+		if def.Name == "detonate" {
+			out = append(out, struct {
+				def     ControllerDef
+				numCols int
+				key     binControllerKey
+				bezier  bool
+			}{def, 0, k, false})
+			continue
+		}
 		bezier := k.ColumnCount&0x10 != 0
 		if bezier && (def.Name == "orientation" || def.NumCols <= 0) {
 			d.warn(WarnUnknownController, int64(k.Type), nodeName,
@@ -1634,6 +1718,13 @@ func quaternionToAngleAxis(q []float32) []float32 {
 }
 
 func (d *decompiler) setStaticController(node *Node, name string, vals []float32) {
+	setNodeController(node, name, vals)
+}
+
+// setNodeController sets the node property a controller holds to vals and
+// marks it declared, so it is compiled back to a controller. A controller of
+// another node type (alpha on a light, say) is ignored.
+func setNodeController(node *Node, name string, vals []float32) {
 	node.declare(name)
 	switch name {
 	case "position":
@@ -1678,12 +1769,12 @@ func (d *decompiler) setStaticController(node *Node, name string, vals []float32
 		}
 	default:
 		if node.Emitter != nil {
-			d.setEmitterController(node.Emitter, name, vals)
+			setEmitterController(node.Emitter, name, vals)
 		}
 	}
 }
 
-func (d *decompiler) setEmitterController(em *EmitterData, name string, vals []float32) {
+func setEmitterController(em *EmitterData, name string, vals []float32) {
 	if len(vals) == 0 {
 		return
 	}
@@ -1864,6 +1955,8 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 			if totalAT > 0 && totalAT <= int64(d.fileSize) && pAnimTVerts > 0 {
 				d.readCoreVec2AsVec3Array(&animMeshData.AnimTVerts, pAnimTVerts, int(totalAT))
 			}
+			animMeshData.AnimVerts = animSetMajor(animMeshData.AnimVerts, int(animMeshVerts))
+			animMeshData.AnimTVerts = animSetMajor(animMeshData.AnimTVerts, int(animMeshVerts))
 		}
 	}
 	if contentBits&0x100 != 0 { // dangly

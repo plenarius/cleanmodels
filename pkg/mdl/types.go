@@ -652,21 +652,15 @@ func ClassificationFromCode(code int) string {
 	}
 }
 
-// ClassificationToCode converts a classification string to its binary code.
-//
-// Accepts the plural forms ("Effects", "Tiles", ...) that NWMax and other
-// common exporters write, not just the singular canonical names — otherwise
-// they silently fall through to 0 ("OTHER") with no warning. That's exactly
-// what happened to vdr_magearmor.mdl (issue #12): its ASCII source declares
-// "classification Effects", which the parser uppercases to "EFFECTS" — one
-// letter away from the "EFFECT" this switch used to require — so the
-// compiled binary's m_nTypeMask silently ended up 0 instead of 1. Verified
-// against the retail vdr_magearmor2.mdl, whose compiled binary has
-// m_nTypeMask=1.
+// ClassificationToCode converts a classification string to its binary code
+// as the game's compiler does (classification(char*), 0x446440, strcasecmp):
+// TILE 2, CHARACTER 4, EFFECT or EFFECTS 1, DOOR 8, anything else 0. The
+// plural "Effects" that NWMax writes is one of the engine's words (stock
+// vdr_magearmor2.mdl has type 1, issue #12); "Tiles", "Characters" and
+// "Doors" are not, and give 0 (mdl-spec golden zspec_cls_tiles).
 func ClassificationToCode(class string) int {
-	class = strings.TrimSuffix(class, "S")
-	switch class {
-	case "EFFECT":
+	switch strings.ToUpper(class) {
+	case "EFFECT", "EFFECTS":
 		return 1
 	case "TILE":
 		return 2
@@ -677,4 +671,14 @@ func ClassificationToCode(class string) int {
 	default:
 		return 0
 	}
+}
+
+// pluralClassificationWarning reports a plural the game does not read
+// ("Tiles"), which it compiles as no classification, or "" for any other word.
+func pluralClassificationWarning(class string) string {
+	u := strings.ToUpper(class)
+	if u == "EFFECTS" || !strings.HasSuffix(u, "S") || ClassificationToCode(strings.TrimSuffix(u, "S")) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("classification %q is not one of the game's words; it compiles as no classification (0), not %s", class, strings.TrimSuffix(u, "S"))
 }

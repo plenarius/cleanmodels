@@ -1,0 +1,15 @@
+# mdl-spec conformance probe zspec_kid3 (CC0-1.0)
+# A two-node model on the supermodel zspec_super, to tell how the header's
+# node count is made (zspec_kid and zspec_kid2 both have five nodes).
+newmodel zspec_kid3
+setsupermodel zspec_kid3 zspec_super
+classification character
+beginmodelgeom zspec_kid3
+node dummy zspec_kid3
+  parent NULL
+endnode
+node dummy hips
+  parent zspec_kid3
+endnode
+endmodelgeom zspec_kid3
+donemodel zspec_kid3

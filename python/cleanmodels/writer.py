@@ -103,7 +103,7 @@ class _Writer:
         if n.position != VEC3_ZERO:
             ind(4, "position %s" % fmt_vec3(n.position))
         o = n.orientation
-        if o[0] != 0 or o[1] != 0 or o[2] != 0 or (o[3] != 0 and o[3] != 1):
+        if o[0] != 0 or o[1] != 0 or o[2] != 0 or o[3] != 0:
             ind(4, "orientation %s %s %s %s" % (fmt_float(o[0]), fmt_float(o[1]), fmt_float(o[2]), fmt_float(o[3])))
         if n.scale != 1.0 or "scale" in n.declared:
             ind(4, "scale %s" % fmt_float(n.scale))
@@ -337,6 +337,8 @@ class _Writer:
             cf("lightningSubDiv")
         for label in ("p2p_bezier2", "p2p_bezier3", "xsize", "ysize"):
             cf(label)
+        if "detonate" in n.declared:
+            ind(4, "detonate")
 
     def write_animation(self, m, anim):
         self.raw("#MAXANIM ASCII\n")

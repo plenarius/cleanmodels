@@ -1,0 +1,56 @@
+# mdl-spec conformance probe zspec_trimesh (CC0-1.0)
+# Trimesh material and render fields, two UV sets, vertex colours,
+# static selfillumcolor and alpha. Normals are generated (one smoothing
+# group).
+newmodel zspec_trimesh
+setsupermodel zspec_trimesh NULL
+classification character
+beginmodelgeom zspec_trimesh
+node dummy zspec_trimesh
+  parent NULL
+endnode
+node trimesh mesh
+  parent zspec_trimesh
+  position 0 0 1
+  orientation 0 0 0 0
+  ambient 0.25 0.5 0.75
+  diffuse 0.5 0.25 1
+  specular 0.125 0.25 0.5
+  shininess 12.5
+  shadow 0
+  beaming 1
+  render 1
+  transparencyhint 3
+  tilefade 2
+  rotatetexture 1
+  bitmap zspec_t0
+  texture1 zspec_t1
+  texture2 zspec_t2
+  selfillumcolor 0.25 0.5 1
+  alpha 0.75
+  verts 4
+    -1 -1 0
+     1 -1 0
+     1  1 0
+    -1  1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  tverts1 4
+    0 0.5 0
+    0.5 0.5 0
+    0.5 1 0
+    0 1 0
+  colors 4
+    1 0 0
+    0 1 0
+    0 0 1
+    1 1 1
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+endnode
+endmodelgeom zspec_trimesh
+donemodel zspec_trimesh

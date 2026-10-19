@@ -110,9 +110,9 @@ def check_numbers(go):
     got = run_go(go, "numbers", [s.encode("latin-1").hex() for s in strs])
     bad = 0
     for s, g in zip(strs, got):
-        f, i = gostr.parse_float32(s), gostr.parse_int(s)
-        p = "%s %s" % ("ERR" if f is None else struct.unpack("<I", struct.pack("<f", f))[0],
-                       "ERR" if i is None else i)
+        (f, fn), (i, n) = gostr.scan_float(s), gostr.scan_int(s)
+        p = "%s %d %s %d" % ("ERR" if f is None else struct.unpack("<I", struct.pack("<f", f))[0], fn,
+                             "ERR" if i is None else i, n)
         if p != g:
             bad += 1
             if bad <= 5:

@@ -27,6 +27,7 @@ type vertKey struct {
 	mirror     uint8  // face's mirrorlist value (low byte)
 	skin       string // skinmesh: bone names that influence the vertex
 	dangly     uint32 // danglymesh: constraint bits
+	anim       string // animmesh: the corner's animation sets (animMergeKey)
 }
 
 // f32bits maps a float to its dedup-key bits. The game compares vertex
@@ -72,6 +73,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 		opts.skinKeys = skinMergeKeys(n.Skin)
 		opts.danglyKeys = n.Dangly
 	}
+	opts.anim = c.mergeAnim
 	expanded, err := buildExpandedMeshOpts(mesh, opts)
 	if err != nil {
 		c.err = err
@@ -480,6 +482,7 @@ type expandedMesh struct {
 	faceVerts [][3]uint16 // per-kept-face GPU vertex indices (into the arrays above)
 	faceSrc   []int       // faceVerts[k] came from mesh.Faces[faceSrc[k]]
 	origVert  []int32     // GPU vertex → original mesh vertex index
+	origTVert []int32     // GPU vertex → original UV0 (tverts) index, -1 without one
 
 	facesPtrPos int // core buffer position of faces array pointer (for deferred patching)
 
@@ -522,6 +525,61 @@ type expandOpts struct {
 	// equal corners, and the first such face wins. Every other mesh type
 	// merges against the whole vertex list.
 	aabbMerge bool
+	// anim holds an animmesh's animation vertex sets, which the game also
+	// compares when merging (NodeVertexAnim::operator== 0x45a550).
+	anim *AnimMeshData
+}
+
+// animSets returns how many sets list holds for a mesh with n source entries:
+// the game divides the animverts count by the node's vertex count and the
+// animtverts count by its tvert count (MdlNodeAnimMesh::InternalPostProcess;
+// engine golden zcm_animtv: 15 animtverts over 5 tverts are 3 sets).
+func animSets(list []Vec3, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return len(list) / n
+}
+
+// animMergeKey is the part of an animmesh corner's merge key that comes from
+// its animation sets: its vertex's position in every set, then its tvert's.
+func animMergeKey(mesh *MeshData, am *AnimMeshData, vertIdx, tvIdx int) string {
+	var b strings.Builder
+	nv, nt := len(mesh.Verts), len(mesh.TVerts)
+	for s := 0; s < animSets(am.AnimVerts, nv); s++ {
+		if vertIdx >= 0 && vertIdx < nv {
+			v := am.AnimVerts[s*nv+vertIdx]
+			fmt.Fprintf(&b, "%x,%x,%x;", f32bits(v.X), f32bits(v.Y), f32bits(v.Z))
+		}
+	}
+	b.WriteByte('|')
+	for s := 0; s < animSets(am.AnimTVerts, nt); s++ {
+		if tvIdx >= 0 && tvIdx < nt {
+			v := am.AnimTVerts[s*nt+tvIdx]
+			fmt.Fprintf(&b, "%x,%x;", f32bits(v.X), f32bits(v.Y))
+		}
+	}
+	return b.String()
+}
+
+// animVertexMajor lays an animmesh's sets out the way the game stores them:
+// for each GPU vertex in order, its source entry (orig) in every set. The
+// ASCII lists the sets one after another, each in source order; the game's
+// binary holds GPU vertex 0 in every set, then GPU vertex 1, and so on
+// (engine goldens zspec_animmesh, zcm_animtv).
+func animVertexMajor(list []Vec3, n int, orig []int32) []Vec3 {
+	sets := animSets(list, n)
+	out := make([]Vec3, 0, len(orig)*sets)
+	for _, o := range orig {
+		for s := 0; s < sets; s++ {
+			var v Vec3
+			if o >= 0 && int(o) < n {
+				v = list[s*n+int(o)]
+			}
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // posBits returns a vertex position as float bits, with -0 folded into +0 so
@@ -594,7 +652,7 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 	// vertex and to compare it with existing ones.
 	type expCorner struct {
 		key                         vertKey
-		vertIdx                     int
+		vertIdx, tvIdx              int
 		pos, uv, uv1, uv2, uv3, nor Vec3
 		col                         Vec3
 	}
@@ -608,6 +666,7 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 		vkeys = append(vkeys, c.key)
 		exp.positions = append(exp.positions, c.pos)
 		exp.origVert = append(exp.origVert, int32(c.vertIdx))
+		exp.origTVert = append(exp.origTVert, int32(c.tvIdx))
 		if hasUV {
 			exp.uvs = append(exp.uvs, c.uv)
 		}
@@ -658,6 +717,7 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 			if vertIdx >= 0 && vertIdx < len(mesh.Verts) {
 				pos = mesh.Verts[vertIdx]
 			}
+			tvIdx := -1
 			if hasUV {
 				ti := uvIdx
 				if hasTexIdx0 && fi < len(mesh.TexIndices0) {
@@ -665,6 +725,7 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 				}
 				if ti >= 0 && ti < len(mesh.TVerts) {
 					uv = mesh.TVerts[ti]
+					tvIdx = ti
 				}
 			}
 
@@ -724,7 +785,10 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 			if d := opts.danglyKeys; d != nil && vertIdx >= 0 && vertIdx < len(d.Constraints) {
 				key.dangly = f32bits(d.Constraints[vertIdx])
 			}
-			cs[vi] = expCorner{key: key, vertIdx: vertIdx, pos: pos, uv: uv, uv1: uv1, uv2: uv2, uv3: uv3, nor: nor, col: col}
+			if opts.anim != nil {
+				key.anim = animMergeKey(mesh, opts.anim, vertIdx, tvIdx)
+			}
+			cs[vi] = expCorner{key: key, vertIdx: vertIdx, tvIdx: tvIdx, pos: pos, uv: uv, uv1: uv1, uv2: uv2, uv3: uv3, nor: nor, col: col}
 		}
 
 		var corners [3]uint16

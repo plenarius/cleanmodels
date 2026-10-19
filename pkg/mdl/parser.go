@@ -141,25 +141,55 @@ func (p *parser) errorf(format string, args ...interface{}) {
 }
 
 // floatParam stores the value of a one-value parameter line ("shininess 1.0")
-// in dst. A missing or unusable value leaves dst as it was and is reported with
-// the line number, rather than silently keeping the default.
+// in dst, read as the game reads it (scanFloat): a token with more after its
+// number ("7abc", "1.#INF") gives the number, reported. A missing or unusable
+// value leaves dst as it was and is reported with the line number, rather than
+// silently keeping the default.
 func (p *parser) floatParam(tokens []string, dst *float32) {
-	v, err := parseFloat(safeIndex(tokens, 1))
-	if err != nil {
-		p.badParam(tokens, "number")
-		return
+	if v, ok := p.floatValue(tokens); ok {
+		*dst = v
 	}
-	*dst = v
 }
 
-// intParam is floatParam for integer parameters.
-func (p *parser) intParam(tokens []string, dst *int32) {
-	v, err := parseInt(safeIndex(tokens, 1))
+// floatValue reads the value of a one-value line as floatParam does, or
+// reports false (reported) when there is no usable value.
+func (p *parser) floatValue(tokens []string) (float32, bool) {
+	tok := safeIndex(tokens, 1)
+	v, n, err := scanFloat(tok)
 	if err != nil {
-		p.badParam(tokens, "integer")
+		p.badParam(tokens, "number")
+		return 0, false
+	}
+	if n < len(tok) {
+		p.errorf("%q for %q is read as %s, as the game reads it; the rest is ignored", tok, tokens[0], fmtFloat(v))
+	}
+	return v, true
+}
+
+// intParam is floatParam for integer parameters, read as sscanf "%d" does
+// (scanInt: "2.9" is 2), then, as the game does when that fails, the words
+// TRUE and FALSE (any case) as 1 and 0. A token whose rest changes nothing
+// ("1.0") is not reported.
+func (p *parser) intParam(tokens []string, dst *int32) {
+	tok := safeIndex(tokens, 1)
+	v, n, err := scanInt(tok)
+	if err != nil {
+		switch {
+		case strings.EqualFold(tok, "true"):
+			*dst = 1
+		case strings.EqualFold(tok, "false"):
+			*dst = 0
+		default:
+			p.badParam(tokens, "integer")
+		}
 		return
 	}
 	*dst = v
+	if n < len(tok) {
+		if f, ferr := parseFloat(tok); ferr != nil || float64(f) != float64(v) {
+			p.errorf("%q for %q is read as %d, as the game reads it; the rest is ignored", tok, tokens[0], v)
+		}
+	}
 }
 
 // boolParam is intParam for a flag that some tools write as true/false
@@ -180,10 +210,14 @@ func (p *parser) boolParam(tokens []string, dst *int32) {
 // ("position x y z"). An unusable one is set to 0 and reported, as the list
 // readers do, instead of silently becoming 0.
 func (p *parser) floatAt(tokens []string, i int) float32 {
-	v, err := parseFloat(safeIndex(tokens, i))
+	tok := safeIndex(tokens, i)
+	v, n, err := scanFloat(tok)
 	if err != nil {
-		p.errorf("%q is not a usable number for value %d of %q, set to 0", safeIndex(tokens, i), i, tokens[0])
+		p.errorf("%q is not a usable number for value %d of %q, set to 0", tok, i, tokens[0])
 		return 0
+	}
+	if n < len(tok) {
+		p.errorf("%q for value %d of %q is read as %s, as the game reads it; the rest is ignored", tok, i, tokens[0], fmtFloat(v))
 	}
 	return v
 }
@@ -193,39 +227,58 @@ func (p *parser) shortParam(tokens []string, want int) {
 	p.errorf("%q has %d value(s), expected %d; the line is ignored", tokens[0], len(tokens)-1, want)
 }
 
-// vec3Param stores a "keyword x y z" line in dst. A short line or an unusable
-// number leaves dst as it was and is reported with the line number.
+// vec3Param stores a "keyword x y z" line in dst (vecParam).
 func (p *parser) vec3Param(tokens []string, dst *Vec3) {
-	if len(tokens) < 4 {
-		p.shortParam(tokens, 3)
-		return
-	}
-	v, ok := parseVec3(tokens[1:])
-	if !ok {
-		p.errorf("%q has an unusable number (%s), keeping the default", tokens[0], strings.Join(tokens[1:4], " "))
-		return
-	}
-	*dst = v
+	p.vecParam(tokens, []*float32{&dst.X, &dst.Y, &dst.Z})
 }
 
 // vec4Param is vec3Param for "keyword x y z w" lines.
 func (p *parser) vec4Param(tokens []string, dst *Vec4) {
-	if len(tokens) < 5 {
-		p.shortParam(tokens, 4)
-		return
+	p.vecParam(tokens, []*float32{&dst.X, &dst.Y, &dst.Z, &dst.W})
+}
+
+// vecParam reads a line's values into dst as the game does, with sscanf
+// "%f %f %f": in order, stopping at the first value that is not a usable
+// number or has more after its number ("1.5abc 2 3" sets only the first).
+// Values not reached keep what they had, as in the game; each stop is
+// reported with the line number.
+func (p *parser) vecParam(tokens []string, dst []*float32) {
+	vals := tokens[1:]
+	for i, d := range dst {
+		if i >= len(vals) {
+			p.errorf("%q has %d value(s), expected %d; the others keep their values", tokens[0], len(vals), len(dst))
+			return
+		}
+		v, n, err := scanFloat(vals[i])
+		if err != nil {
+			if n > 0 && n == len(vals[i]) { // a number sscanf reads and this parser refuses
+				p.errorf("%q has an unusable number (%q), which keeps its value", tokens[0], vals[i])
+				continue
+			}
+			p.errorf("%q has an unusable number (%q); it and the values after it keep their values", tokens[0], vals[i])
+			return
+		}
+		*d = v
+		if n < len(vals[i]) {
+			p.errorf("%q: %q is read as %s, as the game reads it; the rest of the line is ignored", tokens[0], vals[i], fmtFloat(v))
+			return
+		}
 	}
-	v, ok := parseVec4(tokens[1:])
-	if !ok {
-		p.errorf("%q has an unusable number (%s), keeping the default", tokens[0], strings.Join(tokens[1:5], " "))
-		return
-	}
-	*dst = v
 }
 
 // countParam reads the entry count that opens a list. When it is unusable the
 // list cannot be read, so say so rather than letting its lines fall through.
 func (p *parser) countParam(tokens []string) (int32, bool) {
-	v, err := parseInt(safeIndex(tokens, 1))
+	// A count followed by anything else makes the game read the rows as
+	// binary data (mdl-spec E46), so such a count is refused, except one whose
+	// rest changes nothing ("3.0").
+	tok := safeIndex(tokens, 1)
+	v, n, err := scanInt(tok)
+	if err == nil && n < len(tok) {
+		if f, ferr := parseFloat(tok); ferr != nil || float64(f) != float64(v) {
+			err = fmt.Errorf("not a count: %s", tok)
+		}
+	}
 	if err != nil {
 		p.badParam(tokens, "count")
 		return 0, false
@@ -298,6 +351,9 @@ func (p *parser) parse() {
 		case "newmodel", "donemodel", "beginmodelgeom", "endmodelgeom", "node", "newanim", "setsupermodel":
 			p.sawModel = true
 		}
+		if caseSensitiveWords[keyword] && tokens[0] != keyword {
+			p.errorf("%q: the game reads only lower-case %q and does not read this line; cleanmodels does", tokens[0], keyword)
+		}
 
 		switch {
 		case keyword == "newmodel":
@@ -342,6 +398,26 @@ func (p *parser) parse() {
 	}
 }
 
+// caseSensitiveWords are the structural words the game matches case-
+// sensitively (mdl-spec MDL-ASCII-010; `parent` is handled where it is read).
+// cleanmodels reads them in any case, with a warning.
+var caseSensitiveWords = map[string]bool{
+	"node": true, "endnode": true, "endlist": true, "event": true, "animlength": true,
+	"endmodelgeom": true, "doneanim": true, "donemodel": true,
+}
+
+// parentLine reports whether tokens is a parent line the game reads: it
+// matches "parent" case-sensitively (MdlNode::InternalParseField 0x448bb0), so
+// "PARENT" is not read and the node keeps no parent from it; a node with no
+// parent the game reads is left out of the tree (golden zspec_numbers).
+func (p *parser) parentLine(tokens []string, node string) bool {
+	if tokens[0] != "parent" {
+		p.errorf("%q is not read by the game, which knows only lower-case \"parent\", so node %q takes no parent from it, as in the game", tokens[0], node)
+		return false
+	}
+	return len(tokens) >= 2
+}
+
 func (p *parser) parseNewModel(tokens []string) {
 	if len(tokens) >= 2 {
 		p.model.Name = tokens[1]
@@ -349,16 +425,32 @@ func (p *parser) parseNewModel(tokens []string) {
 	p.model.FileType = "ascii"
 }
 
-// newShadowedMeshData is a mesh as the game compiler defaults it when the source
-// has no "shadow" line: it casts shadows. Compiled against the engine's output
-// for 180 such meshes (159 trimesh, 8 skin, 13 danglymesh), it wrote shadow 1
-// every time; we wrote 0, so a model compiled from a source without the line
-// cast no shadow in game. Walkmeshes (aabb) default to 0 and animmesh is
-// unverified, so both keep the zero default.
-func newShadowedMeshData() *MeshData {
+// newParsedMeshData is a mesh as the game compiler defaults it for keywords the
+// source leaves out (E50 in the mdl-spec engine notes; goldens for every mesh
+// type): diffuse and ambient 1 1 1, shininess 1, render 1 and shadow 1, except
+// on walkmeshes (aabb), which default to render 0 and shadow 0. Compiled
+// against the engine's output for 180 meshes without a "shadow" line (159
+// trimesh, 8 skin, 13 danglymesh), it wrote shadow 1 every time, as it does for
+// animmesh (zspec_animmesh).
+func newParsedMeshData(walkmesh bool) *MeshData {
 	m := NewMeshData()
-	m.Shadow = 1
+	m.Diffuse = Vec3{X: 1, Y: 1, Z: 1}
+	m.Ambient = Vec3{X: 1, Y: 1, Z: 1}
+	m.Shininess = 1
+	if walkmesh {
+		m.Render = 0
+	} else {
+		m.Shadow = 1
+	}
 	return m
+}
+
+// newParsedLightData is a light as the game compiler defaults it for keywords
+// the source leaves out (E50 in the mdl-spec engine notes; goldens zspec_light,
+// zspec_animfx): lightpriority 5, nDynamicType 1, affectdynamic 1, shadow 1 and
+// fadinglight 1; ambientonly and generateflare 0.
+func newParsedLightData() *LightData {
+	return &LightData{LightPriority: 5, NDynamicType: 1, AffectDynamic: 1, Shadow: 1, FadingLight: 1}
 }
 
 func (p *parser) parseSuperModel(tokens []string) {
@@ -404,28 +496,28 @@ func (p *parser) parseNodeStart(tokens []string) {
 	node := &Node{
 		Name:        nodeName,
 		Scale:       1.0,
-		Orientation: Vec4{W: 1.0},
+		Orientation: Vec4{},
 	}
 
 	switch nodeType {
 	case "trimesh":
-		node.Mesh = newShadowedMeshData()
+		node.Mesh = newParsedMeshData(false)
 	case "skin":
-		node.Mesh = newShadowedMeshData()
+		node.Mesh = newParsedMeshData(false)
 		node.Skin = &SkinData{}
 	case "animmesh":
-		node.Mesh = NewMeshData()
+		node.Mesh = newParsedMeshData(false)
 		node.AnimMesh = &AnimMeshData{}
 	case "danglymesh":
-		node.Mesh = newShadowedMeshData()
+		node.Mesh = newParsedMeshData(false)
 		node.Dangly = &DanglyData{}
 	case "aabb":
-		node.Mesh = NewMeshData()
+		node.Mesh = newParsedMeshData(true)
 		node.Aabb = &AabbData{}
 	case "emitter":
 		node.Emitter = &EmitterData{}
 	case "light":
-		node.Light = &LightData{}
+		node.Light = newParsedLightData()
 	case "reference":
 		node.Reference = &ReferenceData{}
 	case "camera":
@@ -521,7 +613,10 @@ func (p *parser) parseAnimRoot(tokens []string) {
 
 func (p *parser) parseAnimEvent(tokens []string) {
 	if p.currentAnim != nil && len(tokens) >= 3 {
-		if t, err := parseFloat(tokens[1]); err == nil {
+		if t, n, err := scanFloat(tokens[1]); err == nil {
+			if n < len(tokens[1]) {
+				p.errorf("event time %q is read as %s, as the game reads it; the rest is ignored", tokens[1], fmtFloat(t))
+			}
 			p.currentAnim.Events = append(p.currentAnim.Events, AnimEvent{
 				Time: t,
 				Name: tokens[2],
@@ -555,7 +650,7 @@ func (p *parser) parseParameter(tokens []string) {
 
 	switch keyword {
 	case "parent":
-		if len(tokens) >= 2 {
+		if p.parentLine(tokens, node.Name) {
 			node.Parent = tokens[1]
 		}
 	case "#part-number":
@@ -579,6 +674,55 @@ func (p *parser) parseParameter(tokens []string) {
 	default:
 		p.parseNodeSpecificParam(keyword, tokens)
 	}
+}
+
+// parseGeomKeyList reads a controller key list (<name>key or
+// <name>bezierkey) on a geometry node. The game's compiler stores the list as
+// a keyed controller, and geometry is evaluated at time 0, where the linear
+// and bezier paths both return the first key's value (mdl-spec MDL-CTRL-023,
+// golden zspec_bezier2), so the first key becomes the node's value and the
+// rest are dropped with a warning.
+func (p *parser) parseGeomKeyList(node *Node, keyword string, tokens []string) bool {
+	if !strings.HasSuffix(keyword, "key") || keyword == "detonatekey" || keyword == "detonatebezierkey" {
+		return false
+	}
+	scratch := &AnimNode{Name: node.Name}
+	saved := p.currentAnimNode
+	p.currentAnimNode = scratch
+	p.parseAnimNodeParam(keyword, tokens)
+	p.currentAnimNode = saved
+
+	name, vals, n := firstAnimKey(scratch)
+	if name == "" {
+		return false
+	}
+	setNodeController(node, name, vals)
+	if n > 1 {
+		p.errorf("%s on geometry node %q: only the first of its %d keys is used, as in the game, which evaluates geometry at time 0", keyword, node.Name, n)
+	}
+	return true
+}
+
+// firstAnimKey returns the controller an's one key list holds, its first
+// key's value and the number of keys, or "" when it holds none.
+func firstAnimKey(an *AnimNode) (string, []float32, int) {
+	if k := an.PositionKeys; len(k) > 0 {
+		return "position", []float32{k[0].Value.X, k[0].Value.Y, k[0].Value.Z}, len(k)
+	}
+	if k := an.OrientationKeys; len(k) > 0 {
+		return "orientation", []float32{k[0].Value.X, k[0].Value.Y, k[0].Value.Z, k[0].Value.W}, len(k)
+	}
+	for _, e := range animControllerFloatList {
+		if k := *e.Getter(an); len(k) > 0 {
+			return e.Name, []float32{k[0].Value}, len(k)
+		}
+	}
+	for _, e := range animControllerColorList {
+		if k := *e.Getter(an); len(k) > 0 {
+			return e.Name, []float32{k[0].Value.X, k[0].Value.Y, k[0].Value.Z}, len(k)
+		}
+	}
+	return "", nil, 0
 }
 
 func (p *parser) parseNodeSpecificParam(keyword string, tokens []string) {
@@ -626,15 +770,18 @@ func (p *parser) parseNodeSpecificParam(keyword string, tokens []string) {
 		}
 	}
 
-	// Try fuzzy matching for unrecognized parameters
+	if p.parseGeomKeyList(node, keyword, tokens) {
+		return
+	}
+
+	// A keyword this node type's parser does not read. The game ignores it
+	// (its parsers compare exact words: mdl-spec E49, goldens zspec_setfill
+	// and zspec_light), so it is ignored here too; a near match, such as
+	// selfillumcolor for the NWmax typo setfillumcolor, is named in the warning.
 	nodeType := node.NodeType()
 	validParams := validParamsForType(nodeType)
 	if matched, ok := NearMatchParam(keyword, validParams); ok && matched != keyword {
-		p.errorf("fuzzy matched %q to %q", keyword, matched)
-		newTokens := make([]string, len(tokens))
-		copy(newTokens, tokens)
-		newTokens[0] = matched
-		p.parseParameter(newTokens)
+		p.errorf("%q is not a keyword the game reads, so the line is ignored, as in the game; did you mean %q?", keyword, matched)
 		return
 	}
 }
@@ -679,7 +826,7 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 		p.intParam(tokens, &mesh.TransparencyHint)
 	case "alpha":
 		p.floatParam(tokens, &mesh.Alpha)
-	case "selfillumcolor", "setfillumcolor":
+	case "selfillumcolor":
 		p.vec3Param(tokens, &mesh.SelfIllumColor)
 	case "tilefade":
 		p.intParam(tokens, &mesh.TileFade)
@@ -946,6 +1093,8 @@ func (p *parser) parseEmitterParam(em *EmitterData, keyword string, tokens []str
 		p.intParam(tokens, &em.LockAxes)
 	case "chunky":
 		p.intParam(tokens, &em.Chunky)
+	case "detonate":
+		// Declared in parseParameter; its controller has no value.
 	default:
 		if getter, ok := emitterFloatFields[keyword]; ok {
 			p.floatParam(tokens, getter(em))
@@ -972,7 +1121,7 @@ func (p *parser) parseLightParam(light *LightData, keyword string, tokens []stri
 		p.intParam(tokens, &light.AmbientOnly)
 	case "isdynamic":
 		p.intParam(tokens, &light.NDynamicType)
-	case "ndynamictype", "n_dynamic_type":
+	case "ndynamictype":
 		p.intParam(tokens, &light.NDynamicType)
 	case "affectdynamic":
 		p.intParam(tokens, &light.AffectDynamic)
@@ -1260,7 +1409,7 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 
 	switch keyword {
 	case "parent":
-		if len(tokens) >= 2 {
+		if p.parentLine(tokens, an.Name) {
 			an.Parent = tokens[1]
 		}
 	case "#part-number":
@@ -1422,10 +1571,10 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		// single-keyframe controllers at t=0, matching nwnmdlcomp behavior.
 		if getter, ok := animControllerFloatTable[keyword]; ok {
 			if len(tokens) >= 2 {
-				if v, err := parseFloat(safeIndex(tokens, 1)); err != nil {
-					p.badParam(tokens, "number")
-				} else if keys := getter(an); len(*keys) == 0 {
-					*keys = append(*keys, FloatKey{Time: 0, Value: v})
+				if v, ok := p.floatValue(tokens); ok {
+					if keys := getter(an); len(*keys) == 0 {
+						*keys = append(*keys, FloatKey{Time: 0, Value: v})
+					}
 				}
 			}
 			return
@@ -1508,10 +1657,18 @@ const maxListWarnings = 5
 // line. Dropping it instead would shift every later entry down one slot and
 // silently point those indices at the wrong data, with no warning at all.
 type listWarn struct {
-	p     *parser
-	shown int
-	total int
+	p       *parser
+	shown   int
+	total   int
+	stopped bool // the current entry stopped being read (row)
 }
+
+// row starts a list entry. The game reads an entry's values in order with
+// sscanf and stops at the first that is not a number at all or has more after
+// its number, so float and int set the values after it to 0. A number this
+// parser refuses (NaN, infinity, out of range) is one sscanf reads, so it is
+// set to 0 without stopping the entry.
+func (w *listWarn) row() { w.stopped = false }
 
 func (p *parser) newListWarn() *listWarn { return &listWarn{p: p} }
 
@@ -1529,25 +1686,47 @@ func (w *listWarn) done() {
 	}
 }
 
-// float parses one float component, setting it to 0 (and warning) if it is
-// not a usable number. That includes values outside the float32 range and
-// nan/inf, which parseFloat rejects.
+// float reads one float component as the game does (scanFloat). One that is
+// not a usable number (values outside the float32 range and nan/inf included)
+// is set to 0; one with more after its number gives the number. Either stops
+// the entry (row), with a warning.
 func (w *listWarn) float(tok string) float32 {
-	v, err := parseFloat(tok)
-	if err != nil {
+	if w.stopped {
+		return 0
+	}
+	v, n, err := scanFloat(tok)
+	switch {
+	case err != nil && (n == 0 || n < len(tok)):
+		w.add("%q is not a usable number, set to 0, as are the values after it in the entry", tok)
+		w.stopped = true
+		return 0
+	case err != nil:
 		w.add("%q is not a usable number, set to 0", tok)
 		return 0
+	case n < len(tok):
+		w.add("%q is read as %s, as the game reads it, and the values after it in the entry are set to 0", tok, fmtFloat(v))
+		w.stopped = true
 	}
 	return v
 }
 
-// int parses one integer component, setting it to 0 (and warning) if it is
-// not a usable number.
+// int is float for an integer component (scanInt).
 func (w *listWarn) int(tok string) int32 {
-	v, err := parseInt(tok)
-	if err != nil {
+	if w.stopped {
+		return 0
+	}
+	v, n, err := scanInt(tok)
+	switch {
+	case err != nil && (n == 0 || n < len(tok)):
+		w.add("%q is not a usable integer, set to 0, as are the values after it in the entry", tok)
+		w.stopped = true
+		return 0
+	case err != nil:
 		w.add("%q is not a usable integer, set to 0", tok)
 		return 0
+	case n < len(tok):
+		w.add("%q is read as %d, as the game reads it, and the values after it in the entry are set to 0", tok, v)
+		w.stopped = true
 	}
 	return v
 }
@@ -1577,6 +1756,7 @@ func (p *parser) readVec3List(out *[]Vec3, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		if len(tokens) < 3 {
 			w.short(len(tokens), 3)
 		}
@@ -1607,6 +1787,7 @@ func (p *parser) readVec4List(out *[]Vec4, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		if len(tokens) < 4 {
 			w.short(len(tokens), 4)
 		}
@@ -1640,6 +1821,7 @@ func (p *parser) readFaceList(out *[]Face, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		if len(tokens) < 8 {
 			w.short(len(tokens), 8)
 		}
@@ -1669,6 +1851,7 @@ func (p *parser) readIntList(out *[]int32, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		*out = append(*out, w.int(tok(tokens, 0)))
 	}
 	w.done()
@@ -1686,6 +1869,7 @@ func (p *parser) readFloatList(out *[]float32, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		*out = append(*out, w.float(tok(tokens, 0)))
 	}
 	w.done()
@@ -1703,6 +1887,7 @@ func (p *parser) readInt3List(out *[][3]int32, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		if len(tokens) < 3 {
 			w.short(len(tokens), 3)
 		}
@@ -1741,6 +1926,7 @@ func (p *parser) readAabbList(out *[]AabbEntry, count int) {
 			break
 		}
 		tokens := tokenize(line)
+		w.row()
 		if len(tokens) < 7 {
 			w.short(len(tokens), 7)
 		}
@@ -1778,10 +1964,13 @@ func (p *parser) readWeightList(skin *SkinData, count int) {
 		w := VertexWeight{}
 		// Weight format: bonename1 weight1 bonename2 weight2 ...
 		for j := 0; j+1 < len(tokens); j += 2 {
-			wt, err := parseFloat(tokens[j+1])
+			wt, n, err := scanFloat(tokens[j+1])
 			if err != nil {
 				ww.add("weight %q for bone %q is not a usable number, that influence is ignored", tokens[j+1], tokens[j])
 				continue
+			}
+			if n < len(tokens[j+1]) {
+				ww.add("weight %q for bone %q is read as %s, as the game reads it", tokens[j+1], tokens[j], fmtFloat(wt))
 			}
 			if wt > 0 {
 				w.Bones = append(w.Bones, tokens[j])
@@ -1803,10 +1992,14 @@ func (w *listWarn) keyValues(tokens []string, n int) ([]float32, bool) {
 		w.add("key has %d value(s), expected %d; the key is skipped", len(tokens), n)
 		return nil, false
 	}
-	t, err := parseFloat(tokens[0])
+	t, tn, err := scanFloat(tokens[0])
 	if err != nil {
 		w.add("key time %q is not a usable number; the key is skipped", tokens[0])
 		return nil, false
+	}
+	if tn < len(tokens[0]) {
+		w.add("key time %q is read as %s, as the game reads it, and the values after it in the key are set to 0", tokens[0], fmtFloat(t))
+		w.stopped = true
 	}
 	v := make([]float32, n)
 	v[0] = t
@@ -1833,6 +2026,7 @@ func (p *parser) readKeys(count int, bytesPerKey int64, label string, parse keyP
 		if !ok {
 			break
 		}
+		w.row()
 		parse(w, tokenize(line))
 	}
 }
@@ -1858,6 +2052,7 @@ func (p *parser) readKeysUntilEnd(allocBytes int64, label string, parse keyParse
 			p.errorf("allocation limit exceeded reading %s", label)
 			break
 		}
+		w.row()
 		parse(w, tokens)
 	}
 }
@@ -2037,11 +2232,181 @@ func tokenize(line string) []string {
 // NaN and Inf: the caller warns and keeps the default.
 const maxNumberLen = 400
 
-// ParseNumber and ParseInteger read one float and one integer token the way
-// the ASCII parser does (for the Python port's parity test, which must agree
-// on every token).
-func ParseNumber(s string) (float32, error) { return parseFloat(s) }
-func ParseInteger(s string) (int32, error)  { return parseInt(s) }
+// ScanNumber and ScanInteger read the number a token starts with the way the
+// ASCII parser does (scanFloat, scanInt), returning the bytes consumed too,
+// for the Python port's parity test, which must agree on every token.
+func ScanNumber(s string) (float32, int, error) { return scanFloat(s) }
+func ScanInteger(s string) (int32, int, error)  { return scanInt(s) }
+
+// scanFloat reads the number s starts with as the game's parser does, with C's
+// sscanf "%f" (glibc, which the game's Linux build uses; checked against it on
+// the parity suite's number strings): an optional sign, then decimal digits
+// with an optional point and exponent, a hexadecimal float, or inf, infinity
+// or nan, any letter case. It returns the value, the number of bytes sscanf
+// consumes (an exponent with no digits is consumed but not used: "1e" reads 1
+// and takes both bytes; "1.5abc" takes 3), and an error when s does not start
+// with a number or the number is one this parser refuses: NaN, infinity, out
+// of the float32 range (the game would store infinity), or longer than
+// maxNumberLen.
+func scanFloat(s string) (float32, int, error) {
+	n, num := scanFloatPrefix(s)
+	switch {
+	case n == 0:
+		return 0, 0, fmt.Errorf("not a number: %s", s)
+	case n > maxNumberLen:
+		return 0, n, fmt.Errorf("number too long (%d characters)", n)
+	case num == "":
+		return 0, n, fmt.Errorf("invalid float value: %s", s[:n])
+	}
+	v, err := strconv.ParseFloat(num, 32)
+	if err != nil {
+		return 0, n, err
+	}
+	if math.IsInf(v, 0) {
+		return 0, n, fmt.Errorf("invalid float value: %s", s[:n])
+	}
+	return float32(v), n, nil
+}
+
+// scanFloatPrefix returns how many bytes of s sscanf "%f" consumes (0 when it
+// fails) and the number they hold in strconv syntax, or "" for inf and nan.
+func scanFloatPrefix(s string) (int, string) {
+	i := 0
+	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+		i++
+	}
+	sign, r := s[:i], s[i:]
+	switch {
+	case hasPrefixFoldASCII(r, "inf"):
+		k := 0
+		for k < 5 && 3+k < len(r) && lowerASCII(r[3+k]) == "inity"[k] {
+			k++
+		}
+		switch k {
+		case 0:
+			return i + 3, ""
+		case 5:
+			return i + 8, ""
+		}
+		return 0, "" // "infi": sscanf fails
+	case hasPrefixFoldASCII(r, "nan"):
+		return i + 3, "" // glibc does not take a "(...)" after it
+	}
+	digits := func(j int, ok func(byte) bool) int {
+		for j < len(r) && ok(r[j]) {
+			j++
+		}
+		return j
+	}
+	exponent := func(j int, marks string) (int, string) {
+		if j < len(r) && strings.IndexByte(marks, r[j]) >= 0 {
+			j++
+			e0 := j
+			if j < len(r) && (r[j] == '+' || r[j] == '-') {
+				j++
+			}
+			d0 := j
+			j = digits(j, isDigitASCII)
+			if j > d0 {
+				return j, r[e0:j]
+			}
+		}
+		return j, ""
+	}
+	if len(r) >= 2 && r[0] == '0' && (r[1] == 'x' || r[1] == 'X') {
+		j := digits(2, isHexASCII)
+		ip, fp, dot := r[2:j], "", false
+		if j < len(r) && r[j] == '.' {
+			dot = true
+			f0 := j + 1
+			j = digits(f0, isHexASCII)
+			fp = r[f0:j]
+		}
+		if ip == "" && fp == "" {
+			if !dot {
+				return 0, "" // "0x": sscanf fails
+			}
+			return i + j, sign + "0" // glibc reads "0x." as 0 and stops there
+		}
+		j, exp := exponent(j, "pP")
+		if exp == "" {
+			exp = "0"
+		}
+		return i + j, sign + "0x" + orZero(ip) + "." + orZero(fp) + "p" + exp
+	}
+	j := digits(0, isDigitASCII)
+	ip, fp := r[:j], ""
+	if j < len(r) && r[j] == '.' {
+		f0 := j + 1
+		j = digits(f0, isDigitASCII)
+		fp = r[f0:j]
+	}
+	if ip == "" && fp == "" {
+		return 0, ""
+	}
+	j, exp := exponent(j, "eE")
+	num := sign + orZero(ip) + "." + orZero(fp)
+	if exp != "" {
+		num += "e" + exp
+	}
+	return i + j, num
+}
+
+// scanInt reads the integer s starts with as sscanf "%d" does: an optional
+// sign and decimal digits ("2.9" reads 2 and takes one byte). It returns the
+// value, the bytes consumed, and an error when there are no digits or the
+// value is outside int32 (refused, as in parseInt: glibc would wrap it).
+func scanInt(s string) (int32, int, error) {
+	i := 0
+	if i < len(s) && (s[i] == '+' || s[i] == '-') {
+		i++
+	}
+	j := i
+	for j < len(s) && isDigitASCII(s[j]) {
+		j++
+	}
+	switch {
+	case j == i:
+		return 0, 0, fmt.Errorf("not a number: %s", s)
+	case j > maxNumberLen:
+		return 0, j, fmt.Errorf("number too long (%d characters)", j)
+	}
+	v, err := strconv.ParseInt(s[:j], 10, 32)
+	if err != nil {
+		return 0, j, fmt.Errorf("integer out of range: %s", s[:j])
+	}
+	return int32(v), j, nil
+}
+
+func isDigitASCII(c byte) bool { return c >= '0' && c <= '9' }
+func isHexASCII(c byte) bool {
+	return isDigitASCII(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+func lowerASCII(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
+}
+
+func hasPrefixFoldASCII(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for k := 0; k < len(prefix); k++ {
+		if lowerASCII(s[k]) != prefix[k] {
+			return false
+		}
+	}
+	return true
+}
+
+func orZero(s string) string {
+	if s == "" {
+		return "0"
+	}
+	return s
+}
 
 func parseFloat(s string) (float32, error) {
 	if len(s) > maxNumberLen {
@@ -2055,53 +2420,6 @@ func parseFloat(s string) (float32, error) {
 		return 0, fmt.Errorf("invalid float value: %s", s)
 	}
 	return float32(v), nil
-}
-
-func parseInt(s string) (int32, error) {
-	if len(s) > maxNumberLen {
-		return 0, fmt.Errorf("number too long (%d characters)", len(s))
-	}
-	// Try int first, then float (some MDL files use "1.0" for integer fields)
-	if v, err := strconv.ParseInt(s, 10, 32); err == nil {
-		return int32(v), nil
-	}
-	if v, err := strconv.ParseFloat(s, 64); err == nil {
-		// Refuse what int32 can't hold (NaN and Inf included): converting it
-		// is platform dependent in Go (amd64 gives -2147483648).
-		r := math.Round(v)
-		if !(r >= math.MinInt32 && r <= math.MaxInt32) {
-			return 0, fmt.Errorf("integer out of range: %s", s)
-		}
-		return int32(r), nil
-	}
-	return 0, fmt.Errorf("not a number: %s", s)
-}
-
-func parseVec3(tokens []string) (Vec3, bool) {
-	if len(tokens) < 3 {
-		return Vec3{}, false
-	}
-	x, e1 := parseFloat(tokens[0])
-	y, e2 := parseFloat(tokens[1])
-	z, e3 := parseFloat(tokens[2])
-	if e1 != nil || e2 != nil || e3 != nil {
-		return Vec3{}, false
-	}
-	return Vec3{X: x, Y: y, Z: z}, true
-}
-
-func parseVec4(tokens []string) (Vec4, bool) {
-	if len(tokens) < 4 {
-		return Vec4{}, false
-	}
-	x, e1 := parseFloat(tokens[0])
-	y, e2 := parseFloat(tokens[1])
-	z, e3 := parseFloat(tokens[2])
-	w, e4 := parseFloat(tokens[3])
-	if e1 != nil || e2 != nil || e3 != nil || e4 != nil {
-		return Vec4{}, false
-	}
-	return Vec4{X: x, Y: y, Z: z, W: w}, true
 }
 
 func safeIndex(tokens []string, i int) string {

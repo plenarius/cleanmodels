@@ -1,0 +1,310 @@
+# cleanmodels engine probe zcm_tsort24 (CC0-1.0)
+newmodel zcm_tsort24
+setsupermodel zcm_tsort24 NULL
+classification tile
+beginmodelgeom zcm_tsort24
+node dummy zcm_tsort24
+  parent NULL
+endnode
+node dummy d00
+  parent zcm_tsort24
+endnode
+node trimesh m01
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d02
+  parent zcm_tsort24
+endnode
+node trimesh m03
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m04
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m05
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m06
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m07
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m08
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m09
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m10
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m11
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d12
+  parent zcm_tsort24
+endnode
+node trimesh m13
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m14
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m15
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m16
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m17
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m18
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d19
+  parent zcm_tsort24
+endnode
+node dummy d20
+  parent zcm_tsort24
+endnode
+node trimesh m21
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m22
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m23
+  parent zcm_tsort24
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+endmodelgeom zcm_tsort24
+donemodel zcm_tsort24

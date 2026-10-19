@@ -1,0 +1,50 @@
+# mdl-spec conformance probe zspec_kid (CC0-1.0)
+# Compiled against the supermodel zspec_super (which must be loadable):
+# node numbers of shared names (hips, hand, foot), of a name the
+# supermodel uses twice (hand), and of a node the supermodel lacks (extra);
+# the header's node count; animation node numbers.
+newmodel zspec_kid
+setsupermodel zspec_kid zspec_super
+classification character
+beginmodelgeom zspec_kid
+node dummy zspec_kid
+  parent NULL
+endnode
+node dummy hips
+  parent zspec_kid
+  position 0 0 1
+endnode
+node dummy extra
+  parent hips
+endnode
+node dummy hand
+  parent hips
+endnode
+node dummy foot
+  parent hips
+endnode
+endmodelgeom zspec_kid
+newanim kidanim zspec_kid
+  length 1
+  transtime 0
+  animroot zspec_kid
+  node dummy zspec_kid
+    parent NULL
+  endnode
+  node dummy hips
+    parent zspec_kid
+  endnode
+  node dummy extra
+    parent hips
+    positionkey 2
+      0 0 0 0
+      1 0 0 1
+  endnode
+  node dummy foot
+    parent hips
+    positionkey 2
+      0 0 0 -1
+      1 0 0 -0.5
+  endnode
+doneanim kidanim zspec_kid
+donemodel zspec_kid

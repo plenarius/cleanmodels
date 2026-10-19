@@ -15,14 +15,15 @@ import struct
 
 from .compiler_buf import PatchBuf
 from .compiler_controllers import ControllersMixin
-from .compiler_mesh import CompileError, MeshMixin
+from .compiler_mesh import CompileError, MeshMixin, anim_sets, anim_vertex_major
 from .compiler_node import NodeMixin
+from .compiler_order import reorder_children
 from .compiler_skinbind import SkinBindMixin, SkinBindPatch
 from .compiler_tree import is_root_parent, node_occurrences, pair_anim_nodes_to_geom, resolve_anim_tree, \
     resolve_geom_tree
 from .f32 import f32
 from .gomath import go_lower, go_quote
-from .gostr import equal_fold
+from .gostr import equal_fold, go_upper
 from .vec import model_bounds
 
 MESH_HEADER_SIZE = 512
@@ -86,7 +87,6 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         self.vol = PatchBuf()
         self.model = model
         self.node_ids = {}        # node -> part number
-        self.next_id = 0
         self.tree_index = {}      # node -> tree position (skin bones are addressed by it)
         self.skin_bind = SkinBindPatch()
         self.part_skel = None
@@ -98,6 +98,9 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         self.node_count_override = 0
         self.node_offsets = {}
         _, self.children_by_node = resolve_geom_tree(model.nodes)
+        root = model.root_node()
+        if root is not None:
+            reorder_children(root, self.children_by_node)
         gi = {}
         for n in model.nodes:
             if n is not None:
@@ -106,6 +109,7 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         self.geom_occur = node_occurrences(model.nodes)
         self.anim_geom_pair = {}
         self.last_expanded = None
+        self.merge_anim = None    # animmesh sets taking part in the vertex merge
         self.dangly_constraints_ptr_pos = 0
         self.err = None
 
@@ -117,31 +121,13 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
 
     # --- node numbering (compiler.go, supermodel.go) ---
 
-    def assign_node_ids(self, root):
-        """Pre-order from the root, children in declaration order."""
-        visited = set()
-        stack = [root]
-        while stack:
-            n = stack.pop()
-            if n is None or n in visited:
-                continue
-            visited.add(n)
-            self.node_ids[n] = self.next_id
-            self.tree_index[n] = self.next_id
-            self.next_id += 1
-            children = self.children_of(n)
-            for i in range(len(children) - 1, -1, -1):
-                if children[i] not in visited:
-                    stack.append(children[i])
+    def declaration_index(self):
+        """compiler_order.go declarationIndex: node -> position among the node blocks."""
+        return {n: i for i, n in enumerate(self.model.nodes) if n is not None}
 
-    def assign_node_ids_from_supermodel(self, root, sm):
-        """The engine's numbering against a supermodel: shared nodes (same name,
-        same parent) take the supermodel's number, their other children -1, the
-        rest count_nodes + 1 + tree position."""
-        base = sm.count + 1
-        root_name = go_lower(root.name)
+    def walk_tree(self, root, visit):
+        """compiler_order.go walkTree: visit(n, parent, index), depth-first in child order."""
         visited = set()
-        matched = set()
         stack = [(root, None)]
         index = 0
         while stack:
@@ -149,29 +135,49 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             if n is None or n in visited:
                 continue
             visited.add(n)
-            if n is root:
-                self.node_ids[n] = 0
-                matched.add(n)
-            else:
-                name = go_lower(n.name)
-                par = go_lower(n.parent)
-                sn = sm.nodes.get(name)
-                sn_parent = sn.parent if sn is not None else ""
-                same_parent = par == sn_parent or (par == root_name and sn_parent == sm.root)
-                if sn is not None and sn.number >= 0 and same_parent:
-                    self.node_ids[n] = sn.number
-                    matched.add(n)
-                elif parent is not None and parent in matched:
-                    self.node_ids[n] = -1
-                else:
-                    self.node_ids[n] = _i32(base + index)
-            self.tree_index[n] = index
+            visit(n, parent, index)
             index += 1
             children = self.children_of(n)
             for i in range(len(children) - 1, -1, -1):
                 if children[i] not in visited:
                     stack.append((children[i], n))
-        self.node_count_override = _i32(base + index)
+
+    def assign_node_ids(self, root):
+        """assignNodeIDs: declaration index; tree_index the position in the written tree."""
+        decl = self.declaration_index()
+
+        def visit(n, _parent, index):
+            self.node_ids[n] = decl[n]
+            self.tree_index[n] = index
+        self.walk_tree(root, visit)
+
+    def assign_node_ids_from_supermodel(self, root, sm):
+        """assignNodeIDsFromSupermodel: a node at a path the supermodel has takes its
+        number, any other child of a matched node -1, the rest count_nodes + 1 +
+        declaration index."""
+        base = sm.count + 1
+        decl = self.declaration_index()
+        match = {}
+        count = [0]
+
+        def visit(n, parent, index):
+            if n is root:
+                self.node_ids[n] = 0
+                match[n] = sm.root
+            else:
+                p = match.get(parent)
+                sn = p.child(n.name) if p is not None else None
+                if sn is not None and sn.number >= 0:
+                    self.node_ids[n] = sn.number
+                    match[n] = sn
+                elif p is not None:
+                    self.node_ids[n] = -1
+                else:
+                    self.node_ids[n] = _i32(base + decl[n])
+            self.tree_index[n] = index
+            count[0] = index + 1
+        self.walk_tree(root, visit)
+        self.node_count_override = _i32(base + count[0])
 
     def resolve_supermodel(self, dirs, warn):
         from .resources import find_model_resource
@@ -269,7 +275,9 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         for n in self.model.nodes:
             if n is None or n in self.node_ids:
                 continue
-            if is_root_parent(n.parent):
+            if n.parent == "":
+                reason = "no parent"
+            elif is_root_parent(n.parent):
                 reason = "a second root"
             elif self.geom_node_by_name(n.parent) is None:
                 reason = "parent %s does not exist" % go_quote(n.parent)
@@ -299,6 +307,9 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         core.u32(2)  # type: geometry
 
         core.zeros(2)
+        w = _plural_classification_warning(m.classification)
+        if w is not None and self.warn is not None:
+            self.warn(w)
         core.u8(_classification_code(m.classification))
         core.u8(0 if m.ignore_fog != 0 else 1)  # affected by fog
         core.zeros(4)
@@ -479,7 +490,7 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         av_pos = atv_pos = 0
         n_vsets = n_tvsets = 0
         if has_anim_mesh:
-            av_pos, atv_pos, n_vsets, n_tvsets = self.write_anim_mesh_header(geom, an)
+            av_pos, atv_pos, n_vsets, n_tvsets = self.write_anim_mesh_header(geom, an, expanded)
 
         if has_dangly and geom is not None:
             self.write_dangly_header(geom)
@@ -493,16 +504,11 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         if has_dangly and geom is not None:
             self.write_dangly_constraints(geom)
 
-        if has_anim_mesh and n_vsets > 0:
-            src = an.anim_mesh.anim_verts if an.anim_mesh is not None else (
-                geom.anim_mesh.anim_verts if geom is not None and geom.anim_mesh is not None else [])
-            core.patch_u32(av_pos, core.len())
-            core.f32s([c for v in src for c in (v[0], v[1], v[2])])
-        if has_anim_mesh and n_tvsets > 0:
-            src = an.anim_mesh.anim_tverts if an.anim_mesh is not None else (
-                geom.anim_mesh.anim_tverts if geom is not None and geom.anim_mesh is not None else [])
-            core.patch_u32(atv_pos, core.len())
-            core.f32s([c for v in src for c in (v[0], v[1])])
+        if has_anim_mesh and expanded is not None:
+            mesh = an.mesh if an.mesh is not None else geom.mesh
+            am = anim_mesh_source(geom, an)
+            if am is not None:
+                self.write_anim_mesh_data(mesh, am, expanded, av_pos, atv_pos, n_vsets, n_tvsets)
 
         node_flag = content
         if has_light:
@@ -532,7 +538,9 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             if mesh is None:
                 self.write_empty_mesh_header()
                 return
+            self.merge_anim = anim_mesh_source(geom, an)
             self.write_mesh_header_inner(mesh, geom)
+            self.merge_anim = None
             return
         self.write_empty_mesh_header()
 
@@ -575,21 +583,21 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         if got != MESH_HEADER_SIZE and self.err is None:
             self.err = CompileError("empty mesh header wrote %d bytes, want %d" % (got, MESH_HEADER_SIZE))
 
-    def write_anim_mesh_header(self, geom, an):
+    def write_anim_mesh_header(self, geom, an, exp):
         """The 56-byte animmesh sub-header; returns (verts ptr pos, tverts ptr
-        pos, vertex sets, tvertex sets)."""
+        pos, vertex sets, tvertex sets). The sets are counted over the mesh the
+        node is written with, and are 0 without exp."""
         core = self.core
-        sp = 0.0
-        av = atv = ()
-        if an is not None and an.anim_mesh is not None:
-            sp, av, atv = an.anim_mesh.sample_period, an.anim_mesh.anim_verts, an.anim_mesh.anim_tverts
-        elif geom is not None and geom.anim_mesh is not None:
-            sp, av, atv = geom.anim_mesh.sample_period, geom.anim_mesh.anim_verts, geom.anim_mesh.anim_tverts
-        n_verts = len(geom.mesh.verts) if geom is not None and geom.mesh is not None else 0
+        am = anim_mesh_source(geom, an)
+        sp = am.sample_period if am is not None else 0.0
+        if an is not None and an.mesh is not None:
+            mesh = an.mesh
+        else:
+            mesh = geom.mesh if geom is not None else None
         n_vsets = n_tvsets = 0
-        if n_verts > 0:
-            n_vsets = len(av) // n_verts
-            n_tvsets = len(atv) // n_verts
+        if am is not None and mesh is not None and exp is not None:
+            n_vsets = anim_sets(am.anim_verts, len(mesh.verts))
+            n_tvsets = anim_sets(am.anim_tverts, len(mesh.tverts))
         core.f32(sp)
         core.zeros(36)
         av_pos = core.placeholder()
@@ -598,12 +606,41 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         core.i32(n_tvsets)
         return av_pos, atv_pos, n_vsets, n_tvsets
 
+    def write_anim_mesh_data(self, mesh, am, exp, av_pos, atv_pos, n_vsets, n_tvsets):
+        """writeAnimMeshData: the sets, vertex-major over exp's GPU vertices."""
+        core = self.core
+        if n_vsets > 0:
+            core.patch_u32(av_pos, core.len())
+            core.f32s([c for v in anim_vertex_major(am.anim_verts, len(mesh.verts), exp.orig_vert)
+                       for c in (v[0], v[1], v[2])])
+        if n_tvsets > 0:
+            core.patch_u32(atv_pos, core.len())
+            core.f32s([c for v in anim_vertex_major(am.anim_tverts, len(mesh.tverts), exp.orig_tvert)
+                       for c in (v[0], v[1])])
+
+
+def anim_mesh_source(geom, an):
+    """animMeshSource: the animation node's sets, else the geometry node's."""
+    if an is not None and an.anim_mesh is not None:
+        return an.anim_mesh
+    return geom.anim_mesh if geom is not None else None
+
+
+_CLASSIFICATION_CODES = {"EFFECT": 1, "EFFECTS": 1, "TILE": 2, "CHARACTER": 4, "DOOR": 8}
+
 
 def _classification_code(cls):
-    c = cls.upper()
-    if c.endswith("S"):
-        c = c[:-1]
-    return {"EFFECT": 1, "TILE": 2, "CHARACTER": 4, "DOOR": 8}.get(c, 0)
+    """types.go ClassificationToCode: the game's words, compared without case."""
+    return _CLASSIFICATION_CODES.get(go_upper(cls), 0)
+
+
+def _plural_classification_warning(cls):
+    """types.go pluralClassificationWarning, or None."""
+    u = go_upper(cls)
+    if u == "EFFECTS" or not u.endswith("S") or _classification_code(u[:-1]) == 0:
+        return None
+    return "classification %s is not one of the game's words; it compiles as no classification (0), not %s" % (
+        go_quote(cls), u[:-1])
 
 
 def _i32(v):

@@ -11,9 +11,11 @@ decoded bytes (what writer.write returns), bytes as they are.
 
 from . import gostr
 from .controllers import EMITTER_DECLARED_NAMES
-from .gostr import parse_float32, parse_int, quote
+from .f32 import fmt_float
+from .gostr import parse_float32, quote, scan_float, scan_int
 from .nearmatch import near_match_param
-from .types import (EMITTER_COLOR_FIELDS, EMITTER_FLOAT_FIELDS, AabbData, AabbEntry, AnimMeshData, AnimNode,
+from .binary import set_static_controller
+from .types import (ANIM_COLOR_CONTROLLERS, ANIM_FLOAT_CONTROLLERS, EMITTER_COLOR_FIELDS, EMITTER_FLOAT_FIELDS, AabbData, AabbEntry, AnimMeshData, AnimNode,
                     Animation, DanglyData, EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData,
                     SkinData, VertexWeight)
 
@@ -106,24 +108,65 @@ def parse_file(path):
         return parse(f.read())
 
 
-def new_shadowed_mesh_data():
-    """newShadowedMeshData: a mesh with no "shadow" line casts shadows."""
+def new_parsed_mesh_data(walkmesh):
+    """newParsedMeshData: the game compiler's defaults for a parsed mesh."""
     m = MeshData()
-    m.shadow = 1
+    m.diffuse = (1.0, 1.0, 1.0)
+    m.ambient = (1.0, 1.0, 1.0)
+    m.shininess = 1.0
+    if walkmesh:
+        m.render = 0
+    else:
+        m.shadow = 1
     return m
+
+
+# parser.go caseSensitiveWords
+_CASE_SENSITIVE = frozenset(("node", "endnode", "endlist", "event", "animlength", "endmodelgeom", "doneanim",
+                             "donemodel"))
+
+
+def _first_anim_key(an):
+    """firstAnimKey: (controller, first key's value, key count), or (None, None, 0)."""
+    if an.position_keys:
+        k = an.position_keys
+        return "position", list(k[0][1]), len(k)
+    if an.orientation_keys:
+        k = an.orientation_keys
+        return "orientation", list(k[0][1]), len(k)
+    for name in ANIM_FLOAT_CONTROLLERS:
+        k = an.float_keys.get(name)
+        if k:
+            return name, [k[0][1]], len(k)
+    for name in ANIM_COLOR_CONTROLLERS:
+        k = an.color_keys.get(name)
+        if k:
+            return name, list(k[0][1]), len(k)
+    return None, None, 0
+
+
+def new_parsed_light_data():
+    """newParsedLightData: the game compiler's defaults for a parsed light."""
+    l = LightData()
+    l.light_priority = 5
+    l.n_dynamic_type = 1
+    l.affect_dynamic = 1
+    l.shadow = 1
+    l.fading_light = 1
+    return l
 
 
 def _declared_name(n, keyword):
     """declared.go declaredName, or None."""
     if keyword == "scale":
         return keyword
-    if keyword == "setfillumcolor" and n.mesh is not None:
-        return "selfillumcolor"
     if (keyword == "alpha" or keyword == "selfillumcolor") and n.mesh is not None:
         return keyword
     if n.light is not None and keyword in _LIGHT_DECLARED:
         return keyword
     if n.emitter is not None and keyword in EMITTER_DECLARED_NAMES:
+        return keyword
+    if n.emitter is not None and keyword == "detonate":
         return keyword
     return None
 
@@ -135,12 +178,17 @@ def _tok(tokens, i):
 
 class _ListWarn:
     """listWarn: damaged entries are kept, zeroed and reported, at most 5 per list."""
-    __slots__ = ("p", "shown", "total")
+    __slots__ = ("p", "shown", "total", "stopped")
 
     def __init__(self, p):
         self.p = p
         self.shown = 0
         self.total = 0
+        self.stopped = False
+
+    def row(self):
+        """listWarn.row: a new entry; sscanf stops an entry at a bad value."""
+        self.stopped = False
 
     def add(self, msg):
         self.total += 1
@@ -153,17 +201,37 @@ class _ListWarn:
             self.p.errorf("%d more damaged value(s) in this list were set to 0" % (self.total - self.shown))
 
     def float(self, tok):
-        v = parse_float32(tok)
-        if v is None:
-            self.add("%s is not a usable number, set to 0" % quote(tok))
+        if self.stopped:
             return 0.0
+        v, n = scan_float(tok)
+        if v is None:
+            if n == 0 or n < len(tok):
+                self.add("%s is not a usable number, set to 0, as are the values after it in the entry" % quote(tok))
+                self.stopped = True
+            else:
+                self.add("%s is not a usable number, set to 0" % quote(tok))
+            return 0.0
+        if n < len(tok):
+            self.add("%s is read as %s, as the game reads it, and the values after it in the entry are set to 0"
+                     % (quote(tok), fmt_float(v)))
+            self.stopped = True
         return v
 
     def int(self, tok):
-        v = parse_int(tok)
-        if v is None:
-            self.add("%s is not a usable integer, set to 0" % quote(tok))
+        if self.stopped:
             return 0
+        v, n = scan_int(tok)
+        if v is None:
+            if n == 0 or n < len(tok):
+                self.add("%s is not a usable integer, set to 0, as are the values after it in the entry" % quote(tok))
+                self.stopped = True
+            else:
+                self.add("%s is not a usable integer, set to 0" % quote(tok))
+            return 0
+        if n < len(tok):
+            self.add("%s is read as %d, as the game reads it, and the values after it in the entry are set to 0"
+                     % (quote(tok), v))
+            self.stopped = True
         return v
 
     def short(self, have, want):
@@ -174,10 +242,14 @@ class _ListWarn:
         if len(tokens) < n:
             self.add("key has %d value(s), expected %d; the key is skipped" % (len(tokens), n))
             return None
-        t = parse_float32(tokens[0])
+        t, tn = scan_float(tokens[0])
         if t is None:
             self.add("key time %s is not a usable number; the key is skipped" % quote(tokens[0]))
             return None
+        if tn < len(tokens[0]):
+            self.add("key time %s is read as %s, as the game reads it, and the values after it in the key are set to 0"
+                     % (quote(tokens[0]), fmt_float(t)))
+            self.stopped = True
         v = [t]
         for i in range(1, n):
             v.append(self.float(tokens[i]))
@@ -240,18 +312,39 @@ class _Parser:
     # --- one-value parameters ---
 
     def float_param(self, tokens, obj, attr):
-        v = parse_float32(_tok(tokens, 1))
+        v = self.float_value(tokens)
+        if v is not None:
+            setattr(obj, attr, v)
+
+    def float_value(self, tokens):
+        """floatValue: the value of a one-value line, or None (reported)."""
+        tok = _tok(tokens, 1)
+        v, n = scan_float(tok)
         if v is None:
             self.bad_param(tokens, "number")
-            return
-        setattr(obj, attr, v)
+            return None
+        if n < len(tok):
+            self.errorf("%s for %s is read as %s, as the game reads it; the rest is ignored"
+                        % (quote(tok), quote(tokens[0]), fmt_float(v)))
+        return v
 
     def int_param(self, tokens, obj, attr):
-        v = parse_int(_tok(tokens, 1))
+        tok = _tok(tokens, 1)
+        v, n = scan_int(tok)
         if v is None:
-            self.bad_param(tokens, "integer")
+            if gostr.equal_fold(tok, "true"):
+                setattr(obj, attr, 1)
+            elif gostr.equal_fold(tok, "false"):
+                setattr(obj, attr, 0)
+            else:
+                self.bad_param(tokens, "integer")
             return
         setattr(obj, attr, v)
+        if n < len(tok):
+            f = parse_float32(tok)
+            if f is None or f != v:
+                self.errorf("%s for %s is read as %d, as the game reads it; the rest is ignored"
+                            % (quote(tok), quote(tokens[0]), v))
 
     def bool_param(self, tokens, obj, attr):
         s = gostr.go_lower(_tok(tokens, 1))
@@ -263,34 +356,55 @@ class _Parser:
             self.int_param(tokens, obj, attr)
 
     def float_at(self, tokens, i):
-        v = parse_float32(_tok(tokens, i))
+        tok = _tok(tokens, i)
+        v, n = scan_float(tok)
         if v is None:
-            self.errorf("%s is not a usable number for value %d of %s, set to 0"
-                        % (quote(_tok(tokens, i)), i, quote(tokens[0])))
+            self.errorf("%s is not a usable number for value %d of %s, set to 0" % (quote(tok), i, quote(tokens[0])))
             return 0.0
+        if n < len(tok):
+            self.errorf("%s for value %d of %s is read as %s, as the game reads it; the rest is ignored"
+                        % (quote(tok), i, quote(tokens[0]), fmt_float(v)))
         return v
 
     def short_param(self, tokens, want):
         self.errorf("%s has %d value(s), expected %d; the line is ignored" % (quote(tokens[0]), len(tokens) - 1, want))
 
-    def vec_param(self, tokens, n):
-        """vec3Param / vec4Param: the vector, or None (reported)."""
-        if len(tokens) < n + 1:
-            self.short_param(tokens, n)
-            return None
-        v = [parse_float32(t) for t in tokens[1:n + 1]]
-        if None in v:
-            self.errorf("%s has an unusable number (%s), keeping the default" % (quote(tokens[0]), " ".join(tokens[1:n + 1])))
-            return None
-        return tuple(v)
+    def vec_param(self, tokens, cur):
+        """vecParam: cur with the line's values read over it as sscanf "%f %f %f"
+        does: in order, up to the first bad value (reported)."""
+        out = list(cur)
+        vals = tokens[1:]
+        for i in range(len(out)):
+            if i >= len(vals):
+                self.errorf("%s has %d value(s), expected %d; the others keep their values"
+                            % (quote(tokens[0]), len(vals), len(out)))
+                break
+            v, n = scan_float(vals[i])
+            if v is None:
+                if n > 0 and n == len(vals[i]):
+                    self.errorf("%s has an unusable number (%s), which keeps its value" % (quote(tokens[0]), quote(vals[i])))
+                    continue
+                self.errorf("%s has an unusable number (%s); it and the values after it keep their values"
+                            % (quote(tokens[0]), quote(vals[i])))
+                break
+            out[i] = v
+            if n < len(vals[i]):
+                self.errorf("%s: %s is read as %s, as the game reads it; the rest of the line is ignored"
+                            % (quote(tokens[0]), quote(vals[i]), fmt_float(v)))
+                break
+        return tuple(out)
 
     def vec3_param(self, tokens, obj, attr):
-        v = self.vec_param(tokens, 3)
-        if v is not None:
-            setattr(obj, attr, v)
+        setattr(obj, attr, self.vec_param(tokens, getattr(obj, attr)))
 
     def count_param(self, tokens):
-        v = parse_int(_tok(tokens, 1))
+        """countParam: a count with more after it is refused unless that changes nothing ("3.0")."""
+        tok = _tok(tokens, 1)
+        v, n = scan_int(tok)
+        if v is not None and n < len(tok):
+            f = parse_float32(tok)
+            if f is None or f != v:
+                v = None
         if v is None:
             self.bad_param(tokens, "count")
         return v
@@ -316,6 +430,9 @@ class _Parser:
             kw = gostr.go_lower(tokens[0])
             if kw in _STRUCTURE:
                 self.saw_model = True
+            if kw in _CASE_SENSITIVE and tokens[0] != kw:
+                self.errorf("%s: the game reads only lower-case %s and does not read this line; cleanmodels does"
+                            % (quote(tokens[0]), quote(kw)))
             if kw == "newmodel":
                 if len(tokens) >= 2:
                     m.name = tokens[1]
@@ -365,8 +482,11 @@ class _Parser:
                     self.current_anim.root = tokens[1]
             elif kw == "event" and self.current_anim is not None:
                 if len(tokens) >= 3:
-                    t = parse_float32(tokens[1])
+                    t, tn = scan_float(tokens[1])
                     if t is not None:
+                        if tn < len(tokens[1]):
+                            self.errorf("event time %s is read as %s, as the game reads it; the rest is ignored"
+                                        % (quote(tokens[1]), fmt_float(t)))
                         self.current_anim.events.append((t, tokens[2]))
             else:
                 self.parse_parameter(tokens)
@@ -382,23 +502,23 @@ class _Parser:
             return
         node = Node(name)
         if node_type == "trimesh":
-            node.mesh = new_shadowed_mesh_data()
+            node.mesh = new_parsed_mesh_data(False)
         elif node_type == "skin":
-            node.mesh = new_shadowed_mesh_data()
+            node.mesh = new_parsed_mesh_data(False)
             node.skin = SkinData()
         elif node_type == "animmesh":
-            node.mesh = MeshData()
+            node.mesh = new_parsed_mesh_data(False)
             node.anim_mesh = AnimMeshData()
         elif node_type == "danglymesh":
-            node.mesh = new_shadowed_mesh_data()
+            node.mesh = new_parsed_mesh_data(False)
             node.dangly = DanglyData()
         elif node_type == "aabb":
-            node.mesh = MeshData()
+            node.mesh = new_parsed_mesh_data(True)
             node.aabb = AabbData()
         elif node_type == "emitter":
             node.emitter = EmitterData()
         elif node_type == "light":
-            node.light = LightData()
+            node.light = new_parsed_light_data()
         elif node_type == "reference":
             node.reference = ReferenceData()
         elif node_type == "camera":
@@ -444,7 +564,7 @@ class _Parser:
         if name is not None:
             node.declared.add(name)
         if kw == "parent":
-            if len(tokens) >= 2:
+            if self.parent_line(tokens, node.name):
                 node.parent = tokens[1]
         elif kw == "#part-number":
             if len(tokens) >= 2:
@@ -452,9 +572,7 @@ class _Parser:
         elif kw == "position":
             self.vec3_param(tokens, node, "position")
         elif kw == "orientation":
-            v = self.vec_param(tokens, 4)
-            if v is not None:
-                node.orientation = v
+            node.orientation = self.vec_param(tokens, node.orientation)
         elif kw == "scale":
             if len(tokens) >= 2:
                 self.float_param(tokens, node, "scale")
@@ -491,10 +609,38 @@ class _Parser:
         elif node.reference is not None:
             if self.parse_reference_param(node.reference, kw, tokens):
                 return
+        if self.parse_geom_key_list(node, kw, tokens):
+            return
         matched = near_match_param(kw, valid_params_for_type(node.node_type()))
         if matched is not None and matched != kw:
-            self.errorf("fuzzy matched %s to %s" % (quote(kw), quote(matched)))
-            self.parse_parameter([matched] + tokens[1:])
+            self.errorf("%s is not a keyword the game reads, so the line is ignored, as in the game; "
+                        "did you mean %s?" % (quote(kw), quote(matched)))
+
+    def parse_geom_key_list(self, node, kw, tokens):
+        """parseGeomKeyList: a key list on a geometry node sets the node's value to its first key."""
+        if not kw.endswith("key") or kw in ("detonatekey", "detonatebezierkey"):
+            return False
+        scratch = AnimNode(node.name)
+        saved = self.current_anim_node
+        self.current_anim_node = scratch
+        self.parse_anim_node_param(kw, tokens)
+        self.current_anim_node = saved
+        name, vals, n = _first_anim_key(scratch)
+        if name is None:
+            return False
+        set_static_controller(node, name, vals)
+        if n > 1:
+            self.errorf("%s on geometry node %s: only the first of its %d keys is used, as in the game, "
+                        "which evaluates geometry at time 0" % (kw, quote(node.name), n))
+        return True
+
+    def parent_line(self, tokens, node):
+        """parentLine: the game reads only a lower-case parent line."""
+        if tokens[0] != "parent":
+            self.errorf("%s is not read by the game, which knows only lower-case \"parent\", so node %s takes no "
+                        "parent from it, as in the game" % (quote(tokens[0]), quote(node)))
+            return False
+        return len(tokens) >= 2
 
     def counted(self, tokens):
         """The count of a "keyword N" list line when it is a usable N > 0, else None."""
@@ -520,7 +666,7 @@ class _Parser:
             self.int_param(tokens, mesh, _MESH_INTS[kw])
         elif kw == "alpha":
             self.float_param(tokens, mesh, "alpha")
-        elif kw == "selfillumcolor" or kw == "setfillumcolor":
+        elif kw == "selfillumcolor":
             self.vec3_param(tokens, mesh, "self_illum_color")
         elif kw == "center":
             pass  # mn3 or a name; not stored
@@ -629,7 +775,9 @@ class _Parser:
             tokens = self.tokenize(line)
 
     def parse_emitter_param(self, em, kw, tokens):
-        if kw in _EMITTER_FLOAT_ATTRS:
+        if kw == "detonate":
+            pass  # declared in parse_parameter; its controller has no value
+        elif kw in _EMITTER_FLOAT_ATTRS:
             self.float_param(tokens, em, _EMITTER_FLOAT_ATTRS[kw])
         elif kw in _EMITTER_INTS:
             self.int_param(tokens, em, _EMITTER_INTS[kw])
@@ -639,15 +787,11 @@ class _Parser:
         elif kw == "affectedbywind":
             self.bool_param(tokens, em, "affected_by_wind")
         elif kw in _EMITTER_FLOATS:
-            v = parse_float32(_tok(tokens, 1))
-            if v is None:
-                self.bad_param(tokens, "number")
-            else:
+            v = self.float_value(tokens)
+            if v is not None:
                 em.floats[kw] = v
         elif kw in _EMITTER_COLORS:
-            v = self.vec_param(tokens, 3)
-            if v is not None:
-                em.colors[kw] = v
+            em.colors[kw] = self.vec_param(tokens, em.colors[kw])
         else:
             return False
         return True
@@ -690,7 +834,7 @@ class _Parser:
     def parse_anim_node_param(self, kw, tokens):
         an = self.current_anim_node
         if kw == "parent":
-            if len(tokens) >= 2:
+            if self.parent_line(tokens, an.name):
                 an.parent = tokens[1]
         elif kw == "#part-number":
             pass
@@ -753,10 +897,8 @@ class _Parser:
             # a static value on an animation node is a key at t=0
             if kw in _FLOAT_CTRL:
                 if len(tokens) >= 2:
-                    v = parse_float32(_tok(tokens, 1))
-                    if v is None:
-                        self.bad_param(tokens, "number")
-                    elif not an.float_keys.get(kw):
+                    v = self.float_value(tokens)
+                    if v is not None and not an.float_keys.get(kw):
                         an.float_keys[kw] = [(0.0, v)]
                 return
             if kw in _COLOR_CTRL:
@@ -827,7 +969,7 @@ class _Parser:
             self.errorf("allocation limit exceeded reading %d vec%d entries" % (count, n))
             return
         w = _ListWarn(self)
-        next_line, tokenize, pf = self.next_line, self.tokenize, parse_float32
+        next_line, tokenize, sf = self.next_line, self.tokenize, scan_float
         zero = (0.0,) * n
         for _ in range(count):
             line = next_line()
@@ -835,10 +977,11 @@ class _Parser:
                 break
             tokens = tokenize(line)
             if len(tokens) == n:
-                v = tuple(map(pf, tokens))
-                if None not in v:
-                    out.append(v)
+                rs = [sf(t) for t in tokens]
+                if all(r[0] is not None and r[1] == len(t) for r, t in zip(rs, tokens)):
+                    out.append(tuple(r[0] for r in rs))
                     continue
+            w.row()
             if len(tokens) < n:
                 w.short(len(tokens), n)
             v = [w.float(t) for t in tokens[:n]]
@@ -855,6 +998,7 @@ class _Parser:
             if line is None:
                 break
             tokens = self.tokenize(line)
+            w.row()
             if len(tokens) < 8:
                 w.short(len(tokens), 8)
             v = [w.int(t) for t in tokens[:8]]
@@ -871,6 +1015,7 @@ class _Parser:
             line = self.next_line()
             if line is None:
                 break
+            w.row()
             out.append(w.int(_tok(self.tokenize(line), 0)))
         w.done()
 
@@ -883,6 +1028,7 @@ class _Parser:
             line = self.next_line()
             if line is None:
                 break
+            w.row()
             out.append(w.float(_tok(self.tokenize(line), 0)))
         w.done()
 
@@ -896,6 +1042,7 @@ class _Parser:
             if line is None:
                 break
             tokens = self.tokenize(line)
+            w.row()
             if len(tokens) < 3:
                 w.short(len(tokens), 3)
             v = [w.int(t) for t in tokens[:3]]
@@ -923,6 +1070,7 @@ class _Parser:
             if line is None:
                 break
             tokens = self.tokenize(line)
+            w.row()
             if len(tokens) < 7:
                 w.short(len(tokens), 7)
             f = [w.float(t) for t in tokens[:6]]
@@ -943,11 +1091,14 @@ class _Parser:
             tokens = self.tokenize(line)
             vw = VertexWeight()
             for j in range(0, len(tokens) - 1, 2):
-                wt = parse_float32(tokens[j + 1])
+                wt, wn = scan_float(tokens[j + 1])
                 if wt is None:
                     ww.add("weight %s for bone %s is not a usable number, that influence is ignored"
                            % (quote(tokens[j + 1]), quote(tokens[j])))
                     continue
+                if wn < len(tokens[j + 1]):
+                    ww.add("weight %s for bone %s is read as %s, as the game reads it"
+                           % (quote(tokens[j + 1]), quote(tokens[j]), fmt_float(wt)))
                 if wt > 0:
                     vw.bones.append(tokens[j])
                     vw.weights.append(wt)
@@ -964,6 +1115,7 @@ class _Parser:
             line = self.next_line()
             if line is None:
                 break
+            w.row()
             parse(w, self.tokenize(line), out)
         w.done()
 
@@ -982,6 +1134,7 @@ class _Parser:
             if not self.track_alloc(size):
                 self.errorf("allocation limit exceeded reading %s" % label)
                 break
+            w.row()
             parse(w, tokens, out)
         w.done()
 
@@ -1075,7 +1228,7 @@ _EMITTER_STRINGS = {"update": "update", "render": "render", "blend": "blend", "t
                     "chunkname": "chunk_name", "p2p_type": "p2p_type"}
 _LIGHT_INTS = {
     "lensflares": "lens_flares", "lightpriority": "light_priority", "ambientonly": "ambient_only",
-    "isdynamic": "n_dynamic_type", "ndynamictype": "n_dynamic_type", "n_dynamic_type": "n_dynamic_type",
+    "isdynamic": "n_dynamic_type", "ndynamictype": "n_dynamic_type",
     "affectdynamic": "affect_dynamic", "shadow": "shadow", "generateflare": "generate_flare",
     "fadinglight": "fading_light", "negativelight": "negative_light",
 }

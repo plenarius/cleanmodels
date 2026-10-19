@@ -14,19 +14,46 @@ from .resources import find_model_resource
 
 
 class SuperNode:
-    __slots__ = ("number", "parent")
+    __slots__ = ("name", "number", "children")
 
-    def __init__(self, number, parent):
+    def __init__(self, name, number):
+        self.name = name      # lower case
         self.number = number  # -1 when the engine left the node unnumbered
-        self.parent = parent
+        self.children = []
+
+    def child(self, name):
+        """superNode.child: the first child named name (any letter case), or None."""
+        name = go_lower(name)
+        for k in self.children:
+            if k.name == name:
+                return k
+        return None
 
 
 class SupermodelInfo:
     def __init__(self, path):
         self.path = path
-        self.nodes = {}   # lower-case node name -> SuperNode
-        self.root = ""
+        self.root = None  # SuperNode tree
         self.count = 0
+
+
+def super_tree(model, number):
+    """supermodel.go superTree: the supermodel's tree from its root, numbered by number(node)."""
+    from .compiler_tree import resolve_geom_tree
+    root = model.root_node()
+    if root is None:
+        return None
+    _, children = resolve_geom_tree(model.nodes)
+    visited = set()
+
+    def build(n):
+        visited.add(n)
+        sn = SuperNode(go_lower(n.name), number(n))
+        for k in children.get(n, []):
+            if k not in visited:
+                sn.children.append(build(k))
+        return sn
+    return build(root)
 
 
 _cache = {}
@@ -69,11 +96,7 @@ def _read_supermodel(ref, dirs, seen):
         if len(data) < off + 4:
             raise ValueError("%s: truncated binary header" % ref.id)
         info.count = struct.unpack_from("<i", data, off)[0]
-        for n in model.nodes:
-            info.nodes[go_lower(n.name)] = SuperNode(n.part_number, go_lower(n.parent))
-        root = model.root_node()
-        if root is not None:
-            info.root = go_lower(root.name)
+        info.root = super_tree(model, lambda n: n.part_number)
         return info
 
     model = parse_ascii(data)
@@ -91,13 +114,7 @@ def _read_supermodel(ref, dirs, seen):
             c.assign_node_ids_from_supermodel(root, sm)
     if not c.node_ids:
         c.assign_node_ids(root)
-    # In file order, as for a binary supermodel: with a name used twice the
-    # later node's number wins.
-    for n in model.nodes:
-        nid = c.node_ids.get(n)
-        if nid is not None:
-            info.nodes[go_lower(n.name)] = SuperNode(nid, go_lower(n.parent))
-    info.root = go_lower(root.name)
+    info.root = super_tree(model, lambda n: c.node_ids.get(n, 0))
     info.count = len(c.node_ids)
     if c.node_count_override > 0:
         info.count = c.node_count_override
