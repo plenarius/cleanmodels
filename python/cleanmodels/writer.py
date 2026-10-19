@@ -387,18 +387,28 @@ class _Writer:
                 ind(6, "detonatekey %d" % len(keys))
                 for t, _ in keys:
                     ind(3, fmt_float(t))
+            elif name in an.bezier:
+                ind(6, "%sbezierkey %d" % (name, len(keys)))
+                pre = "  " * 3
+                self.out.extend("%s%s %s %s %s\n" % (pre, fmt_float(k[0]), fmt_float(k[1]), fmt_float(_handle(k, 2, 0.0)),
+                                                      fmt_float(_handle(k, 3, 0.0))) for k in keys)
             else:
                 ind(6, "%skey %d" % (name, len(keys)))
                 pre = "  " * 3
-                self.out.extend("%s%s %s\n" % (pre, fmt_float(t), fmt_float(v)) for t, v in keys)
+                self.out.extend("%s%s %s\n" % (pre, fmt_float(k[0]), fmt_float(k[1])) for k in keys)
             ind(6, "endlist")
         for name in ANIM_COLOR_CONTROLLERS:
             keys = an.color_keys.get(name)
             if not keys:
                 continue
-            ind(6, "%skey %d" % (name, len(keys)))
             pre = "  " * 3
-            self.out.extend("%s%s %s\n" % (pre, fmt_float(t), fmt_vec3(v)) for t, v in keys)
+            if name in an.bezier:
+                ind(6, "%sbezierkey %d" % (name, len(keys)))
+                self.out.extend("%s%s %s %s %s\n" % (pre, fmt_float(k[0]), fmt_vec3(k[1]), fmt_vec3(_handle(k, 2, _ZERO3)),
+                                                      fmt_vec3(_handle(k, 3, _ZERO3))) for k in keys)
+            else:
+                ind(6, "%skey %d" % (name, len(keys)))
+                self.out.extend("%s%s %s\n" % (pre, fmt_float(k[0]), fmt_vec3(k[1])) for k in keys)
             ind(6, "endlist")
         ind(4, "endnode")
 
@@ -433,3 +443,11 @@ class _Writer:
             return
         self.indent(level, "%s %d" % (name, len(vecs)))
         self.vec3_lines(level + 2, vecs)
+
+
+_ZERO3 = (0.0, 0.0, 0.0)
+
+
+def _handle(key, i, zero):
+    """A bezier key's handle; a linear key in a bezier controller has zero handles."""
+    return key[i] if len(key) > i else zero

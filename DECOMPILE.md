@@ -211,6 +211,22 @@ told by the first key that only one of them uses (448/452 BioWare, 480–488
 nwnmdlcomp, or 468 with three columns, nwnmdlcomp's colormid), looking at all of
 an emitter's keys before naming any. Undecided, BioWare's names are used.
 
+**Bezier controllers** (0x10 on the column count) store each key as the value,
+then a handle in, then a handle out, each as wide as the value. The game's
+compiler writes `0x10 | columns` (0x13 for position, 0x11 for a float);
+nwnmdlcomp writes the row's width (0x19), so the column count is taken from the
+controller, not the byte. Position, float and colour controllers are read with
+their handles and written back as `<name>bezierkey`. On a geometry node the
+value is kept and the handles dropped (a geometry node has one value).
+Orientation has no bezier form that can be stored (the game's compiler keeps
+`orientationbezierkey` rows unconverted), so a bezier orientation controller is
+dropped with a warning; in ASCII, `orientationbezierkey` is read as linear
+`orientationkey` rows (time and axis-angle). Ground truth:
+`tests/fixtures/bezier/plc_a01.mdl` (position) and `cmbez01.mdl` (every float
+and colour kind on a mesh, light and emitter, plus orientation), both written by
+the game's own compiler (`nwmain-linux compilemodel`); see NWMAIN_FINDINGS.md
+33–36.
+
 ## Safety / defensive reads
 
 Decompilation runs on untrusted input — model files arrive from haks of

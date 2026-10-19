@@ -260,3 +260,29 @@ func TestLegacyModeSaysNothingWasWritten(t *testing.T) {
 	}
 	unchanged(t, dir, contents, "a.mdl")
 }
+
+// One input file with a folder as the output is written into the folder under
+// its own name: an existing folder, or a new one given with a trailing slash.
+// Before, the folder was taken as the output file ("rename ... file exists"),
+// or a missing one was created as a file.
+func TestSingleFileIntoFolder(t *testing.T) {
+	dir, _ := writeModels(t, "a.mdl")
+	in := filepath.Join(dir, "a.mdl")
+	existing := filepath.Join(dir, "existing")
+	if err := os.Mkdir(existing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, out := range []string{existing, filepath.Join(dir, "made") + string(os.PathSeparator)} {
+		var code int
+		captureStdio(t, func() {
+			code = cmdCompile([]string{"--color", "never", "-q", in, out})
+		})
+		if code != exitOK {
+			t.Errorf("compile into %s: exit %d", out, code)
+		}
+		st, err := os.Stat(filepath.Join(out, "a.mdl"))
+		if err != nil || !st.Mode().IsRegular() {
+			t.Errorf("compile into %s: %s/a.mdl not written (%v)", out, out, err)
+		}
+	}
+}

@@ -882,11 +882,13 @@ class _Decompiler:
                           "unknown controller type %d for node flag %d" % (type_id, node_flag))
                 continue
             name, def_cols = d
+            # bezier: the value then two handles, each as wide as the value; the
+            # column count comes from the controller (binary.go)
             bezier = column_count & 0x10 != 0
-            if bezier and name != "position":
+            if bezier and (name == "orientation" or def_cols <= 0):
                 self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
-                          "controller %s is a bezier controller (numfloats=0x%02x); only position bezier "
-                          "controllers are supported and this one was dropped" % (name, column_count))
+                          "controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier "
+                          "form; it was dropped" % (name, column_count))
                 continue
             num_cols = column_count & 0x0F
             if def_cols > 0:
@@ -902,14 +904,13 @@ class _Decompiler:
             return
         node_flag = node.node_type_flag()
         for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, node.name):
-            if bezier:
-                self.warn(WARN_UNKNOWN_CONTROLLER, k[0], node.name,
-                          "controller %s is a bezier controller on a geometry node; it was dropped" % name)
-                continue
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
             if not rows:
                 continue
-            set_static_controller(node, name, rows[0][1])
+            vals = rows[0][1]
+            if bezier:
+                vals = vals[:len(vals) // 3]  # a geometry node keeps one value
+            set_static_controller(node, name, vals)
             if len(rows) > 1:
                 self.warn(WARN_GENERAL, 0, node.name, "controller %s has %d keyframes on geometry node; using "
                           "first value only" % (name, len(rows)))
@@ -1066,6 +1067,9 @@ class _Decompiler:
             return
         for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, an.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
+            if bezier and name != "position":
+                add_anim_bezier_keys(an, name, rows)
+                continue
             if bezier:
                 for t, v in rows:
                     if len(v) >= 9:
@@ -1129,6 +1133,27 @@ def set_static_controller(node, name, vals):
             em.floats[name] = vals[0]
         elif name in em.colors and len(vals) >= 3:
             em.colors[name] = (vals[0], vals[1], vals[2])
+
+
+def add_anim_bezier_keys(an, name, rows):
+    """binary.go addAnimBezierKeys: rows of value, handle in, handle out."""
+    if name in _ANIM_FLOAT:
+        keys = an.float_keys.setdefault(name, [])
+        for t, v in rows:
+            if len(v) >= 3:
+                keys.append((t, v[0], v[1], v[2]))
+        if not keys:
+            del an.float_keys[name]
+        an.bezier.add(name)
+        return
+    if name in _ANIM_COLOR:
+        keys = an.color_keys.setdefault(name, [])
+        for t, v in rows:
+            if len(v) >= 9:
+                keys.append((t, (v[0], v[1], v[2]), (v[3], v[4], v[5]), (v[6], v[7], v[8])))
+        if not keys:
+            del an.color_keys[name]
+        an.bezier.add(name)
 
 
 def add_anim_key(an, name, t, vals):

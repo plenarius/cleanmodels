@@ -312,30 +312,39 @@ func mergeAnimNodeKeys(dst, src *mdl.AnimNode) {
 	}
 	if len(dst.ScaleKeys) == 0 {
 		dst.ScaleKeys = src.ScaleKeys
+		takeBezier(dst, src, "scale")
 	}
 	if len(dst.AlphaKeys) == 0 {
 		dst.AlphaKeys = src.AlphaKeys
+		takeBezier(dst, src, "alpha")
 	}
 	if len(dst.SelfIllumColorKeys) == 0 {
 		dst.SelfIllumColorKeys = src.SelfIllumColorKeys
+		takeBezier(dst, src, "selfillumcolor")
 	}
 	if len(dst.ColorKeys) == 0 {
 		dst.ColorKeys = src.ColorKeys
+		takeBezier(dst, src, "color")
 	}
 	if len(dst.RadiusKeys) == 0 {
 		dst.RadiusKeys = src.RadiusKeys
+		takeBezier(dst, src, "radius")
 	}
 	if len(dst.MultiplierKeys) == 0 {
 		dst.MultiplierKeys = src.MultiplierKeys
+		takeBezier(dst, src, "multiplier")
 	}
 	if len(dst.ShadowRadiusKeys) == 0 {
 		dst.ShadowRadiusKeys = src.ShadowRadiusKeys
+		takeBezier(dst, src, "shadowradius")
 	}
 	if len(dst.VerticalDisplacementKeys) == 0 {
 		dst.VerticalDisplacementKeys = src.VerticalDisplacementKeys
+		takeBezier(dst, src, "verticaldisplacement")
 	}
 	if len(dst.BirthRateKeys) == 0 {
 		dst.BirthRateKeys = src.BirthRateKeys
+		takeBezier(dst, src, "birthrate")
 	}
 	if len(dst.DetonateKeys) == 0 {
 		dst.DetonateKeys = src.DetonateKeys
@@ -346,6 +355,17 @@ func mergeAnimNodeKeys(dst, src *mdl.AnimNode) {
 	if dst.AnimMesh == nil && src.AnimMesh != nil {
 		dst.AnimMesh = src.AnimMesh
 	}
+}
+
+// takeBezier carries a controller's bezier mark with the keys taken from src.
+func takeBezier(dst, src *mdl.AnimNode, name string) {
+	if !src.Bezier[name] {
+		return
+	}
+	if dst.Bezier == nil {
+		dst.Bezier = make(map[string]bool)
+	}
+	dst.Bezier[name] = true
 }
 
 func checkChildlessNodeType(checkName, nodeType string) mdl.CheckFunc {

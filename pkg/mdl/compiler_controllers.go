@@ -206,9 +206,15 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 		}
 		return false
 	}
-	addFloat := func(typeID uint32, keyframes []FloatKey) {
+	// A bezier controller's keys are the value then its two handles, with
+	// 0x10 on the column count, as the game's compiler writes them.
+	addFloat := func(typeID uint32, keyframes []FloatKey, bezier bool) {
 		n := len(keyframes)
-		if n == 0 || checkOverflow(2*n) {
+		width := 1
+		if bezier {
+			width = 3
+		}
+		if n == 0 || checkOverflow(n+width*n) {
 			return
 		}
 		timeStart := uint16(len(dataArr))
@@ -216,20 +222,31 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 			dataArr = append(dataArr, kf.Time)
 		}
 		dataStart := uint16(len(dataArr))
+		columnCount := uint8(1)
 		for _, kf := range keyframes {
 			dataArr = append(dataArr, kf.Value)
+			if bezier {
+				dataArr = append(dataArr, kf.TanIn, kf.TanOut)
+			}
+		}
+		if bezier {
+			columnCount |= 0x10
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
 			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
-			ColumnCount: 1,
+			ColumnCount: columnCount,
 		})
 	}
-	addColor := func(typeID uint32, keyframes []ColorKey) {
+	addColor := func(typeID uint32, keyframes []ColorKey, bezier bool) {
 		n := len(keyframes)
-		if n == 0 || checkOverflow(n+3*n) {
+		width := 3
+		if bezier {
+			width = 9
+		}
+		if n == 0 || checkOverflow(n+width*n) {
 			return
 		}
 		timeStart := uint16(len(dataArr))
@@ -237,15 +254,22 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 			dataArr = append(dataArr, kf.Time)
 		}
 		dataStart := uint16(len(dataArr))
+		columnCount := uint8(3)
 		for _, kf := range keyframes {
 			dataArr = append(dataArr, kf.Value.X, kf.Value.Y, kf.Value.Z)
+			if bezier {
+				dataArr = append(dataArr, kf.TanIn.X, kf.TanIn.Y, kf.TanIn.Z, kf.TanOut.X, kf.TanOut.Y, kf.TanOut.Z)
+			}
+		}
+		if bezier {
+			columnCount |= 0x10
 		}
 		keys = append(keys, binCtrlKey{
 			Type:        typeID,
 			ValueCount:  uint16(n),
 			TimeStart:   timeStart,
 			DataStart:   dataStart,
-			ColumnCount: 3,
+			ColumnCount: columnCount,
 		})
 	}
 	addVec3 := func(typeID uint32, keyframes []PositionKey, bezier bool) {
@@ -326,67 +350,67 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 	// Universal
 	addVec3(8, an.PositionKeys, an.PositionBezier)
 	addOrientation(an.OrientationKeys)
-	addFloat(36, an.ScaleKeys)
+	addFloat(36, an.ScaleKeys, an.isBezier("scale"))
 
 	// Mesh controllers
 	if nodeFlag&0x20 != 0 {
-		addColor(100, an.SelfIllumColorKeys)
-		addFloat(128, an.AlphaKeys)
+		addColor(100, an.SelfIllumColorKeys, an.isBezier("selfillumcolor"))
+		addFloat(128, an.AlphaKeys, an.isBezier("alpha"))
 	}
 
 	// Light controllers
 	if nodeFlag == 3 {
-		addColor(76, an.ColorKeys)
-		addFloat(88, an.RadiusKeys)
-		addFloat(140, an.MultiplierKeys)
-		addFloat(96, an.ShadowRadiusKeys)
-		addFloat(100, an.VerticalDisplacementKeys)
+		addColor(76, an.ColorKeys, an.isBezier("color"))
+		addFloat(88, an.RadiusKeys, an.isBezier("radius"))
+		addFloat(140, an.MultiplierKeys, an.isBezier("multiplier"))
+		addFloat(96, an.ShadowRadiusKeys, an.isBezier("shadowradius"))
+		addFloat(100, an.VerticalDisplacementKeys, an.isBezier("verticaldisplacement"))
 	}
 
 	// Emitter controllers (BioWare IDs)
 	if nodeFlag == 5 {
-		addFloat(84, an.AlphaStartKeys)
-		addFloat(448, an.AlphaMidKeys) // BioWare ID
-		addFloat(80, an.AlphaEndKeys)
-		addFloat(88, an.BirthRateKeys)
-		addFloat(204, an.BlurLengthKeys)
-		addFloat(92, an.BounceCoKeys)
-		addColor(108, an.ColorStartKeys)
-		addColor(452, an.ColorMidKeys) // BioWare ID
-		addColor(96, an.ColorEndKeys)
-		addFloat(120, an.CombineTimeKeys)
+		addFloat(84, an.AlphaStartKeys, an.isBezier("alphastart"))
+		addFloat(448, an.AlphaMidKeys, an.isBezier("alphamid")) // BioWare ID
+		addFloat(80, an.AlphaEndKeys, an.isBezier("alphaend"))
+		addFloat(88, an.BirthRateKeys, an.isBezier("birthrate"))
+		addFloat(204, an.BlurLengthKeys, an.isBezier("blurlength"))
+		addFloat(92, an.BounceCoKeys, an.isBezier("bounce_co"))
+		addColor(108, an.ColorStartKeys, an.isBezier("colorstart"))
+		addColor(452, an.ColorMidKeys, an.isBezier("colormid")) // BioWare ID
+		addColor(96, an.ColorEndKeys, an.isBezier("colorend"))
+		addFloat(120, an.CombineTimeKeys, an.isBezier("combinetime"))
 		addDetonate(an.DetonateKeys)
-		addFloat(124, an.DragKeys)
-		addFloat(128, an.FPSKeys)
-		addFloat(136, an.FrameStartKeys)
-		addFloat(132, an.FrameEndKeys)
-		addFloat(140, an.GravKeys)
-		addFloat(144, an.LifeExpKeys)
-		addFloat(208, an.LightningDelayKeys)
-		addFloat(212, an.LightningRadiusKeys)
-		addFloat(216, an.LightningScaleKeys)
+		addFloat(124, an.DragKeys, an.isBezier("drag"))
+		addFloat(128, an.FPSKeys, an.isBezier("fps"))
+		addFloat(136, an.FrameStartKeys, an.isBezier("framestart"))
+		addFloat(132, an.FrameEndKeys, an.isBezier("frameend"))
+		addFloat(140, an.GravKeys, an.isBezier("grav"))
+		addFloat(144, an.LifeExpKeys, an.isBezier("lifeexp"))
+		addFloat(208, an.LightningDelayKeys, an.isBezier("lightningdelay"))
+		addFloat(212, an.LightningRadiusKeys, an.isBezier("lightningradius"))
+		addFloat(216, an.LightningScaleKeys, an.isBezier("lightningscale"))
 		if len(an.LightningSubDivKeys) > 0 {
-			addFloat(220, an.LightningSubDivKeys)
+			addFloat(220, an.LightningSubDivKeys, an.isBezier("lightningsubdiv"))
 		}
-		addFloat(148, an.MassKeys)
-		addFloat(152, an.P2PBezier2Keys)
-		addFloat(156, an.P2PBezier3Keys)
-		addFloat(160, an.ParticleRotKeys)
-		addFloat(464, an.PercentStartKeys) // BioWare ID
-		addFloat(465, an.PercentMidKeys)   // BioWare ID
-		addFloat(466, an.PercentEndKeys)   // BioWare ID
-		addFloat(164, an.RandVelKeys)
-		addFloat(168, an.SizeStartKeys)
-		addFloat(468, an.SizeMidKeys) // BioWare ID
-		addFloat(172, an.SizeEndKeys)
-		addFloat(176, an.SizeStartYKeys)
-		addFloat(472, an.SizeMidYKeys) // BioWare ID
-		addFloat(180, an.SizeEndYKeys)
-		addFloat(184, an.SpreadKeys)
-		addFloat(188, an.ThresholdKeys)
-		addFloat(192, an.VelocityKeys)
-		addFloat(196, an.XSizeKeys)
-		addFloat(200, an.YSizeKeys)
+		addFloat(148, an.MassKeys, an.isBezier("mass"))
+		addFloat(152, an.P2PBezier2Keys, an.isBezier("p2p_bezier2"))
+		addFloat(156, an.P2PBezier3Keys, an.isBezier("p2p_bezier3"))
+		addFloat(160, an.ParticleRotKeys, an.isBezier("particlerot"))
+		addFloat(464, an.PercentStartKeys, an.isBezier("percentstart")) // BioWare ID
+		addFloat(465, an.PercentMidKeys, an.isBezier("percentmid"))     // BioWare ID
+		addFloat(466, an.PercentEndKeys, an.isBezier("percentend"))     // BioWare ID
+		addFloat(164, an.RandVelKeys, an.isBezier("randvel"))
+		addFloat(168, an.SizeStartKeys, an.isBezier("sizestart"))
+		addFloat(468, an.SizeMidKeys, an.isBezier("sizemid")) // BioWare ID
+		addFloat(172, an.SizeEndKeys, an.isBezier("sizeend"))
+		addFloat(176, an.SizeStartYKeys, an.isBezier("sizestart_y"))
+		addFloat(472, an.SizeMidYKeys, an.isBezier("sizemid_y")) // BioWare ID
+		addFloat(180, an.SizeEndYKeys, an.isBezier("sizeend_y"))
+		addFloat(184, an.SpreadKeys, an.isBezier("spread"))
+		addFloat(188, an.ThresholdKeys, an.isBezier("threshold"))
+		addFloat(192, an.VelocityKeys, an.isBezier("velocity"))
+		addFloat(196, an.XSizeKeys, an.isBezier("xsize"))
+		addFloat(200, an.YSizeKeys, an.isBezier("ysize"))
 	}
 
 	return

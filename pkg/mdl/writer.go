@@ -712,10 +712,10 @@ func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
 			w.writeDetonateKeys(an.DetonateKeys)
 			continue
 		}
-		w.writeFloatKeyList(e.Name+"key", *e.Getter(an))
+		w.writeFloatKeyList(e.Name, *e.Getter(an), an.isBezier(e.Name))
 	}
 	for _, e := range animControllerColorList {
-		w.writeColorKeyList(e.Name+"key", *e.Getter(an))
+		w.writeColorKeyList(e.Name, *e.Getter(an), an.isBezier(e.Name))
 	}
 
 	w.indent(4, "endnode")
@@ -771,22 +771,58 @@ func (w *writer) writeDetonateKeys(keys []FloatKey) {
 	w.indent(6, "endlist")
 }
 
-func (w *writer) writeFloatKeyList(name string, keys []FloatKey) {
+// writeFloatKeyList writes <name>key, or <name>bezierkey with each value's two
+// handles.
+func (w *writer) writeFloatKeyList(name string, keys []FloatKey, bezier bool) {
 	if len(keys) == 0 {
 		return
 	}
-	w.indent(6, "%s %d", name, len(keys))
+	if bezier {
+		w.indent(6, "%sbezierkey %d", name, len(keys))
+		for _, k := range keys {
+			b := appendIndent(w.scratch[:0], 3)
+			b = appendFloat(b, k.Time)
+			for _, v := range [3]float32{k.Value, k.TanIn, k.TanOut} {
+				b = append(b, ' ')
+				b = appendFloat(b, v)
+			}
+			b = append(b, '\n')
+			w.scratch = b
+			w.emit()
+		}
+		w.indent(6, "endlist")
+		return
+	}
+	w.indent(6, "%skey %d", name, len(keys))
 	for _, k := range keys {
 		w.writeFloatFloatLine(3, k.Time, k.Value)
 	}
 	w.indent(6, "endlist")
 }
 
-func (w *writer) writeColorKeyList(name string, keys []ColorKey) {
+// writeColorKeyList writes <name>key, or <name>bezierkey with each colour's
+// two handles.
+func (w *writer) writeColorKeyList(name string, keys []ColorKey, bezier bool) {
 	if len(keys) == 0 {
 		return
 	}
-	w.indent(6, "%s %d", name, len(keys))
+	if bezier {
+		w.indent(6, "%sbezierkey %d", name, len(keys))
+		for _, k := range keys {
+			b := appendIndent(w.scratch[:0], 3)
+			b = appendFloat(b, k.Time)
+			for _, v := range [3]Vec3{k.Value, k.TanIn, k.TanOut} {
+				b = append(b, ' ')
+				b = appendVec3(b, v)
+			}
+			b = append(b, '\n')
+			w.scratch = b
+			w.emit()
+		}
+		w.indent(6, "endlist")
+		return
+	}
+	w.indent(6, "%skey %d", name, len(keys))
 	for _, k := range keys {
 		w.writeFloatVec3Line(3, k.Time, k.Value)
 	}
