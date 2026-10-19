@@ -116,8 +116,13 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 	if len(c.nodeIDs) == 0 {
 		c.assignNodeIDs(root)
 	}
-	for n, id := range c.nodeIDs {
-		info.nodes[strings.ToLower(n.Name)] = superNode{number: id, parent: strings.ToLower(n.Parent)}
+	// In file order, as for a binary supermodel above: with a node name used
+	// twice the later node's number wins, the same on every run (ranging over
+	// the nodeIDs map picked one at random).
+	for _, n := range model.Nodes {
+		if id, ok := c.nodeIDs[n]; ok {
+			info.nodes[strings.ToLower(n.Name)] = superNode{number: id, parent: strings.ToLower(n.Parent)}
+		}
 	}
 	info.root = strings.ToLower(root.Name)
 	info.count = int32(len(c.nodeIDs))

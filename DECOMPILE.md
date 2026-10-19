@@ -283,7 +283,8 @@ destination file once per input. Use directory output for batch mode.
 tools that can't ship the Go binary. Its output is checked byte for byte
 against `cleanmodels decompile` in CI (`python/parity_test.py`): every binary
 fixture, 40 corruptions of each, and float formatting. Changes here need the
-same change there; see `python/README.md`.
+same change there; see `python/README.md`. The parser and compiler are ported
+too; see COMPILE.md.
 
 ## Useful entry points
 

@@ -215,3 +215,32 @@ func TestSupermodelIsCached(t *testing.T) {
 		t.Fatalf("changed supermodel was not reloaded: %d nodes", len(again.nodes))
 	}
 }
+
+// An ASCII supermodel that uses a node name twice numbers it the same way on
+// every run: the later node in the file wins, as for a binary supermodel. It
+// used to range over a map, so the compiled bytes changed from run to run
+// (stock c_formqueen against c_formwrk, which has two of several hand bones).
+func TestSupermodelDuplicateNamesDeterministic(t *testing.T) {
+	dir := t.TempDir()
+	src := "newmodel dupsuper\nsetsupermodel dupsuper NULL\nclassification character\nbeginmodelgeom dupsuper\n" +
+		"node dummy dupsuper\n  parent NULL\nendnode\n" +
+		"node dummy a\n  parent dupsuper\nendnode\nnode dummy hand\n  parent a\nendnode\n" +
+		"node dummy b\n  parent dupsuper\nendnode\nnode dummy hand\n  parent b\nendnode\n" +
+		"endmodelgeom dupsuper\ndonemodel dupsuper\n"
+	if err := os.WriteFile(filepath.Join(dir, "dupsuper.mdl"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref := findModelResource("dupsuper", []string{dir})
+	if ref == nil {
+		t.Fatal("supermodel not found")
+	}
+	for i := 0; i < 50; i++ {
+		sm, err := readSupermodel(ref, []string{dir}, map[string]bool{}) // uncached
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h := sm.nodes["hand"]; h.number != 4 || h.parent != "b" {
+			t.Fatalf("run %d: hand = %+v, want the later node (number 4, parent b)", i, h)
+		}
+	}
+}

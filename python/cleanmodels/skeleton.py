@@ -10,6 +10,7 @@ import threading
 
 from .resources import find_model_resource
 from .types import Model, Node
+from .gostr import equal_fold
 
 
 class Skeleton:
@@ -57,18 +58,17 @@ def resolve_children(nodes):
     """compiler_tree.go resolveGeomTree: each node's children by identity."""
     children = {}
     for i, n in enumerate(nodes):
-        if n is None or n.parent == "" or n.parent.lower() == "null":
+        if n is None or n.parent == "" or equal_fold(n.parent, "NULL"):
             continue
-        lp = n.parent.lower()
         parent = None
         for j in range(i - 1, -1, -1):
             c = nodes[j]
-            if c is not None and c is not n and c.name.lower() == lp:
+            if c is not None and c is not n and equal_fold(c.name, n.parent):
                 parent = c
                 break
         if parent is None:
             for c in nodes:
-                if c is not None and c is not n and c.name.lower() == lp:
+                if c is not None and c is not n and equal_fold(c.name, n.parent):
                     parent = c
                     break
         if parent is None:

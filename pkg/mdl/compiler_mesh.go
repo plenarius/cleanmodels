@@ -460,14 +460,16 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 }
 
 func clampByte(f float32) byte {
-	v := int(float32(f*255.0) + 0.5)
-	if v < 0 {
+	// Clamp before converting: converting +Inf, NaN or anything past the int
+	// range is platform dependent in Go (amd64 gives 0 for +Inf, arm64 255).
+	v := float32(f*255.0) + 0.5
+	if !(v >= 0) { // negative or NaN
 		return 0
 	}
-	if v > 255 {
+	if v >= 256 {
 		return 255
 	}
-	return byte(v)
+	return byte(int(v))
 }
 
 // expandedMesh holds the deduplicated GPU vertex arrays and per-face-corner indices.

@@ -3,6 +3,7 @@
 from .controllers import EMITTER_DECLARED_NAMES
 from .f32 import fmt_float, fmt_vec3
 from .types import ANIM_COLOR_CONTROLLERS, ANIM_FLOAT_CONTROLLERS, VEC3_ZERO
+from .gostr import equal_fold, go_lower
 
 MAX_NODE_DEPTH = 10000
 
@@ -17,7 +18,7 @@ _CAMEL = {
 
 
 def camel_case(s):
-    return _CAMEL.get(s.lower(), s)
+    return _CAMEL.get(go_lower(s), s)
 
 
 def write(model):
@@ -78,7 +79,7 @@ class _Writer:
         for n in m.nodes:
             if n is None:
                 continue
-            children.setdefault(n.parent.lower(), []).append(n)
+            children.setdefault(go_lower(n.parent), []).append(n)
         visited = set()
         # Iterative pre-order, children in declaration order (writeNodeRecursive)
         stack = [(root, 0)]
@@ -88,8 +89,8 @@ class _Writer:
                 continue
             visited.add(id(node))
             self.write_node(node)
-            lname = node.name.lower()
-            kids = [c for c in children.get(lname, ()) if c is not node and c.parent.lower() == lname]
+            kids = [c for c in children.get(go_lower(node.name), ())
+                    if c is not node and equal_fold(c.parent, node.name)]
             for c in reversed(kids):
                 stack.append((c, depth + 1))
 

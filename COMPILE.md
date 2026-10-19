@@ -52,6 +52,13 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
 1. **Pre-pass** — `assignNodeIDs` walks the geometry tree iteratively (DFS,
   cycle-guarded by a visited set) and gives every node a sequential part
    number. Skin nodes need stable part numbers to encode bone references.
+   With a supermodel, nodes it shares take its numbers
+   (`assignNodeIDsFromSupermodel`). An ASCII supermodel that uses a node name
+   twice gives that name the number of the later node in its file, as a
+   binary supermodel does here; it used to depend on Go's map order, so the
+   same compile could give different bytes from run to run. Which of the two
+   the engine picks is not verified (stock `c_formwrk` repeats hand and foot
+   bones; `c_formqueen` compiles against it).
 2. **Geometry header** — `header_geometry` (112 bytes) + `header_model` (120
   bytes) + animation pointer array. Animation list pointers are written as
    placeholders and patched once each animation's core offset is known.
@@ -229,6 +236,26 @@ vertex (`m_hHandednessToken`), exactly what the game stores; there is no
 bitangent stream. `binary.go readMDXTangents` combines them back into
 `Vec4{tangent.xyz, w}`.
 
+## Reading the ASCII
+
+`parser.go` reads numbers with Go's `strconv` (float32 correctly rounded, the
+syntax Go accepts: `inf`, `nan`, hex, underscores). A value it can't use is
+reported with its line number and the parameter keeps its default (a list
+entry is set to 0): text that isn't a number, NaN and infinity (`1.#INF` in
+stock GUI models), floats outside the float32 range, integers outside int32
+(converting them is platform dependent in Go), and number tokens over 400
+characters (`maxNumberLen`: `strconv.ParseFloat` misreads some valid numbers
+past 800 digits). `ParseNumber` and `ParseInteger` expose this for the Python
+port's parity test.
+
+## Same output everywhere
+
+The compiled bytes depend only on the model and the files found next to it or
+in the game: never on map iteration order (`TestSupermodelDuplicateNamesDeterministic`)
+or on the platform's float-to-integer conversion (`TestClampByteOutOfRange`;
+values are clamped before converting). The Python port's parity test would
+catch either: it needs Go's output to be one fixed answer.
+
 ## How we test it
 
 
@@ -237,6 +264,7 @@ bitangent stream. `binary.go readMDXTangents` combines them back into
 | **Unit** — algorithms                              | `TestGenerateTangentsSimpleQuad`, `TestGenerateTangentsNoUVs`, `TestGenerateTangentsDegenerateUVs`, `TestGenerateTangentsZeroDeterminantUsesNormals`, `TestGenerateTangentsClonesVertexAtMirroredUVs`, `TestGenerateNormals*`, `TestBuildExpandedMesh*`, `TestBuildFaceAdjacency*`, `TestCompilerHeaderSizes`, `TestMeshHeaderSize`                                                                                                                                                                                                                                                                                                                                                                      | Header byte layouts, tangent direction on known geometry, NaN/inf handling |
 | **Roundtrip** — compile → decompile preserves data | `TestRoundtripDummy`, `TestRoundtripTrimesh`, `TestRoundtripAnimation`, `TestRoundtripLight`, `TestRoundtripEmitter`, `TestRoundtripDanglymesh`, `TestRoundtripSkin`, `TestRoundtripReference`, `TestRoundtripAlphaZero`, `TestRoundtripAlphaDefault`, `TestRoundtripAnimationControllers`, `TestRoundtripEmitterControllerOrder`, `TestRoundtripNodeNameCase`, `TestRoundtripTangentsNormalSpecMapped`, `TestRoundtripNoTangentsWithoutUVs`, `TestRoundtripPreservesAuthoredTangents`, `TestRoundtripGeometryPreserved` | We can read back what we wrote without losing fields                       |
 | **Batch** — compile a folder                       | `TestBatchCompilePlaceables`, `TestBatchCompileDecompiled`, `TestOracleCompileAll`                                                                                                                                                                                                                                                                                                                                                                                                                                       | Real-world ASCII files don't crash the compiler; output is decodable       |
+| **Parity** — the Python port against Go            | `python/parity_parse.py`, `python/parity_compile.py` (CI's `python` job): every fixture and 20–40 mutations of each (dropped and duplicated lines, nudged and junk numbers, renamed parents, corrupted binaries), compiled bytes and warnings compared                                                                                                                                                                                                                                                                                                                                            | The port matches; also, Go itself giving different answers for one input |
 | **Oracle** — diff against game-compiled binaries   | `TestOracleCompare`, `TestOracleVertexParity`, `TestOracleTangents`, `TestOracleFaceAdjacency`, `TestCompiledFaceAdjacencyMatchesGame`                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Our output matches what NWN:EE itself produces                             |
 
 
@@ -333,13 +361,24 @@ was used and one note is printed when none is found. Without any, only an
 explicit `renderhint` counts, and the engine regenerates tangents at load. An
 install in an unusual place still needs `--game-dir` or `NWN_ROOT`, and the same
 model can compile differently on a machine with NWN installed and one without.
-- **No fuzz harness.** Parsing untrusted ASCII is bounded by alloc tracking
-and a max-depth guard, but we haven't exercised the parser/compiler with
-random or adversarial inputs.
+- **No open-ended fuzzing.** Parsing untrusted ASCII is bounded by alloc
+tracking and a max-depth guard. The Python parity tests run the parser and
+compiler on thousands of deterministic mutations of the fixtures (and, before a
+release, of the game's models), which is how the run-to-run and platform
+differences above were found, but there is no `go test -fuzz` harness.
 - **Bone limit and triangle limit are check-only.** The compiler will write
 binaries that exceed engine limits if asked; the `bone_limit` and
 `triangle_limit` checks (`pkg/checks/geometry.go`) flag them but don't
 refuse compilation.
+
+## Python port
+
+`python/cleanmodels` mirrors the ASCII parser (`parser.py`) and the compiler
+(`compiler*.py` and what they call) for tools that can't ship the Go binary,
+such as Neverblender. CI checks them byte for byte against the Go build of the
+same commit (`python/parity_parse.py`, `python/parity_compile.py`): every
+fixture and mutations of each, compiled bytes and warnings included. Changes
+here need the same change there; see `python/README.md`.
 
 ## Useful entry points
 

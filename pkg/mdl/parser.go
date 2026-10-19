@@ -1955,7 +1955,22 @@ func tokenize(line string) []string {
 	return strings.Fields(line)
 }
 
+// maxNumberLen bounds a number token. strconv.ParseFloat misreads some valid
+// numbers past 800 digits ("1" + 900 zeros + "e-900" reads as 0, not 1), and no
+// model has numbers anywhere near this long, so longer tokens are refused like
+// NaN and Inf: the caller warns and keeps the default.
+const maxNumberLen = 400
+
+// ParseNumber and ParseInteger read one float and one integer token the way
+// the ASCII parser does (for the Python port's parity test, which must agree
+// on every token).
+func ParseNumber(s string) (float32, error) { return parseFloat(s) }
+func ParseInteger(s string) (int32, error)  { return parseInt(s) }
+
 func parseFloat(s string) (float32, error) {
+	if len(s) > maxNumberLen {
+		return 0, fmt.Errorf("number too long (%d characters)", len(s))
+	}
 	v, err := strconv.ParseFloat(s, 32)
 	if err != nil {
 		return 0, err
@@ -1967,12 +1982,21 @@ func parseFloat(s string) (float32, error) {
 }
 
 func parseInt(s string) (int32, error) {
+	if len(s) > maxNumberLen {
+		return 0, fmt.Errorf("number too long (%d characters)", len(s))
+	}
 	// Try int first, then float (some MDL files use "1.0" for integer fields)
 	if v, err := strconv.ParseInt(s, 10, 32); err == nil {
 		return int32(v), nil
 	}
 	if v, err := strconv.ParseFloat(s, 64); err == nil {
-		return int32(math.Round(v)), nil
+		// Refuse what int32 can't hold (NaN and Inf included): converting it
+		// is platform dependent in Go (amd64 gives -2147483648).
+		r := math.Round(v)
+		if !(r >= math.MinInt32 && r <= math.MaxInt32) {
+			return 0, fmt.Errorf("integer out of range: %s", s)
+		}
+		return int32(r), nil
 	}
 	return 0, fmt.Errorf("not a number: %s", s)
 }

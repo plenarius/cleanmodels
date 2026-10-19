@@ -748,3 +748,18 @@ func checkMeshHeaderSize(data []byte, nodeOff int) error {
 	}
 	return nil
 }
+
+// clampByte clamps before converting, so values past the int range give the
+// same byte on every platform (amd64 converted +Inf to 0, arm64 to 255).
+func TestClampByteOutOfRange(t *testing.T) {
+	inf := float32(math.Inf(1))
+	nan := float32(math.NaN())
+	for _, c := range []struct {
+		in   float32
+		want byte
+	}{{inf, 255}, {-inf, 0}, {nan, 0}, {1e30, 255}, {-1, 0}, {0, 0}, {1, 255}, {0.5, 128}, {255.0 / 255.5, 255}} {
+		if got := clampByte(c.in); got != c.want {
+			t.Errorf("clampByte(%g) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
