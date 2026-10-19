@@ -88,10 +88,17 @@ python python/parity_parse.py --corpus /tmp/stock --mutate-corpus 20
 python python/parity_compile.py --corpus /tmp/stock --cli ./cleanmodels   # --cli: also the CLI's own output
 ```
 
-At v4.8.0, on the game's 32,832 models (25,597 binary, 7,235 ASCII) and the
-32,832 ASCII files `cleanmodels decompile` writes for them: every binary model
-decompiles identically, every file parses identically (output and parse
-warnings), and every model compiles identically (bytes and warnings).
+At v4.9.0, on the game's 32,832 models (25,597 binary, 7,235 ASCII), against
+the Go build of the release commit:
+- decompile: every binary model identical;
+- parse (output and parse warnings): every ASCII model identical, and 20
+  mutations of every 50th one identical or refused by both;
+- compile (bytes and warnings): every model identical, the binary ones
+  decompiled first and the ASCII ones parsed, and the same as
+  `cleanmodels compile` itself (`--cli`).
+
+(v4.8.0 was also checked on the 32,832 ASCII files `cleanmodels decompile`
+writes for these models.)
 
 ## Not ported
 
