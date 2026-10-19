@@ -73,7 +73,12 @@ endmodelgeom
 donemodel emittest
 `
 	m := mustParseASCII(t, src)
-	m2 := mustDecompile(t, mustCompile(t, m))
+	var warnings []string
+	var buf bytes.Buffer
+	if err := CompileWithOptions(m, &buf, CompileOptions{Warn: func(s string) { warnings = append(warnings, s) }}); err != nil {
+		t.Fatal(err)
+	}
+	m2 := mustDecompile(t, buf.Bytes())
 
 	n := m2.FindNode("myemitter")
 	if n == nil {
@@ -85,7 +90,12 @@ donemodel emittest
 	assertNear(t, "BirthRate", float64(n.Emitter.BirthRate), 10)
 	assertNear(t, "LifeExp", float64(n.Emitter.LifeExp), 5)
 	assertNear(t, "Velocity", float64(n.Emitter.Velocity), 3.5)
-	assertNear(t, "LightningSubDiv", float64(n.Emitter.LightningSubDiv), 4)
+	// The game reads no lightningsubdiv keyword and its compiler writes no
+	// controller for it, so it is not compiled, with a warning.
+	assertNear(t, "LightningSubDiv", float64(n.Emitter.LightningSubDiv), 0)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "lightningsubdiv is not compiled") {
+		t.Errorf("warnings = %q, want one about lightningsubdiv", warnings)
+	}
 }
 
 func TestRoundtripDanglymesh(t *testing.T) {
