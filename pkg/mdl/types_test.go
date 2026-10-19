@@ -18,7 +18,7 @@ import "testing"
 //
 // "Effects" is one of the game's own words (classification(char*) 0x446440);
 // "Tiles", "Characters" and "Doors" are not, and the game compiles them as 0
-// (mdl-spec golden zspec_cls_tiles), with a compile warning here.
+// (nwn-mdl-spec golden zspec_cls_tiles), with a compile warning here.
 func TestClassificationToCodeAcceptsPluralForms(t *testing.T) {
 	cases := []struct {
 		in   string

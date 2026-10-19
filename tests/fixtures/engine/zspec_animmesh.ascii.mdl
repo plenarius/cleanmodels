@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_animmesh (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_animmesh (CC0-1.0)
 # Animmesh: geometry node plus an animation with sampleperiod, animverts
 # (3 sets of 4 vertices) and animtverts. The animation node repeats the
 # mesh (verts, tverts, faces): without verts the engine divides by zero

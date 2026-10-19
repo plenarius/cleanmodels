@@ -657,7 +657,7 @@ func ClassificationFromCode(code int) string {
 // TILE 2, CHARACTER 4, EFFECT or EFFECTS 1, DOOR 8, anything else 0. The
 // plural "Effects" that NWMax writes is one of the engine's words (stock
 // vdr_magearmor2.mdl has type 1, issue #12); "Tiles", "Characters" and
-// "Doors" are not, and give 0 (mdl-spec golden zspec_cls_tiles).
+// "Doors" are not, and give 0 (nwn-mdl-spec golden zspec_cls_tiles).
 func ClassificationToCode(class string) int {
 	switch strings.ToUpper(class) {
 	case "EFFECT", "EFFECTS":

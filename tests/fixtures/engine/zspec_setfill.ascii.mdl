@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_setfill (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_setfill (CC0-1.0)
 # The misspelt 'setfillumcolor' keyword (common in old exports), alone on
 # one mesh, next to a mesh with 'selfillumcolor'. Does the engine read the
 # misspelling?

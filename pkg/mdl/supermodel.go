@@ -155,7 +155,7 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 // assignNodeIDsFromSupermodel numbers the geometry tree the way the in-game
 // compiler does for a model that has a supermodel. Derived from the engine's own
 // compiles of the oracle models (c_marilith2 against c_marilithe), of the
-// taur_pheno centaurs (pmh9 against taur_ba) and of probes (mdl-spec zspec_kid,
+// taur_pheno centaurs (pmh9 against taur_ba) and of probes (nwn-mdl-spec zspec_kid,
 // zspec_kid2, zspec_kid3; zcm_kidx in tests/fixtures/engine):
 //
 //   - The roots match. A node matches the supermodel node at the same path:

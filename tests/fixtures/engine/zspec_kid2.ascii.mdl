@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_kid2 (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_kid2 (CC0-1.0)
 # A second model on the supermodel zspec_super: 'hand' under 'Arm' (the
 # supermodel's second 'hand'; 'Arm' differs from 'arm' only in case) and
 # 'foot' directly under the root (in the supermodel it is under 'hips').

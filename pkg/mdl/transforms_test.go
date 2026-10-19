@@ -23,7 +23,7 @@ func TestRotateVectorAxisAngle_Identity(t *testing.T) {
 	vec3Approx(t, got, v)
 }
 
-// A zero axis is +X, as the game's compiler reads it (mdl-spec MDL-ASCII-032).
+// A zero axis is +X, as the game's compiler reads it (nwn-mdl-spec MDL-ASCII-032).
 func TestRotateVectorAxisAngle_ZeroAxis(t *testing.T) {
 	v := Vec3{1, 2, 3}
 	got := RotateVectorAxisAngle(v, Vec4{0, 0, 0, 1.5})

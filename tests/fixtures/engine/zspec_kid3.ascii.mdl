@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_kid3 (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_kid3 (CC0-1.0)
 # A two-node model on the supermodel zspec_super, to tell how the header's
 # node count is made (zspec_kid and zspec_kid2 both have five nodes).
 newmodel zspec_kid3

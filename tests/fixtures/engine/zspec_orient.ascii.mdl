@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_orient (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_orient (CC0-1.0)
 # The orientation keyword (axis x y z, angle in radians): a zero axis, a
 # zero angle, an axis that is not unit length, a diagonal axis, a negative
 # angle and an angle over 2 pi.

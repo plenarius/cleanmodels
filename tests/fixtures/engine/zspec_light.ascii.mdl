@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_light (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_light (CC0-1.0)
 # Light: every header field, flare lists, static colour, radius,
 # multiplier, shadowradius and verticaldisplacement. The second light uses
 # nDynamicType and spellings the engine's parser may not know

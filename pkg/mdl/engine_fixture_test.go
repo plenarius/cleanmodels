@@ -14,7 +14,7 @@ import (
 // non-root node (see compiler_controllers.go, issue #12), which decompiles to
 // "orientation 0 0 1 0"; and the mesh lightmapped byte and the emitter xgrid
 // and ygrid of a source that does not set them, which the engine leaves
-// uninitialised (mdl-spec E55).
+// uninitialised (nwn-mdl-spec E55).
 var engineFixtureLines = regexp.MustCompile(`(?m)^\s*(orientation 0 0 1 0|lightmapped \d+|[xy]grid \d+)\n`)
 
 // engineFixtureKnownGaps are probes whose engine behaviour cleanmodels does
@@ -22,7 +22,7 @@ var engineFixtureLines = regexp.MustCompile(`(?m)^\s*(orientation 0 0 1 0|lightm
 var engineFixtureKnownGaps = map[string]string{}
 
 // TestEngineCompiledFixtures compiles each probe in tests/fixtures/engine
-// (<name>.ascii.mdl, our own CC0 models from cleanmodels and the mdl-spec
+// (<name>.ascii.mdl, our own CC0 models from cleanmodels and the nwn-mdl-spec
 // conformance suite) and checks that our binary decompiles to the same ASCII
 // as <name>.mdl, the game's own compile of it (`nwmain-linux compilemodel`).
 // That covers node order and numbering (declaration order, the transparency

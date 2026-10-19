@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_numbers (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_numbers (CC0-1.0)
 # Number and word syntax: exponents, a leading '+', hexadecimal floats,
 # trailing junk after a number, a comma decimal, '1.#INF', TRUE/false for
 # integers, a fractional integer, a four-value colour, upper-case keywords,

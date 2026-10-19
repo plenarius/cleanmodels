@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_kid (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_kid (CC0-1.0)
 # Compiled against the supermodel zspec_super (which must be loadable):
 # node numbers of shared names (hips, hand, foot), of a name the
 # supermodel uses twice (hand), and of a node the supermodel lacks (extra);

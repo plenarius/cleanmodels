@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_aabbdef (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_aabbdef (CC0-1.0)
 # The zspec_aabb walkmesh without render and shadow lines: what does the
 # engine write for an aabb node by default?
 newmodel zspec_aabbdef

@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_cls_tiles (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_cls_tiles (CC0-1.0)
 # Classification keyword value 'Tiles'.
 newmodel zspec_cls_tiles
 setsupermodel zspec_cls_tiles NULL

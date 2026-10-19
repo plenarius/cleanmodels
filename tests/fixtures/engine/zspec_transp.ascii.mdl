@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_transp (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_transp (CC0-1.0)
 # Child order when a child mesh has transparencyhint > 0: the root's
 # children are meshes with hints 2, 1 and 0, a dummy and a light, in that
 # file order; 'keep' has two meshes with hint 0 under it, written in

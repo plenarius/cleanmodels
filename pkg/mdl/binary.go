@@ -154,7 +154,7 @@ type pendingSkin struct {
 // 17 bone list entries and one more word, and the engine copies 64 entries
 // whatever the layout, so later entries are whatever follows the header
 // (stock tni_udoor_19: bone 17 reads 109 in a 46-node tree, while its
-// boneindexarray puts bone 17 at position 6; mdl-spec MDL-BIN-061). The game
+// boneindexarray puts bone 17 at position 6; nwn-mdl-spec MDL-BIN-061). The game
 // skips such a bone; naming it from the boneindexarray keeps the bone the
 // author meant.
 func (ps pendingSkin) bonePos(ref int16) (int, bool) {
@@ -1619,7 +1619,7 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		// detonate have no bezier form that can be read, so they are dropped
 		// with a warning rather than read with the wrong stride.
 		// Detonate keys are times only, whatever the byte says: the game's
-		// compiler writes 0, old BioWare files 1 or 0xff (mdl-spec MDL-CTRL-012,
+		// compiler writes 0, old BioWare files 1 or 0xff (nwn-mdl-spec MDL-CTRL-012,
 		// stock vwp_flash_blured), so the byte is neither a width nor a
 		// bezier flag for it.
 		if def.Name == "detonate" {
@@ -1647,7 +1647,7 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 			continue
 		}
 		// The game applies a controller by the low nibble of its column byte
-		// (NewController::Control 0x498f20; mdl-spec MDL-CTRL-014): 1, 3 or 4
+		// (NewController::Control 0x498f20; nwn-mdl-spec MDL-CTRL-014): 1, 3 or 4
 		// values per key, written as that many floats from its runtime field;
 		// any other count is skipped. So a linear controller is read with
 		// that count, never with the keyword's width.
@@ -2080,7 +2080,7 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 // rest keep the values the runtime field starts with, which for every
 // controller wider than one float but orientation (dropped before this) is 0:
 // position (Part::Part 0x43c800), selfillumcolor, light and emitter colours
-// (mdl-spec MDL-CTRL-014). Extra columns are cut (warned about already).
+// (nwn-mdl-spec MDL-CTRL-014). Extra columns are cut (warned about already).
 func runtimeWidth(def ControllerDef, vals []float32) []float32 {
 	if def.NumCols <= 0 || len(vals) == def.NumCols {
 		return vals

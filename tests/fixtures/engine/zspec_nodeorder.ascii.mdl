@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_nodeorder (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_nodeorder (CC0-1.0)
 # Nodes declared out of depth-first order (a, b, a1, b1, a2): node numbers
 # and the order of each node's children.
 newmodel zspec_nodeorder

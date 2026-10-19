@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_super (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_super (CC0-1.0)
 # A supermodel for zspec_kid. The name 'hand' is used twice (under hips
 # and under arm). It has one animation.
 newmodel zspec_super

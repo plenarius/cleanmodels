@@ -270,7 +270,7 @@ func (p *parser) vecParam(tokens []string, dst []*float32) {
 // list cannot be read, so say so rather than letting its lines fall through.
 func (p *parser) countParam(tokens []string) (int32, bool) {
 	// A count followed by anything else makes the game read the rows as
-	// binary data (mdl-spec E46), so such a count is refused, except one whose
+	// binary data (nwn-mdl-spec E46), so such a count is refused, except one whose
 	// rest changes nothing ("3.0").
 	tok := safeIndex(tokens, 1)
 	v, n, err := scanInt(tok)
@@ -399,7 +399,7 @@ func (p *parser) parse() {
 }
 
 // caseSensitiveWords are the structural words the game matches case-
-// sensitively (mdl-spec MDL-ASCII-010; `parent` is handled where it is read).
+// sensitively (nwn-mdl-spec MDL-ASCII-010; `parent` is handled where it is read).
 // cleanmodels reads them in any case, with a warning.
 var caseSensitiveWords = map[string]bool{
 	"node": true, "endnode": true, "endlist": true, "event": true, "animlength": true,
@@ -426,7 +426,7 @@ func (p *parser) parseNewModel(tokens []string) {
 }
 
 // newParsedMeshData is a mesh as the game compiler defaults it for keywords the
-// source leaves out (E50 in the mdl-spec engine notes; goldens for every mesh
+// source leaves out (E50 in the nwn-mdl-spec engine notes; goldens for every mesh
 // type): diffuse and ambient 1 1 1, shininess 1, render 1 and shadow 1, except
 // on walkmeshes (aabb), which default to render 0 and shadow 0. Compiled
 // against the engine's output for 180 meshes without a "shadow" line (159
@@ -446,7 +446,7 @@ func newParsedMeshData(walkmesh bool) *MeshData {
 }
 
 // newParsedLightData is a light as the game compiler defaults it for keywords
-// the source leaves out (E50 in the mdl-spec engine notes; goldens zspec_light,
+// the source leaves out (E50 in the nwn-mdl-spec engine notes; goldens zspec_light,
 // zspec_animfx): lightpriority 5, nDynamicType 1, affectdynamic 1, shadow 1 and
 // fadinglight 1; ambientonly and generateflare 0.
 func newParsedLightData() *LightData {
@@ -679,7 +679,7 @@ func (p *parser) parseParameter(tokens []string) {
 // parseGeomKeyList reads a controller key list (<name>key or
 // <name>bezierkey) on a geometry node. The game's compiler stores the list as
 // a keyed controller, and geometry is evaluated at time 0, where the linear
-// and bezier paths both return the first key's value (mdl-spec MDL-CTRL-023,
+// and bezier paths both return the first key's value (nwn-mdl-spec MDL-CTRL-023,
 // golden zspec_bezier2), so the first key becomes the node's value and the
 // rest are dropped with a warning.
 func (p *parser) parseGeomKeyList(node *Node, keyword string, tokens []string) bool {
@@ -775,7 +775,7 @@ func (p *parser) parseNodeSpecificParam(keyword string, tokens []string) {
 	}
 
 	// A keyword this node type's parser does not read. The game ignores it
-	// (its parsers compare exact words: mdl-spec E49, goldens zspec_setfill
+	// (its parsers compare exact words: nwn-mdl-spec E49, goldens zspec_setfill
 	// and zspec_light), so it is ignored here too; a near match, such as
 	// selfillumcolor for the NWmax typo setfillumcolor, is named in the warning.
 	nodeType := node.NodeType()

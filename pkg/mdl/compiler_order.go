@@ -4,7 +4,7 @@ package mdl
 //
 // Numbers follow declaration order: ParseNode (0x447540) gives each node the
 // tree's next number at its endnode, so a node takes its position among the
-// source's node blocks, a node left out of the tree included (mdl-spec E43;
+// source's node blocks, a node left out of the tree included (nwn-mdl-spec E43;
 // goldens zspec_nodeorder, zspec_numbers).
 //
 // Child order is declaration order, except where MdlNode::ReorderChildren

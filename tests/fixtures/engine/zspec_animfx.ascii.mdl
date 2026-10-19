@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_animfx (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_animfx (CC0-1.0)
 # Linear keys on a light (colour, radius, multiplier, shadowradius,
 # verticaldisplacement) and an emitter (birthrate, colorStart, alphaEnd,
 # sizeStart_y, percentMid, detonate with time-only rows), plus

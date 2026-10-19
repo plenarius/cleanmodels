@@ -1,4 +1,4 @@
-# mdl-spec conformance probe zspec_trimesh (CC0-1.0)
+# nwn-mdl-spec conformance probe zspec_trimesh (CC0-1.0)
 # Trimesh material and render fields, two UV sets, vertex colours,
 # static selfillumcolor and alpha. Normals are generated (one smoothing
 # group).
