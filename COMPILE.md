@@ -352,6 +352,9 @@ see NWMAIN_FINDINGS.md finding 6.) We keep every face on AABB nodes so the
 tree stays valid. This affects real models: 88 of 20,476 Layonara and 33 of
 2,652 NWNCQ walkmesh models have such a face, so a walkmesh compiled here can
 carry a face or two more than the engine's own load of the same ASCII.
+- **The render hint field** is what the engine's `ExtractRenderHint` gives
+(case-insensitive): `None` 1, `NormalAndSpecMapped` 2, `NormalTangents` 3,
+anything else 0. Before v4.9.0, `None` and `NormalTangents` were written as 0.
 - **Render hint inference needs the materials.** With no `renderhint` on the
 mesh, the game takes the hint from the mesh's `.mtr` material. We do the same
 (`isNormalMapped`), but only when `--resource-dir` or the game's own data can

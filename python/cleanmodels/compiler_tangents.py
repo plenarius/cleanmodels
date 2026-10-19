@@ -128,5 +128,16 @@ def _expand_existing_tangents(mesh, exp):
     return tangents, handed
 
 
+def render_hint_value(hint):
+    """renderHintValue: SharedMaterial::ExtractRenderHint's number for a renderhint."""
+    if equal_fold_ascii(hint, "normalandspecmapped"):
+        return 2
+    if equal_fold_ascii(hint, "normaltangents"):
+        return 3
+    if equal_fold_ascii(hint, "none"):
+        return 1
+    return 0
+
+
 def hint_wants_tangents(hint):
     return equal_fold_ascii(hint, "normalandspecmapped") or equal_fold_ascii(hint, "normaltangents")

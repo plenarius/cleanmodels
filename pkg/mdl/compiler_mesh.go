@@ -120,12 +120,7 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	c.core.i32le(mesh.TransparencyHint)
 
 	// uint32 unknown1 / renderHint (4)
-	renderHintVal := uint32(0)
-	switch mesh.RenderHint {
-	case "NormalAndSpecMapped":
-		renderHintVal = 2
-	}
-	c.core.u32le(renderHintVal)
+	c.core.u32le(renderHintValue(mesh.RenderHint))
 
 	// char texture0[64], texture1[64], texture2[64], materialName[64] (256)
 	c.core.fixedStr(mesh.Bitmap, 64)

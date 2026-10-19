@@ -134,6 +134,19 @@ format also uses. If the bitangent stream is missing or corrupt, `W`
 defaults to `+1`, which is the correct fallback for the (common) case where
 no UV mirroring is involved.
 
+The same pointer is water's bump-map animation stream in 1.69 models, which
+is not tangents (582 of the game's binary meshes, e.g. stock `tcn01_a15_01`
+node `plane452`: `3.080194e-36 ...`). So the stream is read as tangents when
+the mesh's render hint is normal-mapped (2 `NormalAndSpecMapped`, 3
+`NormalTangents`), and otherwise only if every vector is unit length. The
+engine's compiler writes hint 0 and real tangents for meshes whose hint comes
+from their material (all 393 tangent meshes in
+`tests/fixtures/oracle/tangent_pairs`), so the field alone can't decide.
+
+The render hint field holds what the engine's
+`SharedMaterial::ExtractRenderHint` gives: 0 no hint, 1 `None`, 2
+`NormalAndSpecMapped`, 3 `NormalTangents`.
+
 If the binary doesn't carry tangents at all (`p_mdx_tangent = -1`),
 `mesh.Tangents` stays empty, the ASCII writer doesn't emit a `tangents`
 block, and the next compile will either bake tangents (for normal-mapped
@@ -191,6 +204,12 @@ node, skin, and AABB nodes, each with their own value layout
 encounter an ID we don't have a mapping for, we emit
 `WarnUnknownController` with the ID so we can extend coverage; the
 controller itself is dropped (no guess about what its data means).
+
+Emitter IDs 464 and 468 mean different controllers to BioWare's compiler
+(percentstart, sizemid) and to nwnmdlcomp (alphamid, colormid). The compiler is
+told by the first key that only one of them uses (448/452 BioWare, 480–488
+nwnmdlcomp, or 468 with three columns, nwnmdlcomp's colormid), looking at all of
+an emitter's keys before naming any. Undecided, BioWare's names are used.
 
 ## Safety / defensive reads
 

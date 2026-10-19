@@ -228,6 +228,20 @@ func expandExistingTangents(mesh *MeshData, exp *expandedMesh) ([]Vec3, []float3
 	return tangents, handed
 }
 
+// renderHintValue is SharedMaterial::ExtractRenderHint: the number the engine
+// keeps for a renderhint, matched case-insensitively. Anything else is 0.
+func renderHintValue(hint string) uint32 {
+	switch {
+	case strings.EqualFold(hint, "NormalAndSpecMapped"):
+		return 2
+	case strings.EqualFold(hint, "NormalTangents"):
+		return 3
+	case strings.EqualFold(hint, "None"):
+		return 1
+	}
+	return 0
+}
+
 // hintWantsTangents reports whether a RenderHint makes the game generate
 // tangents: ExtractRenderHint maps "normalandspecmapped" to 2 and
 // "normaltangents" to 3, case-insensitively, and only those two qualify.
