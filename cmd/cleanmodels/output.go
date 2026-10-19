@@ -128,6 +128,12 @@ func (tw *termWriter) printResultDetail(res Result, parseErrs []mdl.ParseError, 
 		fmt.Fprintf(tw.w, "  %s %s\n", tw.green("[REPAIR]"), r)
 	}
 	for _, wn := range res.Warnings {
+		// Compile and variants warnings carry neither a node nor an offset;
+		// only a decompile warning says where in the binary it was.
+		if wn.Node == "" && wn.Offset == 0 {
+			fmt.Fprintf(tw.w, "  %s %s\n", tw.yellow("[WARN]"), wn.Message)
+			continue
+		}
 		fmt.Fprintf(tw.w, "  %s decompile [%s] off=%d: %s\n", tw.yellow("[WARN]"), wn.Node, wn.Offset, wn.Message)
 	}
 	for _, pe := range parseErrs {
