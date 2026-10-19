@@ -65,7 +65,8 @@ Go change that isn't ported fails CI in the same pull request:
   (truncation, bit flips, junk pointers and counts, NaN floats).
 - `python/parity_parse.py`, the parser (`parse` then `write`, against
   `python/internal/parsefmt`, which does what `cleanmodels decompile` does with
-  ASCII): number and string parsing on 160,000+ adversarial inputs; every
+  ASCII): number and string parsing on 160,000+ adversarial inputs, and
+  case-insensitive name matching (`EqualFold`) on 1.1 million string pairs; every
   ASCII model in `tests/fixtures`, and 40 textual corruptions of each (dropped
   and duplicated lines, junk tokens, wrong counts, NaN/1.#INF/huge numbers,
   missing endlist, unknown keywords, odd whitespace and bytes).

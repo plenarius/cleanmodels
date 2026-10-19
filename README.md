@@ -25,6 +25,8 @@ amp01_d01_01.mdl  1 warning
 
 Prefer a window to a terminal? [cleanmodels-qt](https://github.com/plenarius/cleanmodels-qt) is the desktop GUI: drop in a folder, see per-file results, preview the model in 3D. Its downloads include this CLI, so there is nothing else to install.
 
+Working in Python? `python/cleanmodels` is a port of the decompiler, ASCII parser and compiler that writes the same bytes as this CLI, checked against it in CI. [Neverblender](https://github.com/plenarius/neverblender) ships it, so Blender reads and writes binary models with or without cleanmodels installed. See [python/README.md](python/README.md).
+
 ## Download
 
 Grab the latest binary for your platform from the [Releases](https://github.com/plenarius/cleanmodels/releases) page.
@@ -344,7 +346,7 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 
 **Variants** — `variants` refits a robe, cloak or armour part (also Beamdog's skinned HD parts) made for one body to the other races and phenotypes, using the game's own skeletons, body parts and robes.
 
-**Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
+**Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. The same model compiles to the same bytes on every run and every platform. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
 
 ## Specifications
 
