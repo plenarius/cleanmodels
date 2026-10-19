@@ -538,9 +538,16 @@ def _f32_of_double(d, cmp):
 _cache32 = {}
 
 
+# parser.go maxNumberLen: longer number tokens are refused (Go's ParseFloat
+# misreads some valid numbers past 800 digits).
+MAX_NUMBER_LEN = 400
+
+
 def parse_float32(s):
-    """parser.go parseFloat: strconv.ParseFloat(s, 32), then NaN and Inf
-    refused. Returns the float32 value, or None."""
+    """parser.go parseFloat: strconv.ParseFloat(s, 32), then NaN, Inf and
+    tokens over MAX_NUMBER_LEN refused. Returns the float32 value, or None."""
+    if len(s) > MAX_NUMBER_LEN:
+        return None
     v = _cache32.get(s)
     if v is None and s not in _cache32:
         v = _parse_float32(s)
@@ -614,18 +621,18 @@ def _go_round(v):
 
 def parse_int(s):
     """parser.go parseInt: strconv.ParseInt(s, 10, 32), else ParseFloat(s, 64)
-    rounded and converted to int32 as amd64 does (NaN, Inf and out of range
-    become -2147483648). Returns the int, or None."""
+    rounded; tokens over MAX_NUMBER_LEN, and values int32 can't hold (NaN and
+    Inf included), refused. Returns the int, or None."""
+    if len(s) > MAX_NUMBER_LEN:
+        return None
     if _INT.match(s):
         v = int(s)
         if -2147483648 <= v <= 2147483647:
             return v
     v = parse_float64(s)
-    if v is None:
+    if v is None or v != v or math.isinf(v):
         return None
-    if v != v or math.isinf(v):
-        return -2147483648
     r = _go_round(v)
     if not -2147483648.0 <= r <= 2147483647.0:
-        return -2147483648
+        return None
     return int(r)

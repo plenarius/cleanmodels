@@ -96,6 +96,11 @@ def number_strings(rng):
         "1e99999999", "0.0000e99999", "1,5", "1.5.5", "--1", "0x0p0", "-0x0p0", "0x123456789abcdef123p0",
         "123456789012345678901234567890e-30", "0." + "0" * 1000 + "1e1001", "0." + "0" * 10010 + "1e10011",
         "1.7976931348623159e308", "+.5e-3", "-.5E+3", "1\xa0", "\xb9",
+        # the length limit (maxNumberLen 400), and where Go's ParseFloat misreads long numbers
+        "1" + "0" * 398 + "e-398", "1" + "0" * 399 + "e-399", "1" + "0" * 400, "0." + "0" * 397 + "1",
+        "0." + "0" * 398 + "1", "1" + "0" * 900 + "e-900", "1" + "0" * 801 + "e-801", "9" * 401,
+        # integers int32 can't hold (refused, not converted)
+        "4294967296", "-4294967296", "2147483647.4", "2147483647.6", "-2147483648.4", "-2147483648.6", "nan.0",
     ])
     return sorted(out)
 
@@ -113,6 +118,36 @@ def check_numbers(go):
             if bad <= 5:
                 print("  number %r: go %s, python %s" % (s[:60], g, p))
     print("numbers: %d of %d identical" % (len(strs) - bad, len(strs)))
+    return bad == 0
+
+
+def check_fold(go):
+    """gostr.equal_fold against strings.EqualFold: every rune against its own
+    case forms and a neighbour, and random strings of tricky pieces."""
+    rng = random.Random(13)
+
+    def b(u):
+        return u.encode("utf-8", "surrogatepass").decode("latin-1")
+    pairs = []
+    for r in range(0x110000):
+        if 0xD800 <= r <= 0xDFFF:
+            continue
+        c = chr(r)
+        s = b(c)
+        for t in (gostr.go_lower(s), gostr.go_upper(s), b(c.casefold()[:1] or c), b(chr(r ^ 1))):
+            if t != s:
+                pairs.append((s, t))
+    for _ in range(40000):
+        n = rng.randrange(0, 5)
+        pairs.append(("".join(rng.choice(_PIECES) for _ in range(n)), "".join(rng.choice(_PIECES) for _ in range(n))))
+    got = run_go(go, "fold", [x.encode("latin-1").hex() + " " + y.encode("latin-1").hex() for x, y in pairs])
+    bad = 0
+    for (x, y), g in zip(pairs, got):
+        if str(gostr.equal_fold(x, y)).lower() != g:
+            bad += 1
+            if bad <= 5:
+                print("  fold %r %r: go %s" % (x, y, g))
+    print("fold: %d of %d identical" % (len(pairs) - bad, len(pairs)))
     return bad == 0
 
 
@@ -333,6 +368,7 @@ def main():
         go = a.go or go_build(tmp)
         ok = check_numbers(go)
         ok &= check_strings(go)
+        ok &= check_fold(go)
         ok &= run(go, ascii_models(os.path.join(REPO, "tests", "fixtures")), a.mutations, "fixtures", a.procs)
         for c in a.corpus:
             models = ascii_models(c)

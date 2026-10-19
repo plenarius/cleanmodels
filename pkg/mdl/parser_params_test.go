@@ -184,3 +184,35 @@ func TestWriterHeaderNamesTheTool(t *testing.T) {
 		t.Errorf("first line = %q", first)
 	}
 }
+
+// Number tokens past maxNumberLen are refused, not misread: Go's ParseFloat
+// reads "1" + 900 zeros + "e-900" (which is 1) as 0. Integers int32 can't hold
+// are refused too rather than converted, which is platform dependent.
+func TestNumbersRefusedNotMisread(t *testing.T) {
+	long := "1" + strings.Repeat("0", 900) + "e-900"
+	if _, err := ParseNumber(long); err == nil {
+		t.Errorf("ParseNumber accepted a %d-character token", len(long))
+	}
+	if v, err := ParseNumber("1" + strings.Repeat("0", 390) + "e-390"); err != nil || v != 1 {
+		t.Errorf("ParseNumber of a 395-character 1 = %v, %v; want 1", v, err)
+	}
+	for _, s := range []string{"4294967296", "-2147483648.6", "1e10", "inf", "nan", long} {
+		if v, err := ParseInteger(s); err == nil {
+			t.Errorf("ParseInteger(%.20q) = %d, want an error", s, v)
+		}
+	}
+	for s, want := range map[string]int32{"2147483647": 2147483647, "-2147483648.4": -2147483648, "1.5": 2, "-2.5": -3} {
+		if v, err := ParseInteger(s); err != nil || v != want {
+			t.Errorf("ParseInteger(%q) = %d, %v; want %d", s, v, err, want)
+		}
+	}
+	src := "newmodel n\nsetsupermodel n NULL\nbeginmodelgeom n\n  node trimesh m\n    parent NULL\n    shininess " + long +
+		"\n    transparencyhint 4294967296\n  endnode\nendmodelgeom\ndonemodel n\n"
+	pr, err := Parse(strings.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasError(pr.Errors, `is not a usable number for "shininess"`) || !hasError(pr.Errors, `"4294967296" is not a usable integer for "transparencyhint"`) {
+		t.Errorf("missing warnings: %+v", pr.Errors)
+	}
+}

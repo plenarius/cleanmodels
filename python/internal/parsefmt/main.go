@@ -1,7 +1,8 @@
 // Command parsefmt is the Go side of python/parity_parse.py.
 //
 //	parsefmt files   paths on stdin: ParseFile then Write, as `cleanmodels decompile` does
-//	parsefmt numbers hex-encoded tokens on stdin: parser.go's parseFloat and parseInt
+//	parsefmt numbers hex-encoded tokens on stdin: mdl.ParseNumber and ParseInteger (the parser's)
+//	parsefmt fold    pairs of hex-encoded strings on stdin: strings.EqualFold
 //	parsefmt strings hex-encoded lines on stdin: the strings/strconv calls the parser uses
 //	parsefmt runes   unicode.ToLower/ToUpper of every rune they change
 //	parsefmt print   every rune strconv.IsPrint accepts
@@ -34,8 +35,8 @@ func main() {
 	case "numbers":
 		for in.Scan() {
 			s := unhex(in.Text())
-			f, ferr := parseFloat(s)
-			i, ierr := parseInt(s)
+			f, ferr := mdl.ParseNumber(s)
+			i, ierr := mdl.ParseInteger(s)
 			fs, is := "ERR", "ERR"
 			if ferr == nil {
 				fs = strconv.FormatUint(uint64(math.Float32bits(f)), 10)
@@ -44,6 +45,11 @@ func main() {
 				is = strconv.FormatInt(int64(i), 10)
 			}
 			fmt.Fprintln(out, fs, is)
+		}
+	case "fold":
+		for in.Scan() {
+			f := strings.SplitN(in.Text(), " ", 2)
+			fmt.Fprintln(out, strings.EqualFold(unhex(f[0]), unhex(f[1])))
 		}
 	case "strings":
 		for in.Scan() {
@@ -106,27 +112,4 @@ func files(out *bufio.Writer, path string) {
 	fmt.Fprintf(out, "%d\n", text.Len())
 	out.Write(text.Bytes())
 	out.Flush()
-}
-
-// parseFloat and parseInt are copies of pkg/mdl/parser.go's.
-
-func parseFloat(s string) (float32, error) {
-	v, err := strconv.ParseFloat(s, 32)
-	if err != nil {
-		return 0, err
-	}
-	if math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, fmt.Errorf("invalid float value: %s", s)
-	}
-	return float32(v), nil
-}
-
-func parseInt(s string) (int32, error) {
-	if v, err := strconv.ParseInt(s, 10, 32); err == nil {
-		return int32(v), nil
-	}
-	if v, err := strconv.ParseFloat(s, 64); err == nil {
-		return int32(math.Round(v)), nil
-	}
-	return 0, fmt.Errorf("not a number: %s", s)
 }
