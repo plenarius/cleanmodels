@@ -745,7 +745,8 @@ class _Parser:
         else:
             if self.try_anim_key_table(kw, tokens, an):
                 return
-            # other bezier lists are read as linear keys (time and value only)
+            # orientationbezierkey and detonatebezierkey are read as linear keys
+            # (time and value only); float and colour ones by try_anim_key_table
             if kw.endswith("bezierkey"):
                 self.parse_anim_node_param(kw[:-len("bezierkey")] + "key", tokens)
                 return
@@ -768,6 +769,22 @@ class _Parser:
                 return
 
     def try_anim_key_table(self, kw, tokens, an):
+        if kw.endswith("bezierkey") and kw != "detonatebezierkey":
+            base = kw[:-len("bezierkey")]
+            if base in _FLOAT_CTRL:
+                an.bezier.add(base)
+                keys = an.float_keys.get(base, [])
+                self.key_list(tokens, keys, 16, "float bezier keys", self.float_bezier_key)
+                if keys:
+                    an.float_keys[base] = keys
+                return True
+            if base in _COLOR_CTRL:
+                an.bezier.add(base)
+                keys = an.color_keys.get(base, [])
+                self.key_list(tokens, keys, 40, "color bezier keys", self.color_bezier_key)
+                if keys:
+                    an.color_keys[base] = keys
+                return True
         if kw == "detonatekey":
             if len(tokens) >= 2:
                 c = self.count_param(tokens)
@@ -995,6 +1012,28 @@ class _Parser:
         v = w.key_values(tokens, 2)
         if v is not None:
             out.append((v[0], v[1]))
+
+    @staticmethod
+    def float_bezier_key(w, tokens, out):
+        """time value [handle_in handle_out]; short rows have zero handles."""
+        v = w.key_values(tokens, 2)
+        if v is None:
+            return
+        for i in range(2, min(4, len(tokens))):
+            v.append(w.float(tokens[i]))
+        v += [0.0] * (4 - len(v))
+        out.append((v[0], v[1], v[2], v[3]))
+
+    @staticmethod
+    def color_bezier_key(w, tokens, out):
+        """time r g b [in.rgb out.rgb]; short rows have zero handles."""
+        v = w.key_values(tokens, 4)
+        if v is None:
+            return
+        for i in range(4, min(10, len(tokens))):
+            v.append(w.float(tokens[i]))
+        v += [0.0] * (10 - len(v))
+        out.append((v[0], (v[1], v[2], v[3]), (v[4], v[5], v[6]), (v[7], v[8], v[9])))
 
     @staticmethod
     def color_key(w, tokens, out):

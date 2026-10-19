@@ -239,11 +239,36 @@ func dispatch(inputPath, outputPath string, opts procOpts) int {
 	if fi.IsDir() {
 		return runBatch([]string{inputPath}, outputPath, opts, tw, errTw)
 	}
+	outputPath, err = intoDirectory(inputPath, outputPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
+		return exitErrors
+	}
 	if err := checkOverwrite(inputPath, outputPath, opts.overwrite); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanmodels: %v\n", err)
 		return exitUsage
 	}
 	return runSingle(inputPath, outputPath, opts, tw, errTw)
+}
+
+// intoDirectory returns where a single input file is written when the output
+// is a directory: an existing one, or a path ending in a separator (created),
+// takes the input's file name, as a batch does. Any other output is the file
+// itself.
+func intoDirectory(inputPath, outputPath string) (string, error) {
+	if outputPath == "" {
+		return outputPath, nil
+	}
+	if strings.HasSuffix(outputPath, "/") || strings.HasSuffix(outputPath, string(os.PathSeparator)) {
+		if err := os.MkdirAll(outputPath, 0o755); err != nil {
+			return "", err
+		}
+		return filepath.Join(outputPath, filepath.Base(inputPath)), nil
+	}
+	if st, err := os.Stat(outputPath); err == nil && st.IsDir() {
+		return filepath.Join(outputPath, filepath.Base(inputPath)), nil
+	}
+	return outputPath, nil
 }
 
 // addError records a failure in the result without stopping the run: the other

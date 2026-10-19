@@ -406,15 +406,24 @@ type OrientationKey struct {
 }
 
 // FloatKey is a time-keyed float controller value (alpha, radius, etc.)
+//
+// TanIn and TanOut are only meaningful when the controller is a bezier one
+// (its name is in the owning AnimNode's Bezier set); they are the two handles
+// of a <name>bezierkey row (value, handle in, handle out).
 type FloatKey struct {
-	Time  float32
-	Value float32
+	Time   float32
+	Value  float32
+	TanIn  float32
+	TanOut float32
 }
 
-// ColorKey is a time-keyed color controller value.
+// ColorKey is a time-keyed color controller value. TanIn and TanOut are its
+// bezier handles, as for FloatKey.
 type ColorKey struct {
-	Time  float32
-	Value Vec3
+	Time   float32
+	Value  Vec3
+	TanIn  Vec3
+	TanOut Vec3
 }
 
 // AnimNode represents a node's animation data within a newanim block.
@@ -425,8 +434,12 @@ type AnimNode struct {
 	Parent string
 
 	// Base node controllers
-	PositionKeys    []PositionKey
-	PositionBezier  bool // PositionKeys came from (and are written as) positionbezierkey
+	PositionKeys   []PositionKey
+	PositionBezier bool // PositionKeys came from (and are written as) positionbezierkey
+	// Bezier holds the float and colour controllers (lower-case names, as in
+	// "alphabezierkey" -> "alpha") whose keys came from, and are written as,
+	// <name>bezierkey. Position uses PositionBezier.
+	Bezier          map[string]bool
 	OrientationKeys []OrientationKey
 	ScaleKeys       []FloatKey
 

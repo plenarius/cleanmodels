@@ -278,8 +278,11 @@ class AnimNode:
         self.position_keys = []
         self.position_bezier = False
         self.orientation_keys = []  # (time, (x, y, z, w))
-        self.float_keys = {}        # controller name -> [(time, value)]
-        self.color_keys = {}        # controller name -> [(time, (r, g, b))]
+        # controller name -> [(time, value)], or (time, value, handle_in, handle_out)
+        # for a controller in self.bezier; linear keys there have zero handles
+        self.float_keys = {}
+        self.color_keys = {}        # the same with (r, g, b) values and handles
+        self.bezier = set()         # float/colour controllers read from <name>bezierkey
         self.anim_mesh = None
         self.mesh = None
 

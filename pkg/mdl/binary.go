@@ -1540,16 +1540,17 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 			continue
 		}
 		// Bit 4 of numfloats marks a bezier controller, whose keys are three
-		// times as wide as a linear one's: value, tangentIn, tangentOut per
-		// component, in that order. Position is the only bezier controller we
-		// have an engine-compiled sample of (plc_a01 from issue #15, numfloats
-		// 0x13), so it is the only one decoded. Any other would be read with the
-		// linear stride and return values lifted from the middle of the
-		// previous key, so it is skipped with a warning instead.
+		// times as wide as a linear one's: the value, then handle in, then
+		// handle out, each as wide as the value (the game's compiler writes
+		// 0x10 | the value's columns, e.g. 0x13 for position in plc_a01 from
+		// issue #15; nwnmdlcomp writes the row's width, 0x19, so the column
+		// count comes from the controller, not the byte). Orientation and
+		// detonate have no bezier form that can be read, so they are dropped
+		// with a warning rather than read with the wrong stride.
 		bezier := k.ColumnCount&0x10 != 0
-		if bezier && def.Name != "position" {
+		if bezier && (def.Name == "orientation" || def.NumCols <= 0) {
 			d.warn(WarnUnknownController, int64(k.Type), nodeName,
-				"controller %s is a bezier controller (numfloats=0x%02x); only position bezier controllers are supported and this one was dropped",
+				"controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier form; it was dropped",
 				def.Name, k.ColumnCount)
 			continue
 		}
@@ -1582,16 +1583,16 @@ func (d *decompiler) readControllers(node *Node, contentBits uint32, keysDef, da
 	}
 	nodeFlag := node.NodeTypeFlag()
 	for _, entry := range d.resolveControllerDefs(keys, nodeFlag, node.Name) {
-		if entry.bezier {
-			d.warn(WarnUnknownController, int64(entry.key.Type), node.Name,
-				"controller %s is a bezier controller on a geometry node; it was dropped", entry.def.Name)
-			continue
-		}
 		rows := d.readControllerRows(entry.def, dataDef.Ptr, int(entry.key.TimeStart), int(entry.key.DataStart), int(entry.key.ValueCount), entry.numCols)
 		if len(rows) == 0 {
 			continue
 		}
-		d.setStaticController(node, entry.def.Name, rows[0].Values)
+		vals := rows[0].Values
+		if entry.bezier {
+			// A geometry node keeps one value; the handles have nothing to shape.
+			vals = vals[:len(vals)/3]
+		}
+		d.setStaticController(node, entry.def.Name, vals)
 		if len(rows) > 1 {
 			d.warn(WarnGeneral, 0, node.Name, "controller %s has %d keyframes on geometry node; using first value only",
 				entry.def.Name, len(rows))
@@ -1921,7 +1922,7 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 	}
 	for _, entry := range d.resolveControllerDefs(keys, nodeFlag, animNode.Name) {
 		rows := d.readControllerRows(entry.def, dataDef.Ptr, int(entry.key.TimeStart), int(entry.key.DataStart), int(entry.key.ValueCount), entry.numCols)
-		if entry.bezier {
+		if entry.bezier && entry.def.Name == "position" {
 			for _, r := range rows {
 				if len(r.Values) >= 9 {
 					v := r.Values
@@ -1936,9 +1937,41 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 			animNode.PositionBezier = true
 			continue
 		}
+		if entry.bezier {
+			d.addAnimBezierKeys(animNode, entry.def.Name, rows)
+			continue
+		}
 		for _, r := range rows {
 			d.addAnimKey(animNode, entry.def.Name, r.Time, r.Values)
 		}
+	}
+}
+
+// addAnimBezierKeys adds a bezier float or colour controller's rows (value,
+// handle in, handle out) and marks the controller bezier. Linear keys of the
+// same controller, if any, keep zero handles.
+func (d *decompiler) addAnimBezierKeys(an *AnimNode, name string, rows []controllerRow) {
+	if getter, ok := animControllerFloatTable[name]; ok {
+		for _, r := range rows {
+			if v := r.Values; len(v) >= 3 {
+				*getter(an) = append(*getter(an), FloatKey{Time: r.Time, Value: v[0], TanIn: v[1], TanOut: v[2]})
+			}
+		}
+		an.setBezier(name)
+		return
+	}
+	if getter, ok := animControllerColorTable[name]; ok {
+		for _, r := range rows {
+			if v := r.Values; len(v) >= 9 {
+				*getter(an) = append(*getter(an), ColorKey{
+					Time:   r.Time,
+					Value:  Vec3{X: v[0], Y: v[1], Z: v[2]},
+					TanIn:  Vec3{X: v[3], Y: v[4], Z: v[5]},
+					TanOut: Vec3{X: v[6], Y: v[7], Z: v[8]},
+				})
+			}
+		}
+		an.setBezier(name)
 	}
 }
 

@@ -1176,9 +1176,46 @@ func init() {
 	}
 }
 
-// tryAnimKeyTable handles table-driven float/color key parsing.
+// isBezier reports whether the float or colour controller name is a bezier one.
+func (an *AnimNode) isBezier(name string) bool {
+	return an.Bezier[name]
+}
+
+func (an *AnimNode) setBezier(name string) {
+	if an.Bezier == nil {
+		an.Bezier = make(map[string]bool)
+	}
+	an.Bezier[name] = true
+}
+
+// tryAnimKeyTable handles table-driven float/color key parsing, linear
+// (<name>key) and bezier (<name>bezierkey: value, handle in, handle out).
 // Returns true if the keyword was handled.
 func (p *parser) tryAnimKeyTable(keyword string, tokens []string, an *AnimNode) bool {
+	if base, ok := strings.CutSuffix(keyword, "bezierkey"); ok && base != "detonate" {
+		if getter, ok := animControllerFloatTable[base]; ok {
+			an.setBezier(base)
+			if len(tokens) >= 2 {
+				if count, ok := p.countParam(tokens); ok {
+					p.readKeys(int(count), 16, "float bezier keys", floatBezierKeyParser(getter(an)))
+				}
+			} else {
+				p.readKeysUntilEnd(16, "float bezier keys", floatBezierKeyParser(getter(an)))
+			}
+			return true
+		}
+		if getter, ok := animControllerColorTable[base]; ok {
+			an.setBezier(base)
+			if len(tokens) >= 2 {
+				if count, ok := p.countParam(tokens); ok {
+					p.readKeys(int(count), 40, "color bezier keys", colorBezierKeyParser(getter(an)))
+				}
+			} else {
+				p.readKeysUntilEnd(40, "color bezier keys", colorBezierKeyParser(getter(an)))
+			}
+			return true
+		}
+	}
 	if keyword == "detonatekey" {
 		if len(tokens) >= 2 {
 			count, ok := p.countParam(tokens)
@@ -1372,11 +1409,10 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 		if p.tryAnimKeyTable(keyword, tokens, an) {
 			return
 		}
-		// Other bezier lists (scalar/colour) are not modelled. The key readers
-		// are line-based and take only the leading time and value, so routing
-		// them through the linear reader degrades them to linear keyframes —
-		// keeping the sampled values and dropping the tangents — rather than
-		// misparsing them. positionbezierkey is handled explicitly above.
+		// Bezier float and colour lists are read by tryAnimKeyTable and
+		// positionbezierkey above. What is left (orientationbezierkey,
+		// detonatebezierkey) is read as linear keys: the leading time and value,
+		// handles dropped.
 		if strings.HasSuffix(keyword, "bezierkey") {
 			base := strings.TrimSuffix(keyword, "bezierkey")
 			p.parseAnimNodeParam(base+"key", tokens)
@@ -1886,6 +1922,46 @@ func colorKeyParser(out *[]ColorKey) keyParser {
 			*out = append(*out, ColorKey{Time: v[0], Value: Vec3{X: v[1], Y: v[2], Z: v[3]}})
 		}
 		return ok
+	}
+}
+
+// floatBezierKeyParser parses "time value [handleIn handleOut]"; the handles
+// are optional, as for positionbezierkey.
+func floatBezierKeyParser(out *[]FloatKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 2)
+		if !ok {
+			return false
+		}
+		var f [4]float32
+		copy(f[:2], v)
+		for i := 2; i < len(f) && i < len(tokens); i++ {
+			f[i] = w.float(tokens[i])
+		}
+		*out = append(*out, FloatKey{Time: f[0], Value: f[1], TanIn: f[2], TanOut: f[3]})
+		return true
+	}
+}
+
+// colorBezierKeyParser parses "time r g b [in.rgb out.rgb]".
+func colorBezierKeyParser(out *[]ColorKey) keyParser {
+	return func(w *listWarn, tokens []string) bool {
+		v, ok := w.keyValues(tokens, 4)
+		if !ok {
+			return false
+		}
+		var f [10]float32
+		copy(f[:4], v)
+		for i := 4; i < len(f) && i < len(tokens); i++ {
+			f[i] = w.float(tokens[i])
+		}
+		*out = append(*out, ColorKey{
+			Time:   f[0],
+			Value:  Vec3{X: f[1], Y: f[2], Z: f[3]},
+			TanIn:  Vec3{X: f[4], Y: f[5], Z: f[6]},
+			TanOut: Vec3{X: f[7], Y: f[8], Z: f[9]},
+		})
+		return true
 	}
 }
 
