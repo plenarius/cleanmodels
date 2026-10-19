@@ -916,7 +916,12 @@ class _Decompiler:
             # column count comes from the controller (binary.go)
             # detonate keys are times only, whatever the byte says (binary.go)
             if name == "detonate":
-                out.append((name, 0, k, False))
+                out.append((name, 0, k, False, def_cols))
+                continue
+            if column_count == 0xFF:  # no values (sscanf's -1), not bezier; skipped by the game
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has no values (numfloats=0xff); the game skips such a controller, so it was "
+                          "dropped" % name)
                 continue
             bezier = column_count & 0x10 != 0
             if bezier and (name == "orientation" or def_cols <= 0):
@@ -924,12 +929,32 @@ class _Decompiler:
                           "controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier "
                           "form; it was dropped" % (name, column_count))
                 continue
+            # applied by the low nibble: 1, 3 or 4 columns, else skipped (binary.go)
             num_cols = column_count & 0x0F
-            if def_cols > 0:
-                num_cols = def_cols
+            applied = num_cols in (1, 3, 4)
             if bezier:
+                if not applied:
+                    self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                              "controller %s (numfloats=0x%02x) is read with the width of its keyword; the game skips "
+                              "it, since it applies only 1, 3 or 4 columns" % (name, column_count))
+                if def_cols > 0:
+                    num_cols = def_cols
                 num_cols *= 3
-            out.append((name, num_cols, k, bezier))
+            elif not applied:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has %d value columns (numfloats=0x%02x); the game skips such a controller, "
+                          "so it was dropped" % (name, num_cols, column_count))
+                continue
+            elif name == "orientation" and num_cols != 4:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "orientation controller with %d value columns: the game writes them into its quaternion w "
+                          "first, which ASCII cannot express, so it was dropped" % num_cols)
+                continue
+            elif 0 < def_cols < num_cols:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has %d value columns for a %d-wide value: the game writes past the value; "
+                          "only the first %d are kept" % (name, num_cols, def_cols, def_cols))
+            out.append((name, num_cols, k, bezier, def_cols))
         return out
 
     def read_controllers(self, node, keys_def, data_def):
@@ -937,13 +962,15 @@ class _Decompiler:
         if not keys:
             return
         node_flag = node.node_type_flag()
-        for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, node.name):
+        for name, num_cols, k, bezier, def_cols in self.resolve_controller_defs(keys, node_flag, node.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
             if not rows:
                 continue
             vals = rows[0][1]
             if bezier:
                 vals = vals[:len(vals) // 3]  # a geometry node keeps one value
+            else:
+                vals = runtime_width(def_cols, vals)
             set_static_controller(node, name, vals)
             if len(rows) > 1:
                 self.warn(WARN_GENERAL, 0, node.name, "controller %s has %d keyframes on geometry node; using "
@@ -1101,7 +1128,7 @@ class _Decompiler:
         keys = self.read_controller_keys(keys_def)
         if not keys:
             return
-        for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, an.name):
+        for name, num_cols, k, bezier, def_cols in self.resolve_controller_defs(keys, node_flag, an.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
             if bezier and name != "position":
                 add_anim_bezier_keys(an, name, rows)
@@ -1113,7 +1140,7 @@ class _Decompiler:
                 an.position_bezier = True
                 continue
             for t, v in rows:
-                add_anim_key(an, name, t, v)
+                add_anim_key(an, name, t, runtime_width(def_cols, v))
 
 
 def _as_i32(v):
@@ -1136,6 +1163,15 @@ def quaternion_to_angle_axis(q):
         return [0.0, 0.0, 1.0, 0.0]
     angle = f32(2.0 * math.atan2(sin_half, w))
     return [f32(x / sin_half), f32(y / sin_half), f32(z / sin_half), angle]
+
+
+def runtime_width(def_cols, vals):
+    """binary.go runtimeWidth: a linear controller's values fitted to its width, short ones padded with 0."""
+    if def_cols <= 0 or len(vals) == def_cols:
+        return vals
+    if len(vals) > def_cols:
+        return vals[:def_cols]
+    return list(vals) + [0.0] * (def_cols - len(vals))
 
 
 def anim_set_major(lst, n):

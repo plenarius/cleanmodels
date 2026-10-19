@@ -1631,6 +1631,14 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 			}{def, 0, k, false})
 			continue
 		}
+		// 0xff is the byte the game's compiler writes for a controller line
+		// with no values (sscanf's -1); it is not a bezier byte, and the game
+		// skips the controller (low nibble 15).
+		if k.ColumnCount == 0xff {
+			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				"controller %s has no values (numfloats=0xff); the game skips such a controller, so it was dropped", def.Name)
+			continue
+		}
 		bezier := k.ColumnCount&0x10 != 0
 		if bezier && (def.Name == "orientation" || def.NumCols <= 0) {
 			d.warn(WarnUnknownController, int64(k.Type), nodeName,
@@ -1638,12 +1646,37 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 				def.Name, k.ColumnCount)
 			continue
 		}
+		// The game applies a controller by the low nibble of its column byte
+		// (NewController::Control 0x498f20; mdl-spec MDL-CTRL-014): 1, 3 or 4
+		// values per key, written as that many floats from its runtime field;
+		// any other count is skipped. So a linear controller is read with
+		// that count, never with the keyword's width.
 		numCols := int(k.ColumnCount) & 0x0F
-		if def.NumCols > 0 {
-			numCols = def.NumCols
-		}
-		if bezier {
+		applied := numCols == 1 || numCols == 3 || numCols == 4
+		switch {
+		case bezier:
+			if !applied {
+				d.warn(WarnUnknownController, int64(k.Type), nodeName,
+					"controller %s (numfloats=0x%02x) is read with the width of its keyword; the game skips it, since it applies only 1, 3 or 4 columns",
+					def.Name, k.ColumnCount)
+			}
+			if def.NumCols > 0 {
+				numCols = def.NumCols
+			}
 			numCols *= 3
+		case !applied:
+			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				"controller %s has %d value columns (numfloats=0x%02x); the game skips such a controller, so it was dropped",
+				def.Name, numCols, k.ColumnCount)
+			continue
+		case def.Name == "orientation" && numCols != 4:
+			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				"orientation controller with %d value columns: the game writes them into its quaternion w first, which ASCII cannot express, so it was dropped", numCols)
+			continue
+		case def.NumCols > 0 && numCols > def.NumCols:
+			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				"controller %s has %d value columns for a %d-wide value: the game writes past the value; only the first %d are kept",
+				def.Name, numCols, def.NumCols, def.NumCols)
 		}
 		out = append(out, struct {
 			def     ControllerDef
@@ -1675,6 +1708,8 @@ func (d *decompiler) readControllers(node *Node, contentBits uint32, keysDef, da
 		if entry.bezier {
 			// A geometry node keeps one value; the handles have nothing to shape.
 			vals = vals[:len(vals)/3]
+		} else {
+			vals = runtimeWidth(entry.def, vals)
 		}
 		d.setStaticController(node, entry.def.Name, vals)
 		if len(rows) > 1 {
@@ -2035,9 +2070,27 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 			continue
 		}
 		for _, r := range rows {
-			d.addAnimKey(animNode, entry.def.Name, r.Time, r.Values)
+			d.addAnimKey(animNode, entry.def.Name, r.Time, runtimeWidth(entry.def, r.Values))
 		}
 	}
+}
+
+// runtimeWidth fits a linear controller's values to its keyword's width. A
+// controller with fewer columns writes only its first floats in game; the
+// rest keep the values the runtime field starts with, which for every
+// controller wider than one float but orientation (dropped before this) is 0:
+// position (Part::Part 0x43c800), selfillumcolor, light and emitter colours
+// (mdl-spec MDL-CTRL-014). Extra columns are cut (warned about already).
+func runtimeWidth(def ControllerDef, vals []float32) []float32 {
+	if def.NumCols <= 0 || len(vals) == def.NumCols {
+		return vals
+	}
+	if len(vals) > def.NumCols {
+		return vals[:def.NumCols]
+	}
+	out := make([]float32, def.NumCols)
+	copy(out, vals)
+	return out
 }
 
 // addAnimBezierKeys adds a bezier float or colour controller's rows (value,

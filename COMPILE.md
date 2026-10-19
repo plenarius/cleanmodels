@@ -352,10 +352,11 @@ are exact.
 ## Known gaps
 
 - **Short controller lines.** The game writes a controller with as many
-  columns as the line had values (`position 1.5abc 2 3` gives one column,
-  and the game then reads the other two from past the controller's data);
-  we write the full width, with the values not read at their defaults
-  (`zspec_numbers`).
+  columns as the line had values (`position 1.5abc 2 3` gives one column);
+  we write the full width, with the values not read at 0. The game applies
+  a controller by its column count and leaves the rest of the field at its
+  initial value, 0 for every such field (finding 50), so both place the node
+  at (1.5, 0, 0).
 - **Position and orientation controllers.** A non-root node with no
   `position` or `orientation` line gets both, with their identity values;
   the game writes neither (see `compiler_controllers.go`, issue #12).

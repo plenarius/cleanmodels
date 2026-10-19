@@ -19,9 +19,7 @@ var engineFixtureLines = regexp.MustCompile(`(?m)^\s*(orientation 0 0 1 0|lightm
 
 // engineFixtureKnownGaps are probes whose engine behaviour cleanmodels does
 // not follow, each with the reason.
-var engineFixtureKnownGaps = map[string]string{
-	"zspec_numbers": "the game writes \"position 1.5abc 2 3\" as a one-column controller, whose other two values it then reads from past the controller's data; cleanmodels writes 1.5 0 0",
-}
+var engineFixtureKnownGaps = map[string]string{}
 
 // TestEngineCompiledFixtures compiles each probe in tests/fixtures/engine
 // (<name>.ascii.mdl, our own CC0 models from cleanmodels and the mdl-spec
