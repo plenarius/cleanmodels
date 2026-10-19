@@ -258,11 +258,13 @@ class NodeMixin:
         av_pos = atv_pos = 0
         n_vsets = n_tvsets = 0
         if has_mesh:
+            self.merge_anim = n.anim_mesh
             expanded = self.write_mesh_header_full(n)
+            self.merge_anim = None
         if has_skin:
             self.write_skin_header(n, expanded)
         if has_anim_mesh:
-            av_pos, atv_pos, n_vsets, n_tvsets = self.write_anim_mesh_header(n, None)
+            av_pos, atv_pos, n_vsets, n_tvsets = self.write_anim_mesh_header(n, None, expanded)
         if has_dangly:
             self.write_dangly_header(n)
         if has_aabb:
@@ -274,13 +276,8 @@ class NodeMixin:
             self.write_skin_bind_data(n)
         if has_dangly:
             self.write_dangly_constraints(n)
-        if has_anim_mesh and n.anim_mesh is not None:
-            if n_vsets > 0:
-                core.patch_u32(av_pos, core.len())
-                core.f32s([c for v in n.anim_mesh.anim_verts for c in (v[0], v[1], v[2])])
-            if n_tvsets > 0:
-                core.patch_u32(atv_pos, core.len())
-                core.f32s([c for v in n.anim_mesh.anim_tverts for c in (v[0], v[1])])
+        if has_anim_mesh and n.anim_mesh is not None and expanded is not None:
+            self.write_anim_mesh_data(n.mesh, n.anim_mesh, expanded, av_pos, atv_pos, n_vsets, n_tvsets)
 
         keys, data = self.encode_geom_node_controllers(n)
         self.write_ctrl_block(keys, data, *ctrl)

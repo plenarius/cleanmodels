@@ -211,15 +211,14 @@ func TestSupermodelIsCached(t *testing.T) {
 	if err := os.Chtimes(path, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if again := load(); again == first || len(again.nodes) != 2 {
-		t.Fatalf("changed supermodel was not reloaded: %d nodes", len(again.nodes))
+	if again := load(); again == first || len(again.root.children) != 1 {
+		t.Fatalf("changed supermodel was not reloaded: %d children", len(again.root.children))
 	}
 }
 
-// An ASCII supermodel that uses a node name twice numbers it the same way on
-// every run: the later node in the file wins, as for a binary supermodel. It
-// used to range over a map, so the compiled bytes changed from run to run
-// (stock c_formqueen against c_formwrk, which has two of several hand bones).
+// An ASCII supermodel that uses a node name twice keeps both, each at its own
+// path, numbered the same way on every run (stock c_formqueen against
+// c_formwrk, which has two of several hand bones, once changed from run to run).
 func TestSupermodelDuplicateNamesDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	src := "newmodel dupsuper\nsetsupermodel dupsuper NULL\nclassification character\nbeginmodelgeom dupsuper\n" +
@@ -239,8 +238,12 @@ func TestSupermodelDuplicateNamesDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if h := sm.nodes["hand"]; h.number != 4 || h.parent != "b" {
-			t.Fatalf("run %d: hand = %+v, want the later node (number 4, parent b)", i, h)
+		a, b := sm.root.child("a"), sm.root.child("b")
+		if a == nil || b == nil || a.child("hand") == nil || b.child("hand") == nil {
+			t.Fatalf("run %d: tree incomplete", i)
+		}
+		if ha, hb := a.child("hand").number, b.child("hand").number; ha != 2 || hb != 4 {
+			t.Fatalf("run %d: hand under a = %d, under b = %d; want 2 and 4", i, ha, hb)
 		}
 	}
 }

@@ -92,14 +92,22 @@ def decompile(data, skeleton_dirs=()):
 
 
 class _PendingSkin:
-    __slots__ = ("node", "bone_part_nums", "bind_count", "skin_weights", "skin_bone_refs")
+    __slots__ = ("node", "bone_part_nums", "bind_count", "map_pos", "skin_weights", "skin_bone_refs")
 
-    def __init__(self, node, bone_part_nums, bind_count, skin_weights, skin_bone_refs):
+    def __init__(self, node, bone_part_nums, bind_count, map_pos, skin_weights, skin_bone_refs):
         self.node = node
         self.bone_part_nums = bone_part_nums
         self.bind_count = bind_count
+        self.map_pos = map_pos  # bone index -> first tree position in the boneindexarray
         self.skin_weights = skin_weights
         self.skin_bone_refs = skin_bone_refs
+
+    def bone_pos(self, ref):
+        """pendingSkin.bonePos: (tree position, taken from the boneindexarray)."""
+        p = self.bone_part_nums[ref]
+        if (p < 0 or p >= self.bind_count) and self.map_pos is not None and ref in self.map_pos:
+            return self.map_pos[ref], True
+        return p, False
 
 
 class _Decompiler:
@@ -559,12 +567,21 @@ class _Decompiler:
         self.skip(12)
         p_weight_vertex = self.read_i32()
         p_bone_ref_index = self.read_i32()
-        self.skip(4)
+        p_bone_map = self.read_i32()
         bind_count = self.read_i32()
         self.skip(36)
         bone_part_nums = [self.read_i16() for _ in range(64)]
         header_end = self.p
         try:
+            map_pos = None
+            if p_bone_map > 0 and bind_count > 0:
+                abs_ptr = self.go_to_pointer(p_bone_map)
+                if abs_ptr + bind_count * 2 <= self.size and self.track_alloc(bind_count * 2) and self.seek(abs_ptr):
+                    map_pos = {}
+                    for p in range(bind_count):
+                        b = self.read_i16()
+                        if b >= 0 and b not in map_pos:
+                            map_pos[b] = p
             n = len(node.mesh.verts)
             if n == 0:
                 return
@@ -590,7 +607,7 @@ class _Decompiler:
                         r[1] = self.read_i16()
                         r[2] = self.read_i16()
                         r[3] = self.read_i16()
-            self.pending_skins.append(_PendingSkin(node, bone_part_nums, bind_count, weights, refs))
+            self.pending_skins.append(_PendingSkin(node, bone_part_nums, bind_count, map_pos, weights, refs))
         finally:
             self.seek(header_end)
 
@@ -610,6 +627,8 @@ class _Decompiler:
         total = n_tvert_sets * n
         if 0 < total <= self.size and p_anim_tverts > 0 and n > 0:
             am.anim_tverts = self.read_vec2_array_at(self.go_to_pointer(p_anim_tverts), total, am.anim_tverts)
+        am.anim_verts = anim_set_major(am.anim_verts, n)
+        am.anim_tverts = anim_set_major(am.anim_tverts, n)
         self.seek(header_end)
 
     def read_dangly_header(self, node):
@@ -756,6 +775,7 @@ class _Decompiler:
             names = self.skeleton_bone_names(ps, used)
         out = []
         unbound = 0
+        remapped = {}
         nparts = len(ps.bone_part_nums)
         for i in range(n):
             vw = VertexWeight()
@@ -764,9 +784,11 @@ class _Decompiler:
                 weight, ref = ws[j], rs[j]
                 if weight == 0 or ref < 0 or ref >= nparts:
                     continue
-                part = ps.bone_part_nums[ref]
+                part, from_map = ps.bone_pos(ref)
                 if part < 0:
                     continue
+                if from_map:
+                    remapped[ref] = part
                 if names is not None and part < len(names) and names[part] != "":
                     vw.bones.append(names[part])
                     vw.weights.append(weight)
@@ -774,6 +796,14 @@ class _Decompiler:
             if not vw.bones:
                 unbound += 1
         ps.node.skin.weights = out
+        if remapped:
+            parts = ", ".join("bone %d (list entry %d, tree position %d)" % (b, ps.bone_part_nums[b], remapped[b])
+                              for b in sorted(remapped))
+            self.warn(WARN_GENERAL, 0, ps.node.name,
+                      "skin %s: %s: the bone list entry is outside the %d-node tree, read past the end of a short "
+                      "skin header, so the bone was named from the boneindexarray instead. The game skips such a "
+                      "bone, so the vertices it weights lose that influence in game"
+                      % (_go_quote(ps.node.name), parts, ps.bind_count))
         if unbound > 0 and names is not None:
             self.warn(WARN_GENERAL, 0, ps.node.name,
                       "skin %s has %d of %d vertices with no valid bone influence (all weights zero, or bone "
@@ -791,7 +821,7 @@ class _Decompiler:
                 ref = rs[j]
                 if ws[j] == 0 or ref < 0 or ref >= nparts:
                     continue
-                p = ps.bone_part_nums[ref]
+                p, _ = ps.bone_pos(ref)
                 if p >= 0 and p not in seen:
                     seen.add(p)
                     used.append(p)
@@ -884,18 +914,47 @@ class _Decompiler:
             name, def_cols = d
             # bezier: the value then two handles, each as wide as the value; the
             # column count comes from the controller (binary.go)
+            # detonate keys are times only, whatever the byte says (binary.go)
+            if name == "detonate":
+                out.append((name, 0, k, False, def_cols))
+                continue
+            if column_count == 0xFF:  # no values (sscanf's -1), not bezier; skipped by the game
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has no values (numfloats=0xff); the game skips such a controller, so it was "
+                          "dropped" % name)
+                continue
             bezier = column_count & 0x10 != 0
             if bezier and (name == "orientation" or def_cols <= 0):
                 self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
                           "controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier "
                           "form; it was dropped" % (name, column_count))
                 continue
+            # applied by the low nibble: 1, 3 or 4 columns, else skipped (binary.go)
             num_cols = column_count & 0x0F
-            if def_cols > 0:
-                num_cols = def_cols
+            applied = num_cols in (1, 3, 4)
             if bezier:
+                if not applied:
+                    self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                              "controller %s (numfloats=0x%02x) is read with the width of its keyword; the game skips "
+                              "it, since it applies only 1, 3 or 4 columns" % (name, column_count))
+                if def_cols > 0:
+                    num_cols = def_cols
                 num_cols *= 3
-            out.append((name, num_cols, k, bezier))
+            elif not applied:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has %d value columns (numfloats=0x%02x); the game skips such a controller, "
+                          "so it was dropped" % (name, num_cols, column_count))
+                continue
+            elif name == "orientation" and num_cols != 4:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "orientation controller with %d value columns: the game writes them into its quaternion w "
+                          "first, which ASCII cannot express, so it was dropped" % num_cols)
+                continue
+            elif 0 < def_cols < num_cols:
+                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                          "controller %s has %d value columns for a %d-wide value: the game writes past the value; "
+                          "only the first %d are kept" % (name, num_cols, def_cols, def_cols))
+            out.append((name, num_cols, k, bezier, def_cols))
         return out
 
     def read_controllers(self, node, keys_def, data_def):
@@ -903,13 +962,15 @@ class _Decompiler:
         if not keys:
             return
         node_flag = node.node_type_flag()
-        for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, node.name):
+        for name, num_cols, k, bezier, def_cols in self.resolve_controller_defs(keys, node_flag, node.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
             if not rows:
                 continue
             vals = rows[0][1]
             if bezier:
                 vals = vals[:len(vals) // 3]  # a geometry node keeps one value
+            else:
+                vals = runtime_width(def_cols, vals)
             set_static_controller(node, name, vals)
             if len(rows) > 1:
                 self.warn(WARN_GENERAL, 0, node.name, "controller %s has %d keyframes on geometry node; using "
@@ -1028,6 +1089,8 @@ class _Decompiler:
                 if 0 < total <= self.size and p_anim_tverts > 0:
                     anim_mesh_data.anim_tverts = self.read_vec2_array_at(
                         self.go_to_pointer(p_anim_tverts), total, anim_mesh_data.anim_tverts)
+                anim_mesh_data.anim_verts = anim_set_major(anim_mesh_data.anim_verts, anim_mesh_verts)
+                anim_mesh_data.anim_tverts = anim_set_major(anim_mesh_data.anim_tverts, anim_mesh_verts)
         if content & 0x100:
             self.skip(12 + 4 * 3)
         if content & 0x200:
@@ -1065,7 +1128,7 @@ class _Decompiler:
         keys = self.read_controller_keys(keys_def)
         if not keys:
             return
-        for name, num_cols, k, bezier in self.resolve_controller_defs(keys, node_flag, an.name):
+        for name, num_cols, k, bezier, def_cols in self.resolve_controller_defs(keys, node_flag, an.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
             if bezier and name != "position":
                 add_anim_bezier_keys(an, name, rows)
@@ -1077,7 +1140,7 @@ class _Decompiler:
                 an.position_bezier = True
                 continue
             for t, v in rows:
-                add_anim_key(an, name, t, v)
+                add_anim_key(an, name, t, runtime_width(def_cols, v))
 
 
 def _as_i32(v):
@@ -1100,6 +1163,27 @@ def quaternion_to_angle_axis(q):
         return [0.0, 0.0, 1.0, 0.0]
     angle = f32(2.0 * math.atan2(sin_half, w))
     return [f32(x / sin_half), f32(y / sin_half), f32(z / sin_half), angle]
+
+
+def runtime_width(def_cols, vals):
+    """binary.go runtimeWidth: a linear controller's values fitted to its width, short ones padded with 0."""
+    if def_cols <= 0 or len(vals) == def_cols:
+        return vals
+    if len(vals) > def_cols:
+        return vals[:def_cols]
+    return list(vals) + [0.0] * (def_cols - len(vals))
+
+
+def anim_set_major(lst, n):
+    """binary.go animSetMajor: the binary's vertex-major sets as the ASCII's set-major list."""
+    if n <= 0 or len(lst) % n != 0:
+        return lst
+    sets = len(lst) // n
+    out = [None] * len(lst)
+    for v in range(n):
+        for s in range(sets):
+            out[s * n + v] = lst[v * sets + s]
+    return out
 
 
 def set_static_controller(node, name, vals):

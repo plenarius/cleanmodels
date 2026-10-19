@@ -49,16 +49,16 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
 
 ## Compilation order
 
-1. **Pre-pass** — `assignNodeIDs` walks the geometry tree iteratively (DFS,
-  cycle-guarded by a visited set) and gives every node a sequential part
-   number. Skin nodes need stable part numbers to encode bone references.
-   With a supermodel, nodes it shares take its numbers
-   (`assignNodeIDsFromSupermodel`). An ASCII supermodel that uses a node name
-   twice gives that name the number of the later node in its file, as a
-   binary supermodel does here; it used to depend on Go's map order, so the
-   same compile could give different bytes from run to run. Which of the two
-   the engine picks is not verified (stock `c_formwrk` repeats hand and foot
-   bones; `c_formqueen` compiles against it).
+1. **Pre-pass** — the geometry tree's children are sorted where the game
+   sorts them (`reorderChildren`: a node with a child mesh whose
+   transparencyhint is above 0 has its children sorted by libstdc++'s
+   `std::sort`, non-meshes first, then meshes by hint; finding 42), and every
+   node takes its part number: its position among the source's node blocks
+   (`assignNodeIDs`, finding 41). With a supermodel (`assignNodeIDsFromSupermodel`,
+   finding 43) a node at a path the supermodel has takes its number (a name
+   the supermodel uses twice is told apart by its path), another child of a
+   matched node -1, and the rest count_nodes + 1 + declaration index. Skin
+   bones are addressed by position in the sorted tree (`treeIndex`).
 2. **Geometry header** — `header_geometry` (112 bytes) + `header_model` (120
   bytes) + animation pointer array. Animation list pointers are written as
    placeholders and patched once each animation's core offset is known.
@@ -238,15 +238,31 @@ bitangent stream. `binary.go readMDXTangents` combines them back into
 
 ## Reading the ASCII
 
-`parser.go` reads numbers with Go's `strconv` (float32 correctly rounded, the
-syntax Go accepts: `inf`, `nan`, hex, underscores). A value it can't use is
-reported with its line number and the parameter keeps its default (a list
-entry is set to 0): text that isn't a number, NaN and infinity (`1.#INF` in
-stock GUI models), floats outside the float32 range, integers outside int32
-(converting them is platform dependent in Go), and number tokens over 400
-characters (`maxNumberLen`: `strconv.ParseFloat` misreads some valid numbers
-past 800 digits). `ParseNumber` and `ParseInteger` expose this for the Python
-port's parity test.
+`parser.go` reads numbers as the game does, with C's `sscanf` (finding 49):
+`scanFloat` and `scanInt` take the number a token starts with (`1.5abc` is
+1.5, `0x10` is 16, `1.#INF` is 1, `2.9` for an integer is 2) and report the
+rest; the value itself is converted by Go's `strconv` (float32 correctly
+rounded). An integer that is not a number is read as `TRUE` or `FALSE` (any
+case) when it is one of those words. A vector line and a list entry are read
+in order up to the first value that is not a number or has more after it; the
+values not reached keep their default (0 in a list), as in the game. Refused,
+reported, with the parameter keeping its default: text that isn't a number,
+NaN and infinity, floats outside the float32 range, integers outside int32
+(the game wraps them), numbers over 400 characters (`maxNumberLen`:
+`strconv.ParseFloat` misreads some valid numbers past 800 digits), and a list
+count with more after it (the game then reads the rows as binary data).
+`ScanNumber` and `ScanInteger` expose this for the Python port's parity test;
+the scanner was checked against glibc's `sscanf` on the test's 140,000 number
+strings and 37,000 more (the only difference: glibc rounds the subnormal
+`0x1.000001p-150` to 0).
+
+A keyword a node's parser does not read is ignored, as the game ignores it,
+with a warning naming the keyword it resembles (`setfillumcolor`, NWmax's
+`ambient_only`; finding 48). `parent` is read only in lower case, as in the
+game, so a node whose only parent line is `PARENT` is left out; the other
+words the game matches case-sensitively (`node`, `endnode`, `endlist`, `event`,
+`animlength`, `endmodelgeom`, `doneanim`, `donemodel`) are read in any case
+with a warning.
 
 ## Same output everywhere
 
@@ -334,6 +350,16 @@ worst model (`tin01_a02_03`) is 97.3% exact. The core-game tangent fixtures
 are exact.
 
 ## Known gaps
+
+- **Short controller lines.** The game writes a controller with as many
+  columns as the line had values (`position 1.5abc 2 3` gives one column);
+  we write the full width, with the values not read at 0. The game applies
+  a controller by its column count and leaves the rest of the field at its
+  initial value, 0 for every such field (finding 50), so both place the node
+  at (1.5, 0, 0).
+- **Position and orientation controllers.** A non-root node with no
+  `position` or `orientation` line gets both, with their identity values;
+  the game writes neither (see `compiler_controllers.go`, issue #12).
 
 - **MDL classification drift.** A few sources we received had ASCII
 classifications that don't match the binary the game shipped (e.g.

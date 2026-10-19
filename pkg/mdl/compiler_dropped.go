@@ -38,6 +38,8 @@ func (c *compiler) warnDroppedGeometry() {
 		}
 		reason := ""
 		switch {
+		case n.Parent == "":
+			reason = "no parent"
 		case isRootParent(n.Parent):
 			reason = "a second root"
 		case c.geomNodeByName(n.Parent) == nil:

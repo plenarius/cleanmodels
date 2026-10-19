@@ -1,0 +1,1108 @@
+# cleanmodels engine probe zcm_tsort90 (CC0-1.0)
+newmodel zcm_tsort90
+setsupermodel zcm_tsort90 NULL
+classification tile
+beginmodelgeom zcm_tsort90
+node dummy zcm_tsort90
+  parent NULL
+endnode
+node dummy d00
+  parent zcm_tsort90
+endnode
+node trimesh m01
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m02
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m03
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m04
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d05
+  parent zcm_tsort90
+endnode
+node dummy d06
+  parent zcm_tsort90
+endnode
+node trimesh m07
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m08
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m09
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d10
+  parent zcm_tsort90
+endnode
+node dummy d11
+  parent zcm_tsort90
+endnode
+node trimesh m12
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m13
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d14
+  parent zcm_tsort90
+endnode
+node trimesh m15
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m16
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m17
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m18
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m19
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m20
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m21
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m22
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d23
+  parent zcm_tsort90
+endnode
+node trimesh m24
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m25
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m26
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m27
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m28
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m29
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m30
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m31
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m32
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m33
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m34
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m35
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d36
+  parent zcm_tsort90
+endnode
+node dummy d37
+  parent zcm_tsort90
+endnode
+node trimesh m38
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d39
+  parent zcm_tsort90
+endnode
+node trimesh m40
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m41
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d42
+  parent zcm_tsort90
+endnode
+node trimesh m43
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d44
+  parent zcm_tsort90
+endnode
+node trimesh m45
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m46
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m47
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m48
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m49
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d50
+  parent zcm_tsort90
+endnode
+node trimesh m51
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m52
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m53
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m54
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m55
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m56
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m57
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m58
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m59
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m60
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m61
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m62
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m63
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m64
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d65
+  parent zcm_tsort90
+endnode
+node trimesh m66
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d67
+  parent zcm_tsort90
+endnode
+node trimesh m68
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 7
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m69
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m70
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m71
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m72
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m73
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m74
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m75
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d76
+  parent zcm_tsort90
+endnode
+node dummy d77
+  parent zcm_tsort90
+endnode
+node trimesh m78
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m79
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint -1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d80
+  parent zcm_tsort90
+endnode
+node trimesh m81
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 1
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m82
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m83
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 3
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d84
+  parent zcm_tsort90
+endnode
+node dummy d85
+  parent zcm_tsort90
+endnode
+node trimesh m86
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node dummy d87
+  parent zcm_tsort90
+endnode
+node trimesh m88
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 5
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+node trimesh m89
+  parent zcm_tsort90
+  bitmap zcm_t0
+  transparencyhint 2
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+endnode
+endmodelgeom zcm_tsort90
+donemodel zcm_tsort90

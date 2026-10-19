@@ -619,6 +619,126 @@ def _go_round(v):
     return t
 
 
+_SCAN_SIMPLE = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
+_scan_cache = {}
+
+
+def scan_float(s):
+    """parser.go scanFloat: the number s starts with, as sscanf "%f" reads it.
+    Returns (float32 value, or None when refused or absent; bytes consumed)."""
+    r = _scan_cache.get(s)
+    if r is None:
+        r = _scan_float(s)
+        if len(_scan_cache) > 200000:
+            _scan_cache.clear()
+        _scan_cache[s] = r
+    return r
+
+
+def _scan_float(s):
+    if _SCAN_SIMPLE.match(s):
+        n, num = len(s), s
+    else:
+        n, num = _scan_float_prefix(s)
+    if n == 0 or n > MAX_NUMBER_LEN or num == "":
+        return None, n
+    return _parse_float32(num), n
+
+
+def _lower_ascii(c):
+    return chr(ord(c) + 32) if "A" <= c <= "Z" else c
+
+
+def _is_hex(c):
+    return "0" <= c <= "9" or "a" <= c <= "f" or "A" <= c <= "F"
+
+
+def _is_dig(c):
+    return "0" <= c <= "9"
+
+
+def _scan_float_prefix(s):
+    """parser.go scanFloatPrefix: (bytes consumed, number in strconv syntax or "")."""
+    i = 0
+    if s[:1] in ("+", "-") and s:
+        i = 1
+    sign, r = s[:i], s[i:]
+    low = "".join(_lower_ascii(c) for c in r[:3])
+    if low == "inf":
+        k = 0
+        while k < 5 and 3 + k < len(r) and _lower_ascii(r[3 + k]) == "inity"[k]:
+            k += 1
+        if k == 0:
+            return i + 3, ""
+        if k == 5:
+            return i + 8, ""
+        return 0, ""
+    if low == "nan":
+        return i + 3, ""
+
+    def digits(j, ok):
+        while j < len(r) and ok(r[j]):
+            j += 1
+        return j
+
+    def exponent(j, marks):
+        if j < len(r) and r[j] in marks:
+            j += 1
+            e0 = j
+            if j < len(r) and r[j] in "+-":
+                j += 1
+            d0 = j
+            j = digits(j, _is_dig)
+            if j > d0:
+                return j, r[e0:j]
+        return j, ""
+
+    if len(r) >= 2 and r[0] == "0" and r[1] in "xX":
+        j = digits(2, _is_hex)
+        ip, fp, dot = r[2:j], "", False
+        if j < len(r) and r[j] == ".":
+            dot = True
+            f0 = j + 1
+            j = digits(f0, _is_hex)
+            fp = r[f0:j]
+        if not ip and not fp:
+            if not dot:
+                return 0, ""
+            return i + j, sign + "0"
+        j, exp = exponent(j, "pP")
+        return i + j, sign + "0x" + (ip or "0") + "." + (fp or "0") + "p" + (exp or "0")
+    j = digits(0, _is_dig)
+    ip, fp = r[:j], ""
+    if j < len(r) and r[j] == ".":
+        f0 = j + 1
+        j = digits(f0, _is_dig)
+        fp = r[f0:j]
+    if not ip and not fp:
+        return 0, ""
+    j, exp = exponent(j, "eE")
+    num = sign + (ip or "0") + "." + (fp or "0")
+    if exp:
+        num += "e" + exp
+    return i + j, num
+
+
+def scan_int(s):
+    """parser.go scanInt: the integer s starts with, as sscanf "%d" reads it.
+    Returns (value, or None when absent or outside int32; bytes consumed)."""
+    i = 1 if s[:1] in ("+", "-") and s else 0
+    j = i
+    while j < len(s) and _is_dig(s[j]):
+        j += 1
+    if j == i:
+        return None, 0
+    if j > MAX_NUMBER_LEN:
+        return None, j
+    v = int(s[:j])
+    if not -2147483648 <= v <= 2147483647:
+        return None, j
+    return v, j
+
+
 def parse_int(s):
     """parser.go parseInt: strconv.ParseInt(s, 10, 32), else ParseFloat(s, 64)
     rounded; tokens over MAX_NUMBER_LEN, and values int32 can't hold (NaN and

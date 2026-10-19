@@ -123,10 +123,9 @@ type compiler struct {
 
 	model *Model
 
-	// nodeIDs maps a node instance → sequential part number. Keyed by identity,
+	// nodeIDs maps a node instance → its part number. Keyed by identity,
 	// not name, because names are not unique (see compiler_tree.go).
 	nodeIDs map[*Node]int32
-	nextID  int32
 
 	// treeIndex maps a node instance → its position in tree order (root 0).
 	// Skin bones are addressed by this position, not by nodeIDs: the engine's
@@ -177,6 +176,10 @@ type compiler struct {
 	// written to their geometry counterparts. Reset per animation.
 	animGeomPair map[*AnimNode]*Node
 
+	// mergeAnim, while a mesh header is written for an animmesh node, holds
+	// the animation sets that take part in its vertex merge.
+	mergeAnim *AnimMeshData
+
 	// lastExpanded holds the expanded mesh from the most recent writeMeshHeaderInner call.
 	lastExpanded *expandedMesh
 
@@ -202,6 +205,9 @@ func newCompiler(m *Model) *compiler {
 		}
 	}
 	_, children := resolveGeomTree(m.Nodes)
+	if root := m.RootNode(); root != nil {
+		reorderChildren(root, children)
+	}
 	return &compiler{
 		core:           &patchBuf{},
 		vol:            &patchBuf{},
@@ -276,29 +282,15 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 	return err
 }
 
-// assignNodeIDs walks the geometry node tree in iterative DFS order and assigns
-// sequential IDs. Uses a visited set to guard against cyclic parent references.
+// assignNodeIDs numbers the geometry nodes of a model with no supermodel:
+// each takes its declaration index (compiler_order.go), and treeIndex its
+// position in the written tree.
 func (c *compiler) assignNodeIDs(root *Node) {
-	visited := make(map[*Node]bool, len(c.model.Nodes))
-	stack := []*Node{root}
-	for len(stack) > 0 {
-		n := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if n == nil || visited[n] {
-			continue
-		}
-		visited[n] = true
-		c.nodeIDs[n] = c.nextID
-		c.treeIndex[n] = c.nextID
-		c.nextID++
-		children := c.childrenOf(n)
-		// push in reverse so left-to-right DFS order is preserved
-		for i := len(children) - 1; i >= 0; i-- {
-			if !visited[children[i]] {
-				stack = append(stack, children[i])
-			}
-		}
-	}
+	decl := c.declarationIndex()
+	c.walkTree(root, func(n, _ *Node, index int32) {
+		c.nodeIDs[n] = decl[n]
+		c.treeIndex[n] = index
+	})
 }
 
 // childrenOf returns all direct children of n in the geometry tree (O(1) lookup).
@@ -329,8 +321,11 @@ func (c *compiler) writeModel() error {
 	c.core.u32le(2)                       // type = 2 (geometry / model)
 
 	// ---- header_model (120 bytes, offsets 112-231) ----
-	c.core.zeros(2)                                                          // unknown0, unknown1
-	c.core.u8(byte(ClassificationToCode(strings.ToUpper(m.Classification)))) // class code
+	c.core.zeros(2) // unknown0, unknown1
+	if w := pluralClassificationWarning(m.Classification); w != "" && c.warn != nil {
+		c.warn(w)
+	}
+	c.core.u8(byte(ClassificationToCode(m.Classification))) // class code
 	// fog byte is "affected by fog", the negation of ASCII ignorefog.
 	fog := byte(1)
 	if m.IgnoreFog != 0 {
@@ -622,7 +617,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	var animMeshVertPtrPos, animMeshTVertPtrPos int
 	var animMeshNVertSets, animMeshNTVertSets int
 	if hasAnimMesh {
-		animMeshVertPtrPos, animMeshTVertPtrPos, animMeshNVertSets, animMeshNTVertSets = c.writeAnimMeshHeader(geomNode, an)
+		animMeshVertPtrPos, animMeshTVertPtrPos, animMeshNVertSets, animMeshNTVertSets = c.writeAnimMeshHeader(geomNode, an, expanded)
 	}
 
 	if hasDangly && geomNode != nil {
@@ -647,32 +642,13 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	}
 
 	// Write anim vert/tvert data into core (animMesh).
-	// Resolve data source: prefer an.AnimMesh, fall back to geomNode.AnimMesh.
-	if hasAnimMesh && animMeshNVertSets > 0 {
-		var srcVerts []Vec3
-		if an.AnimMesh != nil {
-			srcVerts = an.AnimMesh.AnimVerts
-		} else if geomNode != nil && geomNode.AnimMesh != nil {
-			srcVerts = geomNode.AnimMesh.AnimVerts
+	if hasAnimMesh && expanded != nil {
+		mesh := geomNode.Mesh
+		if an.Mesh != nil {
+			mesh = an.Mesh
 		}
-		animVertsOff := int32(c.core.len())
-		c.core.patchU32(animMeshVertPtrPos, uint32(animVertsOff))
-		for _, v := range srcVerts {
-			c.core.vec3(v)
-		}
-	}
-	if hasAnimMesh && animMeshNTVertSets > 0 {
-		var srcTVerts []Vec3
-		if an.AnimMesh != nil {
-			srcTVerts = an.AnimMesh.AnimTVerts
-		} else if geomNode != nil && geomNode.AnimMesh != nil {
-			srcTVerts = geomNode.AnimMesh.AnimTVerts
-		}
-		animTVertsOff := int32(c.core.len())
-		c.core.patchU32(animMeshTVertPtrPos, uint32(animTVertsOff))
-		for _, v := range srcTVerts {
-			c.core.f32le(v.X)
-			c.core.f32le(v.Y)
+		if am := animMeshSource(geomNode, an); am != nil {
+			c.writeAnimMeshData(mesh, am, expanded, animMeshVertPtrPos, animMeshTVertPtrPos, animMeshNVertSets, animMeshNTVertSets)
 		}
 	}
 
@@ -732,7 +708,9 @@ func (c *compiler) writeMeshHeaderForAnimNode(geomNode *Node, an *AnimNode) (int
 			c.writeEmptyMeshHeader()
 			return 0, -1, 0, -1
 		}
+		c.mergeAnim = animMeshSource(geomNode, an)
 		fp, mv, nv, mt := c.writeMeshHeaderInner(mesh, geomNode)
+		c.mergeAnim = nil
 		return fp, mv, int32(nv), mt
 	}
 
@@ -829,29 +807,39 @@ func (c *compiler) writeEmptyMeshHeader() {
 	}
 }
 
+// animMeshSource is the animation sets an animmesh node is written with: the
+// animation node's own, else the geometry node's.
+func animMeshSource(geomNode *Node, an *AnimNode) *AnimMeshData {
+	if an != nil && an.AnimMesh != nil {
+		return an.AnimMesh
+	}
+	if geomNode != nil {
+		return geomNode.AnimMesh
+	}
+	return nil
+}
+
 // writeAnimMeshHeader writes a 56-byte header_anim sub-header.
 // Returns placeholders to patch pAnimVerts and pAnimTVerts after writing data.
-func (c *compiler) writeAnimMeshHeader(geomNode *Node, an *AnimNode) (pAnimVertPos, pAnimTVertPos int, nVertexSets, nTVertSets int) {
+// The set counts are those of the mesh the node is written with (the
+// animation node's own, else the geometry node's): animverts over its verts,
+// animtverts over its tverts (animSets). Without exp, the expansion the sets
+// are written over, they are 0.
+func (c *compiler) writeAnimMeshHeader(geomNode *Node, an *AnimNode, exp *expandedMesh) (pAnimVertPos, pAnimTVertPos int, nVertexSets, nTVertSets int) {
 	var sp float32
-	var animVerts []Vec3
-	var animTVerts []Vec3
-	if an != nil && an.AnimMesh != nil {
-		sp = an.AnimMesh.SamplePeriod
-		animVerts = an.AnimMesh.AnimVerts
-		animTVerts = an.AnimMesh.AnimTVerts
-	} else if geomNode != nil && geomNode.AnimMesh != nil {
-		sp = geomNode.AnimMesh.SamplePeriod
-		animVerts = geomNode.AnimMesh.AnimVerts
-		animTVerts = geomNode.AnimMesh.AnimTVerts
+	am := animMeshSource(geomNode, an)
+	if am != nil {
+		sp = am.SamplePeriod
 	}
-
-	nVerts := 0
-	if geomNode != nil && geomNode.Mesh != nil {
-		nVerts = len(geomNode.Mesh.Verts)
+	var mesh *MeshData
+	if an != nil && an.Mesh != nil {
+		mesh = an.Mesh
+	} else if geomNode != nil {
+		mesh = geomNode.Mesh
 	}
-	if nVerts > 0 {
-		nVertexSets = len(animVerts) / nVerts
-		nTVertSets = len(animTVerts) / nVerts
+	if am != nil && mesh != nil && exp != nil {
+		nVertexSets = animSets(am.AnimVerts, len(mesh.Verts))
+		nTVertSets = animSets(am.AnimTVerts, len(mesh.TVerts))
 	}
 
 	c.core.f32le(sp)
@@ -864,4 +852,22 @@ func (c *compiler) writeAnimMeshHeader(geomNode *Node, an *AnimNode) (pAnimVertP
 	c.core.i32le(int32(nTVertSets))
 
 	return
+}
+
+// writeAnimMeshData writes an animmesh's sets, vertex-major over the GPU
+// vertices of exp (animVertexMajor), and patches the header's pointers.
+func (c *compiler) writeAnimMeshData(mesh *MeshData, am *AnimMeshData, exp *expandedMesh, vertsPtrPos, tvertsPtrPos, nVertexSets, nTVertSets int) {
+	if nVertexSets > 0 {
+		c.core.patchU32(vertsPtrPos, uint32(c.core.len()))
+		for _, v := range animVertexMajor(am.AnimVerts, len(mesh.Verts), exp.origVert) {
+			c.core.vec3(v)
+		}
+	}
+	if nTVertSets > 0 {
+		c.core.patchU32(tvertsPtrPos, uint32(c.core.len()))
+		for _, v := range animVertexMajor(am.AnimTVerts, len(mesh.TVerts), exp.origTVert) {
+			c.core.f32le(v.X)
+			c.core.f32le(v.Y)
+		}
+	}
 }

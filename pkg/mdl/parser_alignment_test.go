@@ -73,7 +73,7 @@ func TestListKeepsEntryWithTypoNumber(t *testing.T) {
 	if mesh.TVerts[3].X != 0.9 || mesh.TVerts[2].X != 0.5 {
 		t.Errorf("later tverts slid out of place: %+v", mesh.TVerts)
 	}
-	if !hasError(errs, `"0/934729" is not a usable number`) {
+	if !hasError(errs, `"0/934729" is read as 0, as the game reads it`) {
 		t.Errorf("no warning naming the token: %+v", errs)
 	}
 	for _, e := range errs {

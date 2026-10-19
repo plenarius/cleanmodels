@@ -196,7 +196,7 @@ class Node:
         self.parent = parent
         self.part_number = 0
         self.position = VEC3_ZERO
-        self.orientation = (0.0, 0.0, 0.0, 1.0)
+        self.orientation = (0.0, 0.0, 0.0, 0.0)
         self.scale = 1.0
         self.inherit_color = 0
         self.wire_color = VEC3_ZERO

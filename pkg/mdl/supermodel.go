@@ -30,17 +30,50 @@ type CompileOptions struct {
 
 // superNode is one supermodel node as the engine numbered it.
 type superNode struct {
-	number int32 // -1 when the engine left the node unnumbered
-	parent string
+	name     string // lower case
+	number   int32  // -1 when the engine left the node unnumbered
+	children []*superNode
+}
+
+// child returns n's first child named name (any letter case), or nil.
+func (n *superNode) child(name string) *superNode {
+	for _, k := range n.children {
+		if k.name == strings.ToLower(name) {
+			return k
+		}
+	}
+	return nil
 }
 
 // supermodelInfo is what numbering a model against its supermodel needs: the
-// supermodel's node numbers and its count_nodes.
+// supermodel's tree with its node numbers, and its count_nodes.
 type supermodelInfo struct {
 	path  string
-	nodes map[string]superNode // keyed by lower-case node name
-	root  string               // lower-case name of the supermodel's root node
+	root  *superNode
 	count int32
+}
+
+// superTree builds the supermodel's tree from its root, children in file
+// order, numbering each node with number.
+func superTree(model *Model, number func(*Node) int32) *superNode {
+	root := model.RootNode()
+	if root == nil {
+		return nil
+	}
+	_, children := resolveGeomTree(model.Nodes)
+	visited := make(map[*Node]bool)
+	var build func(n *Node) *superNode
+	build = func(n *Node) *superNode {
+		visited[n] = true
+		sn := &superNode{name: strings.ToLower(n.Name), number: number(n)}
+		for _, k := range children[n] {
+			if !visited[k] {
+				sn.children = append(sn.children, build(k))
+			}
+		}
+		return sn
+	}
+	return build(root)
 }
 
 // loadSupermodel reads a supermodel and returns its node numbering.
@@ -77,7 +110,7 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 	if err != nil {
 		return nil, err
 	}
-	info := &supermodelInfo{path: path, nodes: make(map[string]superNode)}
+	info := &supermodelInfo{path: path}
 
 	if len(data) >= 12 && binary.LittleEndian.Uint32(data[0:4]) == 0 {
 		model, err := Decompile(bytes.NewReader(data), int64(len(data)))
@@ -89,12 +122,7 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 			return nil, fmt.Errorf("%s: truncated binary header", path)
 		}
 		info.count = int32(binary.LittleEndian.Uint32(data[countNodesOffset:]))
-		for _, n := range model.Nodes {
-			info.nodes[strings.ToLower(n.Name)] = superNode{number: n.PartNumber, parent: strings.ToLower(n.Parent)}
-		}
-		if root := model.RootNode(); root != nil {
-			info.root = strings.ToLower(root.Name)
-		}
+		info.root = superTree(model, func(n *Node) int32 { return n.PartNumber })
 		return info, nil
 	}
 
@@ -116,15 +144,7 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 	if len(c.nodeIDs) == 0 {
 		c.assignNodeIDs(root)
 	}
-	// In file order, as for a binary supermodel above: with a node name used
-	// twice the later node's number wins, the same on every run (ranging over
-	// the nodeIDs map picked one at random).
-	for _, n := range model.Nodes {
-		if id, ok := c.nodeIDs[n]; ok {
-			info.nodes[strings.ToLower(n.Name)] = superNode{number: id, parent: strings.ToLower(n.Parent)}
-		}
-	}
-	info.root = strings.ToLower(root.Name)
+	info.root = superTree(model, func(n *Node) int32 { return c.nodeIDs[n] })
 	info.count = int32(len(c.nodeIDs))
 	if c.nodeCountOverride > 0 {
 		info.count = c.nodeCountOverride
@@ -134,66 +154,48 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 
 // assignNodeIDsFromSupermodel numbers the geometry tree the way the in-game
 // compiler does for a model that has a supermodel. Derived from the engine's own
-// compiles of the oracle models (c_marilith2 against c_marilithe) and of the
-// taur_pheno centaurs (pmh9 against taur_ba), where it reproduced every node
-// number:
+// compiles of the oracle models (c_marilith2 against c_marilithe), of the
+// taur_pheno centaurs (pmh9 against taur_ba) and of probes (nwn-mdl-spec zspec_kid,
+// zspec_kid2, zspec_kid3; zcm_kidx in tests/fixtures/engine):
 //
-//   - A node that is also in the supermodel — same name, same parent, with the
-//     two roots counting as equal parents — takes the supermodel's number, so
-//     the supermodel's animations address the right node.
-//   - Any other node whose parent is such a node, or the root, gets -1.
-//   - Any other node gets base + its position in tree order (root at 0), where
-//     base is the supermodel's count_nodes + 1.
+//   - The roots match. A node matches the supermodel node at the same path:
+//     the child, of the same name in any letter case, of the supermodel node
+//     its parent matched. A name the supermodel uses twice is told apart by
+//     its path. A matched node takes the supermodel's number, so the
+//     supermodel's animations address the right node.
+//   - Any other node whose parent matched gets -1.
+//   - Any other node gets base + its declaration index, where base is the
+//     supermodel's count_nodes + 1.
 //
-// The header's count_nodes becomes base + the model's node count.
+// The header's count_nodes becomes base + the number of nodes in the tree.
 func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 	base := sm.count + 1
-	rootName := strings.ToLower(root.Name)
-
-	type item struct{ n, parent *Node }
-	visited := make(map[*Node]bool, len(c.model.Nodes))
-	matched := make(map[*Node]bool, len(c.model.Nodes))
-	stack := []item{{root, nil}}
-	var index int32
-	for len(stack) > 0 {
-		it := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		n := it.n
-		if n == nil || visited[n] {
-			continue
-		}
-		visited[n] = true
-
-		switch {
-		case n == root:
+	decl := c.declarationIndex()
+	match := make(map[*Node]*superNode, len(c.model.Nodes))
+	var count int32
+	c.walkTree(root, func(n, parent *Node, index int32) {
+		if n == root {
 			c.nodeIDs[n] = 0
-			matched[n] = true
-		default:
-			name := strings.ToLower(n.Name)
-			parent := strings.ToLower(n.Parent)
-			sn, ok := sm.nodes[name]
-			sameParent := parent == sn.parent || (parent == rootName && sn.parent == sm.root)
+			match[n] = sm.root
+		} else {
+			var sn *superNode
+			if p := match[parent]; p != nil {
+				sn = p.child(n.Name)
+			}
 			switch {
-			case ok && sn.number >= 0 && sameParent:
+			case sn != nil && sn.number >= 0:
 				c.nodeIDs[n] = sn.number
-				matched[n] = true
-			case it.parent != nil && matched[it.parent]:
+				match[n] = sn
+			case match[parent] != nil:
 				c.nodeIDs[n] = -1
 			default:
-				c.nodeIDs[n] = base + index
+				c.nodeIDs[n] = base + decl[n]
 			}
 		}
 		c.treeIndex[n] = index
-		index++
-
-		children := c.childrenOf(n)
-		for i := len(children) - 1; i >= 0; i-- {
-			if !visited[children[i]] {
-				stack = append(stack, item{children[i], n})
-			}
-		}
-	}
-	c.nodeCountOverride = base + index
+		count = index + 1
+	})
+	c.nodeCountOverride = base + count
 }
 
 // findSupermodelFor returns model's supermodel in dirs, or nil

@@ -1,7 +1,7 @@
 // Command parsefmt is the Go side of python/parity_parse.py.
 //
 //	parsefmt files   paths on stdin: ParseFile then Write, as `cleanmodels decompile` does
-//	parsefmt numbers hex-encoded tokens on stdin: mdl.ParseNumber and ParseInteger (the parser's)
+//	parsefmt numbers hex-encoded tokens on stdin: mdl.ScanNumber and ScanInteger (the parser's)
 //	parsefmt fold    pairs of hex-encoded strings on stdin: strings.EqualFold
 //	parsefmt strings hex-encoded lines on stdin: the strings/strconv calls the parser uses
 //	parsefmt runes   unicode.ToLower/ToUpper of every rune they change
@@ -35,8 +35,8 @@ func main() {
 	case "numbers":
 		for in.Scan() {
 			s := unhex(in.Text())
-			f, ferr := mdl.ParseNumber(s)
-			i, ierr := mdl.ParseInteger(s)
+			f, fn, ferr := mdl.ScanNumber(s)
+			i, in, ierr := mdl.ScanInteger(s)
 			fs, is := "ERR", "ERR"
 			if ferr == nil {
 				fs = strconv.FormatUint(uint64(math.Float32bits(f)), 10)
@@ -44,7 +44,7 @@ func main() {
 			if ierr == nil {
 				is = strconv.FormatInt(int64(i), 10)
 			}
-			fmt.Fprintln(out, fs, is)
+			fmt.Fprintln(out, fs, fn, is, in)
 		}
 	case "fold":
 		for in.Scan() {

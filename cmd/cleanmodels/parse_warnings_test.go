@@ -48,7 +48,7 @@ donemodel pw
 	if len(parseErrs) != 1 || len(res.ParseWarnings) != 1 {
 		t.Fatalf("parse errors = %v, result warnings = %v", parseErrs, res.ParseWarnings)
 	}
-	if !strings.Contains(res.ParseWarnings[0], `"0/934729" is not a usable number`) || !strings.HasPrefix(res.ParseWarnings[0], "line ") {
+	if !strings.Contains(res.ParseWarnings[0], `"0/934729" is read as 0, as the game reads it`) || !strings.HasPrefix(res.ParseWarnings[0], "line ") {
 		t.Errorf("warning = %q", res.ParseWarnings[0])
 	}
 	data, err := json.Marshal(res)

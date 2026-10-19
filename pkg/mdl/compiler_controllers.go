@@ -192,6 +192,16 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 		for _, name := range colorNames {
 			addEmitterColorCtrl(name, *emitterColorFields[name](em))
 		}
+		// A static detonate (a bare "detonate" line) is one key at time 0
+		// with no value. The game's compiler writes column byte 0xff for it:
+		// the number of floats AddGenericControllerSingle read, sscanf's -1
+		// for none (engine golden zcm_deton in tests/fixtures/engine; stock
+		// vwp_flash_blured's geometry emitter carries one).
+		if n.isDeclared("detonate") && len(dataArr)+1 < 65535 {
+			t := uint16(len(dataArr))
+			dataArr = append(dataArr, 0)
+			keys = append(keys, binCtrlKey{Type: 228, ValueCount: 1, TimeStart: t, DataStart: t + 1, ColumnCount: 0xff})
+		}
 	}
 
 	return

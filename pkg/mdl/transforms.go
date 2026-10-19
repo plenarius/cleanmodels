@@ -8,8 +8,8 @@ import (
 // formula. Mirrors fix_pivots.pl f_rotate_vector/3 (line 415).
 //
 // The axis (X, Y, Z) does not need to be unit-length; it is normalised
-// internally. When the angle is zero or the axis degenerates to (0, 0, 0),
-// the input vector is returned unchanged.
+// internally. When the angle is zero the input vector is returned unchanged;
+// a zero axis is +X, as the game's compiler reads it (axisAngleToQuat).
 func RotateVectorAxisAngle(v Vec3, axis Vec4) Vec3 {
 	angle := float64(axis.W)
 	if angle == 0 {
@@ -18,7 +18,7 @@ func RotateVectorAxisAngle(v Vec3, axis Vec4) Vec3 {
 	ax, ay, az := float64(axis.X), float64(axis.Y), float64(axis.Z)
 	r := math.Sqrt(float64(ax*ax) + float64(ay*ay) + float64(az*az))
 	if r == 0 {
-		return v
+		ax, r = 1, 1
 	}
 	x, y, z := ax/r, ay/r, az/r
 	c := math.Cos(angle)

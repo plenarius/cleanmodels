@@ -44,13 +44,14 @@ func (n *Node) declaredName(keyword string) (string, bool) {
 	switch {
 	case keyword == "scale":
 		return keyword, true
-	case keyword == "setfillumcolor" && n.Mesh != nil:
-		return "selfillumcolor", true
 	case (keyword == "alpha" || keyword == "selfillumcolor") && n.Mesh != nil:
 		return keyword, true
 	case n.Light != nil && lightDeclaredNames[keyword]:
 		return keyword, true
 	case n.Emitter != nil && emitterDeclaredNames[keyword]:
+		return keyword, true
+	case n.Emitter != nil && keyword == "detonate":
+		// A static detonate: one key at time 0, times only (emitterDetonateID).
 		return keyword, true
 	}
 	return "", false

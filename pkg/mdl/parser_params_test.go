@@ -7,7 +7,8 @@ import (
 )
 
 // A one-value parameter with a missing or unusable value keeps its default,
-// as before, but is now reported with the line number instead of silently.
+// as before, but is now reported with the line number instead of silently. A
+// value with more after its number is read as the game reads it, reported.
 func TestScalarParamsReportBadValues(t *testing.T) {
 	src := `newmodel params
 setsupermodel params NULL
@@ -30,7 +31,7 @@ donemodel params
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`"1.0x" is not a usable number for "setanimationscale"`,
+		`"1.0x" for "setanimationscale" is read as 1, as the game reads it`,
 		`"abc" is not a usable number for "shininess"`,
 		`"shadow" has no value`,
 		`"2x" is not a usable count for "verts"`,
@@ -119,7 +120,9 @@ func TestAnimMeshClipParamsReportBadNumbers(t *testing.T) {
 }
 
 // Vector parameters (position, diffuse, ...) used to be skipped silently when the
-// line was short or held an unusable number, leaving the default in place.
+// line was short or held an unusable number, leaving the default in place. They
+// are read as the game reads them: in order up to the first bad value, the
+// rest keeping their values, and reported.
 func TestVectorParamsReportShortAndBadLines(t *testing.T) {
 	src := `newmodel vec
 setsupermodel vec NULL
@@ -143,8 +146,8 @@ donemodel vec
 	}
 	for _, want := range []string{
 		`"position" has 2 value(s), expected 3`,
-		`"orientation" has an unusable number (0 0 1 q)`,
-		`"diffuse" has an unusable number (0.5 0.5 zz)`,
+		`"orientation" has an unusable number ("q")`,
+		`"diffuse" has an unusable number ("zz")`,
 		`"wirecolor" has 1 value(s), expected 3`,
 	} {
 		if !hasError(pr.Errors, want) {
@@ -187,23 +190,24 @@ func TestWriterHeaderNamesTheTool(t *testing.T) {
 
 // Number tokens past maxNumberLen are refused, not misread: Go's ParseFloat
 // reads "1" + 900 zeros + "e-900" (which is 1) as 0. Integers int32 can't hold
-// are refused too rather than converted, which is platform dependent.
+// are refused too rather than converted, which is platform dependent. An
+// integer is the leading digits, as sscanf "%d" reads it.
 func TestNumbersRefusedNotMisread(t *testing.T) {
 	long := "1" + strings.Repeat("0", 900) + "e-900"
-	if _, err := ParseNumber(long); err == nil {
-		t.Errorf("ParseNumber accepted a %d-character token", len(long))
+	if _, _, err := ScanNumber(long); err == nil {
+		t.Errorf("ScanNumber accepted a %d-character token", len(long))
 	}
-	if v, err := ParseNumber("1" + strings.Repeat("0", 390) + "e-390"); err != nil || v != 1 {
-		t.Errorf("ParseNumber of a 395-character 1 = %v, %v; want 1", v, err)
+	if v, _, err := ScanNumber("1" + strings.Repeat("0", 390) + "e-390"); err != nil || v != 1 {
+		t.Errorf("ScanNumber of a 395-character 1 = %v, %v; want 1", v, err)
 	}
-	for _, s := range []string{"4294967296", "-2147483648.6", "1e10", "inf", "nan", long} {
-		if v, err := ParseInteger(s); err == nil {
-			t.Errorf("ParseInteger(%.20q) = %d, want an error", s, v)
+	for _, s := range []string{"4294967296", "-2147483649", "inf", "nan", "x1", long} {
+		if v, _, err := ScanInteger(s); err == nil {
+			t.Errorf("ScanInteger(%.20q) = %d, want an error", s, v)
 		}
 	}
-	for s, want := range map[string]int32{"2147483647": 2147483647, "-2147483648.4": -2147483648, "1.5": 2, "-2.5": -3} {
-		if v, err := ParseInteger(s); err != nil || v != want {
-			t.Errorf("ParseInteger(%q) = %d, %v; want %d", s, v, err, want)
+	for s, want := range map[string]int32{"2147483647": 2147483647, "-2147483648.4": -2147483648, "1.5": 1, "-2.5": -2, "1e10": 1, "+7x": 7} {
+		if v, _, err := ScanInteger(s); err != nil || v != want {
+			t.Errorf("ScanInteger(%q) = %d, %v; want %d", s, v, err, want)
 		}
 	}
 	src := "newmodel n\nsetsupermodel n NULL\nbeginmodelgeom n\n  node trimesh m\n    parent NULL\n    shininess " + long +

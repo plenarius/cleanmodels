@@ -132,6 +132,10 @@ class ControllersMixin:
                 tid = _EMITTER_ID.get(name, 0)
                 if tid:
                     add(tid, 3, list(v[:3]))
+            if "detonate" in declared and len(data) + 1 < 65535:
+                t = len(data)
+                data.append(0.0)
+                keys.append((228, 1, t, t + 1, 0xFF))  # sscanf's -1: no float read
         return keys, data
 
     def encode_anim_node_controllers(self, an, node_flag):

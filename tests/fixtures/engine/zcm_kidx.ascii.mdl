@@ -1,0 +1,40 @@
+# cleanmodels engine probe zcm_kidx (CC0-1.0)
+newmodel zcm_kidx
+setsupermodel zcm_kidx zcm_super
+classification character
+beginmodelgeom zcm_kidx
+node dummy zcm_kidx
+  parent NULL
+endnode
+node dummy hips
+  parent zcm_kidx
+endnode
+node dummy extra
+  parent hips
+endnode
+node dummy hand
+  parent hips
+endnode
+node dummy deep_a
+  parent extra
+endnode
+node dummy deep_b
+  parent extra
+endnode
+node dummy arm
+  parent hips
+endnode
+node dummy deeper
+  parent deep_a
+endnode
+node dummy hand
+  parent arm
+endnode
+node dummy lone
+  parent zcm_kidx
+endnode
+node dummy lone_c
+  parent lone
+endnode
+endmodelgeom zcm_kidx
+donemodel zcm_kidx

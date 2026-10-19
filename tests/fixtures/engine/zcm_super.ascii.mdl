@@ -1,0 +1,25 @@
+# cleanmodels engine probe zcm_super (CC0-1.0)
+newmodel zcm_super
+setsupermodel zcm_super NULL
+classification character
+beginmodelgeom zcm_super
+node dummy zcm_super
+  parent NULL
+endnode
+node dummy hips
+  parent zcm_super
+endnode
+node dummy hand
+  parent hips
+endnode
+node dummy arm
+  parent hips
+endnode
+node dummy hand
+  parent arm
+endnode
+node dummy foot
+  parent hips
+endnode
+endmodelgeom zcm_super
+donemodel zcm_super
