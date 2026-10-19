@@ -81,26 +81,39 @@ def python_compile(path):
     return None, warns, hashlib.sha256(out).hexdigest(), time.time() - t
 
 
-_CLI = None
+CLI_BATCH = 2000  # files per `cleanmodels compile` call
 
 
-def _init(cli):
-    global _CLI
-    _CLI = cli
-
-
-def cli_compile(cli, path):
-    """sha256 of `cleanmodels compile path out`, or None when it refuses."""
+def cli_compile(cli, paths):
+    """{path: sha256 of what `cleanmodels compile` writes for it, or None when it
+    refuses}. One call compiles a directory's files in batches into an output
+    directory, in parallel (--workers), rather than one process per file: that
+    took two thirds of a corpus run."""
+    by_dir = {}
+    for p in paths:
+        by_dir.setdefault(os.path.dirname(p), []).append(p)
+    out = {}
     d = tempfile.mkdtemp(prefix="cmparity_cli")
     try:
-        out = os.path.join(d, "out.mdl")
-        r = subprocess.run([cli, "compile", "-q", path, out], capture_output=True)
-        if r.returncode != 0 or not os.path.exists(out):
-            return None
-        with open(out, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest()
+        n = 0
+        for files in by_dir.values():
+            for i in range(0, len(files), CLI_BATCH):
+                chunk = files[i:i + CLI_BATCH]
+                o = os.path.join(d, str(n))
+                n += 1
+                os.makedirs(o)
+                subprocess.run([cli, "compile", "-q", "--workers", str(os.cpu_count() or 4)] + chunk + [o],
+                               capture_output=True)
+                for p in chunk:
+                    q = os.path.join(o, os.path.basename(p))
+                    if os.path.exists(q):
+                        with open(q, "rb") as f:
+                            out[p] = hashlib.sha256(f.read()).hexdigest()
+                    else:
+                        out[p] = None
     finally:
         shutil.rmtree(d, ignore_errors=True)
+    return out
 
 
 def _py_job(path):
@@ -108,7 +121,7 @@ def _py_job(path):
         res = python_compile(path)
     except Exception as e:  # noqa: BLE001 - a crash is a failure, reported
         res = ("python crash: %s: %s" % (type(e).__name__, e), [], "crash", 0.0)
-    return path, res, (cli_compile(_CLI, path) if _CLI else False)
+    return path, res
 
 
 def models(root):
@@ -157,17 +170,21 @@ def mutate(data, rng):
     return b"\n".join(lines), kind
 
 
-def compare(go_exe, paths, label, pool, timing=None):
+def compare(go_exe, paths, label, pool, timing=None, cli_exe=None):
     t0 = time.time()
     g = {}
     for i in range(0, len(paths), 2000):
         g.update(go_compile(go_exe, paths[i:i + 2000]))
     tg = time.time() - t0
     t0 = time.time()
+    clis = cli_compile(cli_exe, paths) if cli_exe else {}
+    tc = time.time() - t0
+    t0 = time.time()
     res = pool.imap_unordered(_py_job, paths, chunksize=4)
     same = both = 0
     bad = []
-    for path, p, cli in res:
+    for path, p in res:
+        cli = clis.get(path) if cli_exe else False
         if timing is not None:
             timing.append((p[3], path))
         ge, gw, gs = g.get(path, ("missing from Go output", [], None))
@@ -184,8 +201,8 @@ def compare(go_exe, paths, label, pool, timing=None):
             why = ("python: %s" % pe if pe else "go: %s" % ge if ge else
                    "bytes" if gs != ps else "warnings: go %r, python %r" % (gw, pw))
             bad.append((path, why))
-    print("%s: %d identical, %d refused by both, %d different (go %.0fs, python %.0fs)"
-          % (label, same, both, len(bad), tg, time.time() - t0))
+    print("%s: %d identical, %d refused by both, %d different (go %.0fs,%s python %.0fs)"
+          % (label, same, both, len(bad), tg, " cli %.0fs," % tc if cli_exe else "", time.time() - t0))
     for path, why in sorted(bad)[:20]:
         print("  %s: %s" % (path, why[:300]))
     return not bad
@@ -205,9 +222,9 @@ def main():
     timing = []
     try:
         go = a.go or go_build(tmp)
-        with mp.Pool(max(1, a.jobs), _init, (a.cli,)) as pool:
+        with mp.Pool(max(1, a.jobs)) as pool:
             fixtures = models(os.path.join(REPO, "tests", "fixtures"))
-            ok &= compare(go, fixtures, "fixtures", pool, timing)
+            ok &= compare(go, fixtures, "fixtures", pool, timing, cli_exe=a.cli)
             mdir = os.path.join(tmp, "mut")
             muts = []
             for p in fixtures:
@@ -222,9 +239,9 @@ def main():
                         f.write(mutate(data, rng)[0])
                     muts.append(q)
             if muts:
-                ok &= compare(go, sorted(muts), "mutations", pool)
+                ok &= compare(go, sorted(muts), "mutations", pool, cli_exe=a.cli)
             for c in a.corpus:
-                ok &= compare(go, models(c), "corpus %s" % c, pool, timing)
+                ok &= compare(go, models(c), "corpus %s" % c, pool, timing, cli_exe=a.cli)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     if a.slowest:
