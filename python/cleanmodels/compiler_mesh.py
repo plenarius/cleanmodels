@@ -11,7 +11,7 @@ import math
 import struct
 
 from .compiler_normals import face_cross, generate_normals
-from .compiler_tangents import resolve_tangents
+from .compiler_tangents import render_hint_value, resolve_tangents
 from .f32 import f32, f32_bits
 from .gomath import go_lower
 from .materials import is_normal_mapped
@@ -359,7 +359,7 @@ class MeshMixin:
         core.i32(mesh.beaming)
         core.i32(mesh.render)
         core.i32(mesh.transparency_hint)
-        core.u32(2 if mesh.render_hint == "NormalAndSpecMapped" else 0)
+        core.u32(render_hint_value(mesh.render_hint))
         core.fixed_str(mesh.bitmap, 64)
         core.fixed_str(mesh.texture1, 64)
         core.fixed_str(mesh.texture2, 64)

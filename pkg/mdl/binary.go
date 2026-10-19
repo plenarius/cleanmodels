@@ -791,13 +791,17 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	mesh.Render = d.readU32AsI32()
 	mesh.TransparencyHint = d.readU32AsI32()
 
-	// uint32 unknown1 -- EE repurposed as RenderHint
+	// uint32 unknown1 -- EE repurposed as RenderHint, the value the engine's
+	// SharedMaterial::ExtractRenderHint gives: 0 no hint, 1 None,
+	// 2 NormalAndSpecMapped, 3 NormalTangents.
 	renderHintVal, _ := d.readU32()
 	switch renderHintVal {
-	case 2:
-		mesh.RenderHint = "NormalAndSpecMapped"
 	case 0:
 		// none
+	case 2:
+		mesh.RenderHint = "NormalAndSpecMapped"
+	case 3:
+		mesh.RenderHint = "NormalTangents"
 	default:
 		mesh.RenderHint = "None"
 	}
@@ -1266,7 +1270,8 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr i
 	if d.seek(tangentAbs) != nil {
 		return
 	}
-	mesh.Tangents = make([]Vec4, count)
+	tangents := make([]Vec4, count)
+	unit := true
 	for i := 0; i < count; i++ {
 		t := d.readVec3()
 		// Default to +1 when the model carries no handedness stream, which
@@ -1275,8 +1280,26 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr i
 		if i < len(handedness) && handedness[i] < 0 {
 			w = -1.0
 		}
-		mesh.Tangents[i] = Vec4{X: t.X, Y: t.Y, Z: t.Z, W: w}
+		tangents[i] = Vec4{X: t.X, Y: t.Y, Z: t.Z, W: w}
+		unit = unit && isUnitTangent(t)
 	}
+	// 1.69 models use the same pointer for water's bump-map animation stream,
+	// which is not tangents (stock tcn01_a15_01: 3.080194e-36 ...). With a
+	// normal-mapped render hint the stream is tangents; without one it is kept
+	// only if every vector is unit length, as the tangents the engine's compiler
+	// writes for meshes whose hint comes from their material are.
+	if !hintWantsTangents(mesh.RenderHint) && !unit {
+		return
+	}
+	mesh.Tangents = tangents
+}
+
+// isUnitTangent reports whether t has length 1 (squared length within 0.02),
+// in float64 with every product rounded, so no platform fuses them.
+func isUnitTangent(t Vec3) bool {
+	x, y, z := float64(t.X), float64(t.Y), float64(t.Z)
+	l2 := float64(x*x) + float64(y*y) + float64(z*z)
+	return l2 > 0.98 && l2 < 1.02
 }
 
 func (d *decompiler) readFloatArrayAt(out *[]float32, a binArrayDef) {
@@ -1504,10 +1527,12 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		key     binControllerKey
 		bezier  bool
 	}
-	for _, k := range keys {
-		if nodeFlag == 5 {
-			d.detectCompiler(k.Type)
+	if nodeFlag == 5 {
+		for _, k := range keys {
+			d.detectCompiler(k)
 		}
+	}
+	for _, k := range keys {
 		def, ok := ControllerID(k.Type, nodeFlag, d.compiler)
 		if !ok {
 			d.warn(WarnUnknownController, int64(k.Type), nodeName,
@@ -1574,15 +1599,23 @@ func (d *decompiler) readControllers(node *Node, contentBits uint32, keysDef, da
 	}
 }
 
-func (d *decompiler) detectCompiler(typeID uint32) {
+// detectCompiler is called for every key of an emitter before any is
+// resolved, so a key nwnmdlcomp numbers differently (464 alphamid, 468
+// colormid) is read right even when it comes before the key that tells.
+// 468 with three columns is nwnmdlcomp's colormid (BioWare's 468 is sizemid).
+func (d *decompiler) detectCompiler(k binControllerKey) {
 	if d.compiler != CompilerUnknown {
 		return
 	}
-	switch typeID {
+	switch k.Type {
 	case 448, 452:
 		d.compiler = CompilerBioWare
 	case 480, 481, 482, 484, 488:
 		d.compiler = CompilerNwnmdlcomp
+	case 468:
+		if k.ColumnCount&0x0F == 3 {
+			d.compiler = CompilerNwnmdlcomp
+		}
 	}
 }
 

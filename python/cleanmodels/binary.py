@@ -15,6 +15,7 @@ import struct
 
 from . import controllers
 from .controllers import controller_id
+from .compiler_tangents import hint_wants_tangents
 from .f32 import f32
 from .types import (
     AabbData, AabbEntry, AnimMeshData, AnimNode, Animation, DanglyData, DecompileWarning,
@@ -491,9 +492,11 @@ class _Decompiler:
         mesh.beaming = _as_i32(self.read_u32())
         mesh.render = _as_i32(self.read_u32())
         mesh.transparency_hint = _as_i32(self.read_u32())
-        render_hint = self.read_u32()
+        render_hint = self.read_u32()  # SharedMaterial::ExtractRenderHint's value
         if render_hint == 2:
             mesh.render_hint = "NormalAndSpecMapped"
+        elif render_hint == 3:
+            mesh.render_hint = "NormalTangents"
         elif render_hint != 0:
             mesh.render_hint = "None"
         bitmap = self.read_fixed_string(64)[0]
@@ -720,10 +723,16 @@ class _Decompiler:
         if not self.seek(tangent_abs):
             return
         out = []
+        unit = True
         for i in range(count):
             t = self.read_vec3()
             w = -1.0 if i < len(handedness) and handedness[i] < 0 else 1.0
             out.append((t[0], t[1], t[2], w))
+            unit = unit and _is_unit_tangent(t)
+        # 1.69 water's bump-map stream shares the pointer; without a normal-mapped
+        # hint it is kept only if every vector is unit length (binary.go).
+        if not hint_wants_tangents(mesh.render_hint) and not unit:
+            return
         mesh.tangents = out
 
     def read_float_array_at(self, a, current):
@@ -862,10 +871,11 @@ class _Decompiler:
 
     def resolve_controller_defs(self, keys, node_flag, node_name):
         out = []
+        if node_flag == 5:
+            for k in keys:
+                self.detect_compiler(k[0], k[4])
         for k in keys:
             type_id, column_count = k[0], k[4]
-            if node_flag == 5:
-                self.detect_compiler(type_id)
             d = controller_id(type_id, node_flag, self.compiler)
             if d is None:
                 self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
@@ -904,12 +914,15 @@ class _Decompiler:
                 self.warn(WARN_GENERAL, 0, node.name, "controller %s has %d keyframes on geometry node; using "
                           "first value only" % (name, len(rows)))
 
-    def detect_compiler(self, type_id):
+    def detect_compiler(self, type_id, column_count):
+        """Run on every key of an emitter before any is resolved (binary.go)."""
         if self.compiler != controllers.COMPILER_UNKNOWN:
             return
         if type_id in (448, 452):
             self.compiler = controllers.COMPILER_BIOWARE
         elif type_id in (480, 481, 482, 484, 488):
+            self.compiler = controllers.COMPILER_NWNMDLCOMP
+        elif type_id == 468 and column_count & 0x0F == 3:
             self.compiler = controllers.COMPILER_NWNMDLCOMP
 
     # --- animations ---
@@ -1138,3 +1151,9 @@ def add_anim_key(an, name, t, vals):
     elif name == "orientation":
         if len(vals) >= 4:
             an.orientation_keys.append((t, (vals[0], vals[1], vals[2], vals[3])))
+
+
+def _is_unit_tangent(t):
+    """binary.go isUnitTangent: squared length within 0.02 of 1, in float64."""
+    l2 = t[0] * t[0] + t[1] * t[1] + t[2] * t[2]
+    return 0.98 < l2 < 1.02
