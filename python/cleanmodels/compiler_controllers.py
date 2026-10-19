@@ -11,6 +11,7 @@ from .compiler_mesh import CompileError
 from .compiler_tree import is_root_parent
 from .controllers import BIOWARE_EMITTER, NODE
 from .types import EMITTER_COLOR_FIELDS, EMITTER_FLOAT_FIELDS
+from .gomath import go_quote
 from .vec import axis_angle_to_quat
 
 _KEY = struct.Struct("<I3HBB")
@@ -36,6 +37,11 @@ _ANIM_EMITTER = (
     ("f", 472, "sizemid_y"), ("f", 180, "sizeend_y"), ("f", 184, "spread"), ("f", 188, "threshold"),
     ("f", 192, "velocity"), ("f", 196, "xsize"), ("f", 200, "ysize"),
 )
+
+def _lightning_subdiv_warning(kind, node):
+    """compiler_controllers.go lightningSubDivWarning: the game compiles no lightningsubdiv."""
+    return "%s %s: lightningsubdiv is not compiled; the game reads no such keyword" % (kind, go_quote(node))
+
 
 _ZERO6 = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
@@ -111,6 +117,10 @@ class ControllersMixin:
             for name in _EMITTER_FLOATS_SORTED:
                 v = em.floats[name]
                 if v == 0 and name not in declared:
+                    continue
+                if name == "lightningsubdiv":
+                    if self.warn is not None:
+                        self.warn(_lightning_subdiv_warning("emitter", n.name))
                     continue
                 tid = _EMITTER_ID.get(name, 0)
                 if tid:
@@ -197,7 +207,10 @@ class ControllersMixin:
 
         if node_flag == 5:
             for kind, tid, name in _ANIM_EMITTER:
-                if kind == "f":
+                if name == "lightningsubdiv":
+                    if an.float_keys.get(name) and self.warn is not None:
+                        self.warn(_lightning_subdiv_warning("animation node", an.name))
+                elif kind == "f":
                     add_float(tid, name)
                 elif kind == "c":
                     add_color(tid, name)

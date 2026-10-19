@@ -154,6 +154,12 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 			if val == 0 && !n.isDeclared(name) {
 				return
 			}
+			if name == "lightningsubdiv" {
+				if c.warn != nil {
+					c.warn(lightningSubDivWarning("emitter", n.Name))
+				}
+				return
+			}
 			typeID := emitterCtrlID(name)
 			if typeID == 0 {
 				return
@@ -389,8 +395,8 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 		addFloat(208, an.LightningDelayKeys, an.isBezier("lightningdelay"))
 		addFloat(212, an.LightningRadiusKeys, an.isBezier("lightningradius"))
 		addFloat(216, an.LightningScaleKeys, an.isBezier("lightningscale"))
-		if len(an.LightningSubDivKeys) > 0 {
-			addFloat(220, an.LightningSubDivKeys, an.isBezier("lightningsubdiv"))
+		if len(an.LightningSubDivKeys) > 0 && c.warn != nil {
+			c.warn(lightningSubDivWarning("animation node", an.Name))
 		}
 		addFloat(148, an.MassKeys, an.isBezier("mass"))
 		addFloat(152, an.P2PBezier2Keys, an.isBezier("p2p_bezier2"))
@@ -414,6 +420,14 @@ func (c *compiler) encodeAnimNodeControllers(an *AnimNode, nodeFlag uint32) (key
 	}
 
 	return
+}
+
+// lightningSubDivWarning: the game's emitter parser (Emitter::InternalParseField)
+// has no lightningsubdiv keyword and its compiler writes no controller for it
+// (stock vdr_bubbles_m, compiled by nwmain-linux compilemodel), so neither does
+// this one. ID 220 is still read when decompiling.
+func lightningSubDivWarning(kind, node string) string {
+	return fmt.Sprintf("%s %q: lightningsubdiv is not compiled; the game reads no such keyword", kind, node)
 }
 
 var emitterNameToID map[string]uint32
