@@ -19,7 +19,7 @@ from .compiler import CompileError, compile, compile_file  # noqa: A004 - mirror
 from .resources import find_game_install, lookup_dirs
 from .writer import write, write_file
 
-PORTED_FROM = "v4.9.0"
+PORTED_FROM = "v4.10.0"
 
 __all__ = ["DecompileError", "decompile", "decompile_file", "is_binary_mdl", "NotModelError", "ParseError",
            "ParseResult", "parse", "parse_file", "CompileError", "compile", "compile_file", "find_game_install",
