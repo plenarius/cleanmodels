@@ -408,7 +408,6 @@ func newMeshBuilderLike(template *MeshData) *meshBuilder {
 		Alpha:            template.Alpha,
 		SelfIllumColor:   template.SelfIllumColor,
 		RotateTexture:    template.RotateTexture,
-		LightMapped:      template.LightMapped,
 		Multimaterial:    append([]string(nil), template.Multimaterial...),
 	}
 	return &meshBuilder{mesh: m}

@@ -680,6 +680,8 @@ class _Parser:
             self.vec3_param(tokens, mesh, "self_illum_color")
         elif kw == "center":
             pass  # mn3 or a name; not stored
+        elif kw == "lightmapped":
+            pass  # not read by the game (parser.go)
         elif kw in _MESH_VEC3_LISTS:
             c = self.counted(tokens)
             if c is not None:
@@ -1218,7 +1220,7 @@ class _Parser:
 _MESH_STRINGS = {"bitmap": "bitmap", "texture0": "bitmap", "texture1": "texture1", "texture2": "texture2",
                  "materialname": "material_name", "renderhint": "render_hint"}
 _MESH_INTS = {"shadow": "shadow", "beaming": "beaming", "render": "render", "transparencyhint": "transparency_hint",
-              "tilefade": "tile_fade", "rotatetexture": "rotate_texture", "lightmapped": "light_mapped"}
+              "tilefade": "tile_fade", "rotatetexture": "rotate_texture"}
 _MESH_VEC3_LISTS = {"verts": "verts", "tverts": "tverts", "tverts1": "tverts1", "tverts2": "tverts2",
                     "tverts3": "tverts3", "colors": "colors", "normals": "normals"}
 _MESH_INT3_LISTS = {"texindices0": "tex_indices0", "texindices1": "tex_indices1", "texindices2": "tex_indices2",

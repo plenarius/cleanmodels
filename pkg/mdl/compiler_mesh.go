@@ -282,8 +282,9 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 		c.core.i32le(-1)
 	}
 
-	// byte light_mapped, rotate_texture (2)
-	c.core.u8(byte(mesh.LightMapped))
+	// byte light_mapped, rotate_texture (2). The game leaves lightmapped
+	// uninitialised and reads it from no keyword (nwn-mdl-spec MDL-BIN-051).
+	c.core.u8(0)
 	c.core.u8(byte(mesh.RotateTexture))
 	c.core.zeros(2) // uint16 padding
 

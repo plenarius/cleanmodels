@@ -100,3 +100,30 @@ donemodel lt
 		t.Errorf("notes = %+v, want one for lamp at offset %d", dm.Notes, at)
 	}
 }
+
+// A lightmapped line is not read by the game (nwn-mdl-spec MDL-BIN-051), so
+// it changes nothing in the compiled model, and nothing is decompiled back.
+func TestLightmappedIgnored(t *testing.T) {
+	body := `    verts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    faces 1
+      0 1 2 1 0 1 2 0
+    tverts 3
+      0 0 0
+      1 0 0
+      0 1 0`
+	plain := mustCompile(t, mustParseASCII(t, alignModel(body)))
+	with := mustCompile(t, mustParseASCII(t, alignModel("    lightmapped 253\n"+body)))
+	if !bytes.Equal(plain, with) {
+		t.Error("lightmapped 253 changed the compiled model")
+	}
+	var buf bytes.Buffer
+	if err := Write(mustDecompile(t, with), &buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "lightmapped") {
+		t.Error("decompiled ASCII has a lightmapped line")
+	}
+}

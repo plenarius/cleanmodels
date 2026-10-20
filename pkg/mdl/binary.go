@@ -955,9 +955,10 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	d.skip(4) // anim4 (deprecated half-angle)
 	pMdxHandedness, _ := d.readI32()
 
-	// byte light_mapped, rotate_texture, uint16 padding
-	lightMapped, _ := d.readByte()
-	mesh.LightMapped = int32(lightMapped)
+	// byte light_mapped, rotate_texture, uint16 padding. The lightmapped
+	// byte is uninitialised in the game's output and no ASCII keyword sets
+	// it, so it is ignored (nwn-mdl-spec MDL-BIN-051).
+	d.skip(1)
 	rotateTex, _ := d.readByte()
 	mesh.RotateTexture = int32(rotateTex)
 	d.skip(2) // padding

@@ -564,7 +564,7 @@ class _Decompiler:
         p_tangent = self.read_i32()
         self.skip(4)
         p_handedness = self.read_i32()
-        mesh.light_mapped = self.read_byte()[0]
+        self.skip(1)  # lightmapped: uninitialised in the game's output, ignored (binary.go)
         mesh.rotate_texture = self.read_byte()[0]
         self.skip(2 + 4 + 4)
 
