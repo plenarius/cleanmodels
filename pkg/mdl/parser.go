@@ -128,6 +128,9 @@ type parser struct {
 	currentAnim     *Animation
 	currentAnimNode *AnimNode
 	nodeStack       []*Node
+	// keyword is the first word of the line parseParameter is on, which
+	// names the list being read for listWarn.
+	keyword string
 
 	allocBytes int64
 	maxAlloc   int64
@@ -631,6 +634,7 @@ func (p *parser) parseParameter(tokens []string) {
 	}
 
 	keyword := strings.ToLower(tokens[0])
+	p.keyword = keyword
 
 	// Handle animation node parameters
 	if p.currentAnim != nil && p.currentAnimNode != nil {
@@ -1658,6 +1662,7 @@ const maxListWarnings = 5
 // silently point those indices at the wrong data, with no warning at all.
 type listWarn struct {
 	p       *parser
+	where   string // `node "x", verts: `, before each warning
 	shown   int
 	total   int
 	stopped bool // the current entry stopped being read (row)
@@ -1670,19 +1675,30 @@ type listWarn struct {
 // set to 0 without stopping the entry.
 func (w *listWarn) row() { w.stopped = false }
 
-func (p *parser) newListWarn() *listWarn { return &listWarn{p: p} }
+// newListWarn starts the warnings of a list, named by its node and keyword
+// so a damaged value can be found without counting lines.
+func (p *parser) newListWarn() *listWarn {
+	node := ""
+	switch {
+	case p.currentAnim != nil && p.currentAnimNode != nil:
+		node = p.currentAnimNode.Name
+	case p.currentNode != nil:
+		node = p.currentNode.Name
+	}
+	return &listWarn{p: p, where: fmt.Sprintf("node %q, %s: ", node, p.keyword)}
+}
 
 func (w *listWarn) add(format string, args ...interface{}) {
 	w.total++
 	if w.shown < maxListWarnings {
 		w.shown++
-		w.p.errorf(format, args...)
+		w.p.errorf("%s%s", w.where, fmt.Sprintf(format, args...))
 	}
 }
 
 func (w *listWarn) done() {
 	if w.total > w.shown {
-		w.p.errorf("%d more damaged value(s) in this list were set to 0", w.total-w.shown)
+		w.p.errorf("%s%d more damaged value(s) in this list were set to 0", w.where, w.total-w.shown)
 	}
 }
 

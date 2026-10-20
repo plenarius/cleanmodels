@@ -136,6 +136,11 @@ func (tw *termWriter) printResultDetail(res Result, parseErrs []mdl.ParseError, 
 		}
 		fmt.Fprintf(tw.w, "  %s decompile [%s] off=%d: %s\n", tw.yellow("[WARN]"), wn.Node, wn.Offset, wn.Message)
 	}
+	if verbose {
+		for _, n := range res.Notes {
+			fmt.Fprintf(tw.w, "  %s decompile [%s] off=%d: %s\n", tw.dim("[INFO]"), n.Node, n.Offset, n.Message)
+		}
+	}
 	for _, pe := range parseErrs {
 		fmt.Fprintf(tw.w, "  %s parse: %v\n", tw.yellow("[WARN]"), pe)
 	}

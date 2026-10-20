@@ -17,6 +17,7 @@ from . import controllers
 from .controllers import controller_id
 from .compiler_tangents import hint_wants_tangents
 from .f32 import f32
+from .gostr import quote
 from .types import (
     AabbData, AabbEntry, AnimMeshData, AnimNode, Animation, DanglyData, DecompileWarning,
     EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData, SkinData, VertexWeight,
@@ -130,6 +131,9 @@ class _Decompiler:
         self.max_alloc = self.size * 16
         self.read_err = False
         self.skeleton_dirs = list(skeleton_dirs)
+        # readPlace (anim, node, list) being read, for warn_nan; one warning per place
+        self.where = ("", "", "")
+        self.nan_warns = {}
 
     # --- low-level reads (bytes.Reader + encoding/binary semantics) ---
 
@@ -139,6 +143,27 @@ class _Decompiler:
 
     def warn(self, kind, offset, node, message):
         self.model.warnings.append(DecompileWarning(kind, offset, node, message))
+
+    def note(self, kind, offset, node, message):
+        self.model.notes.append(DecompileWarning(kind, offset, node, message))
+
+    def at(self, lst):
+        self.where = (self.where[0], self.where[1], lst)
+
+    def warn_nan(self, offset, bits):
+        """warnNaN: one warning per list of a node, with the count and the first's offset and bits."""
+        w = self.where
+        what = w[2] or "the model"
+        if w[0]:
+            what += " in animation %s" % quote(w[0])
+        n = self.nan_warns.get(w)
+        if n is not None:
+            n[1] += 1
+            self.model.warnings[n[0]].message = (
+                "%d NaN/Inf floats in %s replaced with 0 (the first at this offset, raw bits: 0x%08X)" % (n[1], what, n[2]))
+            return
+        self.nan_warns[w] = [len(self.model.warnings), 1, bits]
+        self.warn(WARN_GENERAL, offset, w[1], "NaN/Inf float in %s replaced with 0 (raw bits: 0x%08X)" % (what, bits))
 
     @staticmethod
     def go_to_pointer(p):
@@ -203,8 +228,7 @@ class _Decompiler:
             return 0.0, False
         v = _F32.unpack_from(self.data, at)[0]
         if v != v or v in (math.inf, -math.inf):
-            bits = _U32.unpack_from(self.data, at)[0]
-            self.warn(WARN_GENERAL, self.p - 4, "", "NaN/Inf float replaced with 0 (raw bits: 0x%08X)" % bits)
+            self.warn_nan(self.p - 4, _U32.unpack_from(self.data, at)[0])
             return 0.0, True
         return v, True
 
@@ -267,6 +291,7 @@ class _Decompiler:
     def read_model_header(self):
         if not self.seek(12):
             raise _ReadError("seek out of bounds")
+        self.where = ("", "", "the model header")
         self.skip(8)
         model_name, ok = self.read_fixed_string(64)
         if not ok:
@@ -350,6 +375,7 @@ class _Decompiler:
         inherit_color = self.read_i32()
         node_number = self.read_i32()
         node_name, _ = self.read_fixed_string(32)
+        self.where = ("", node_name, "the node header")
         self.skip(8)
         children_def, _ = self.read_array_def()
         ctrl_keys_def, _ = self.read_array_def()
@@ -415,6 +441,7 @@ class _Decompiler:
 
     def read_light_header(self, node):
         l = node.light
+        self.at("the light header")
         l.flare_radius = self.read_f32()[0]
         self.skip(12)
         sizes_def, _ = self.read_array_def()
@@ -453,6 +480,7 @@ class _Decompiler:
 
     def read_emitter_header(self, node):
         em = node.emitter
+        self.at("the emitter header")
         em.dead_space = self.read_f32()[0]
         em.blast_radius = self.read_f32()[0]
         em.blast_length = self.read_f32()[0]
@@ -489,6 +517,7 @@ class _Decompiler:
 
     def read_mesh_header(self, node):
         mesh = node.mesh
+        self.at("the mesh header")
         self.skip(8)
         faces_def, _ = self.read_array_def()
         self.skip(24 + 4 + 12)
@@ -543,18 +572,25 @@ class _Decompiler:
         try:
             n = count_verts
             if n > 0 and p_vertex >= 0:
+                self.at("verts")
                 mesh.verts = self.read_vec3_array_at(self.go_to_mdx_pointer(p_vertex), n, mesh.verts)
             if n > 0 and p_tex0 >= 0:
+                self.at("tverts")
                 mesh.tverts = self.read_vec2_array_at(self.go_to_mdx_pointer(p_tex0), n, mesh.tverts)
             if count_textures > 1 and p_tex1 >= 0:
+                self.at("tverts1")
                 mesh.tverts1 = self.read_vec2_array_at(self.go_to_mdx_pointer(p_tex1), n, mesh.tverts1)
             if count_textures > 2 and p_tex2 >= 0:
+                self.at("tverts2")
                 mesh.tverts2 = self.read_vec2_array_at(self.go_to_mdx_pointer(p_tex2), n, mesh.tverts2)
             if count_textures > 3 and p_tex3 >= 0:
+                self.at("tverts3")
                 mesh.tverts3 = self.read_vec2_array_at(self.go_to_mdx_pointer(p_tex3), n, mesh.tverts3)
             if n > 0 and p_normals >= 0:
+                self.at("normals")
                 mesh.normals = self.read_vec3_array_at(self.go_to_mdx_pointer(p_normals), n, mesh.normals)
             if n > 0 and p_colors >= 0:
+                self.at("colors")
                 self.read_mdx_colors(mesh, p_colors, n)
             if n > 0 and p_tangent >= 0:
                 self.read_mdx_tangents(mesh, p_tangent, p_handedness, n)
@@ -590,6 +626,7 @@ class _Decompiler:
             weights = [[0.0, 0.0, 0.0, 0.0] for _ in range(n)]
             refs = [[0, 0, 0, 0] for _ in range(n)]
             if p_weight_vertex >= 0:
+                self.at("weights")
                 abs_ptr = self.go_to_mdx_pointer(p_weight_vertex)
                 if abs_ptr >= 0 and abs_ptr + n * 16 <= self.size and self.seek(abs_ptr):
                     for i in range(n):
@@ -613,6 +650,7 @@ class _Decompiler:
 
     def read_anim_mesh_header(self, node):
         am = node.anim_mesh
+        self.at("the animmesh header")
         am.sample_period = self.read_f32()[0]
         self.skip(36)
         p_anim_verts = self.read_i32()
@@ -623,9 +661,11 @@ class _Decompiler:
         n = len(node.mesh.verts)
         total = n_vertex_sets * n
         if 0 < total <= self.size and p_anim_verts > 0 and n > 0:
+            self.at("animverts")
             am.anim_verts = self.read_vec3_array_at(self.go_to_pointer(p_anim_verts), total, am.anim_verts)
         total = n_tvert_sets * n
         if 0 < total <= self.size and p_anim_tverts > 0 and n > 0:
+            self.at("animtverts")
             am.anim_tverts = self.read_vec2_array_at(self.go_to_pointer(p_anim_tverts), total, am.anim_tverts)
         am.anim_verts = anim_set_major(am.anim_verts, n)
         am.anim_tverts = anim_set_major(am.anim_tverts, n)
@@ -633,11 +673,13 @@ class _Decompiler:
 
     def read_dangly_header(self, node):
         constraints_def, _ = self.read_array_def()
+        self.at("the danglymesh header")
         node.dangly.displacement = self.read_f32()[0]
         node.dangly.tightness = self.read_f32()[0]
         node.dangly.period = self.read_f32()[0]
         header_end = self.p
         if constraints_def[1] > 0 and constraints_def[0] != 0:
+            self.at("constraints")
             node.dangly.constraints = self.read_float_array_at(constraints_def, node.dangly.constraints)
         self.seek(header_end)
 
@@ -647,6 +689,7 @@ class _Decompiler:
             self.read_aabb_tree(node.aabb, p_aabb)
 
     def read_aabb_tree(self, aabb, root_ptr):
+        self.at("aabb")
         visited = set()
         stack = [root_ptr]
         while stack:
@@ -678,6 +721,7 @@ class _Decompiler:
             return
         if not self.track_alloc(count * 32):
             return
+        self.at("faces")
         faces = []
         for _ in range(count):
             normal = self.read_vec3()
@@ -734,6 +778,7 @@ class _Decompiler:
         if not self.track_alloc(count * 16):
             return
         handedness = []
+        self.at("tangent handedness")
         if handedness_ptr >= 0:
             h_abs = self.go_to_mdx_pointer(handedness_ptr)
             if h_abs >= 0 and h_abs + count * 4 <= self.size and self.track_alloc(count * 4):
@@ -741,6 +786,7 @@ class _Decompiler:
                     handedness = [self.read_f32()[0] for _ in range(count)]
         if not self.seek(tangent_abs):
             return
+        self.at("tangents")
         out = []
         unit = True
         for i in range(count):
@@ -869,13 +915,14 @@ class _Decompiler:
             return []
         keys = []
         for _ in range(count):
+            off = self.p  # of the key, for warnings
             t = self.read_u32()
             vc = self.read_u16()
             ts = self.read_u16()
             ds = self.read_u16()
             cc = self.read_byte()[0]
             self.skip(1)
-            keys.append((t, vc, ts, ds, cc))
+            keys.append((t, vc, ts, ds, cc, off))
         return keys
 
     def read_controller_rows(self, name, data_ptr, time_start, data_start, num_rows, num_cols):
@@ -885,6 +932,7 @@ class _Decompiler:
             return []
         base = self.go_to_pointer(data_ptr)
         rows = []
+        self.at("the " + name + " controller")
         for row in range(num_rows):
             time_ptr = base + (time_start + row) * 4
             if time_ptr < 0 or time_ptr + 4 > self.size or not self.seek(time_ptr):
@@ -907,8 +955,14 @@ class _Decompiler:
         for k in keys:
             type_id, column_count = k[0], k[4]
             d = controller_id(type_id, node_flag, self.compiler)
+            if d is None and type_id == 144 and node_flag == 3:
+                # older EE compilers wrote it on lights; ASCII cannot carry it (binary.go, nwn-mdl-spec E51)
+                self.note(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
+                          "light controller 144 dropped: an older EE compiler wrote it, the game's compiler writes it "
+                          "for no keyword, and ASCII has none (nwn-mdl-spec E51)")
+                continue
             if d is None:
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "unknown controller type %d for node flag %d" % (type_id, node_flag))
                 continue
             name, def_cols = d
@@ -919,13 +973,13 @@ class _Decompiler:
                 out.append((name, 0, k, False, def_cols))
                 continue
             if column_count == 0xFF:  # no values (sscanf's -1), not bezier; skipped by the game
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "controller %s has no values (numfloats=0xff); the game skips such a controller, so it was "
                           "dropped" % name)
                 continue
             bezier = column_count & 0x10 != 0
             if bezier and (name == "orientation" or def_cols <= 0):
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier "
                           "form; it was dropped" % (name, column_count))
                 continue
@@ -934,24 +988,24 @@ class _Decompiler:
             applied = num_cols in (1, 3, 4)
             if bezier:
                 if not applied:
-                    self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                    self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                               "controller %s (numfloats=0x%02x) is read with the width of its keyword; the game skips "
                               "it, since it applies only 1, 3 or 4 columns" % (name, column_count))
                 if def_cols > 0:
                     num_cols = def_cols
                 num_cols *= 3
             elif not applied:
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "controller %s has %d value columns (numfloats=0x%02x); the game skips such a controller, "
                           "so it was dropped" % (name, num_cols, column_count))
                 continue
             elif name == "orientation" and num_cols != 4:
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "orientation controller with %d value columns: the game writes them into its quaternion w "
                           "first, which ASCII cannot express, so it was dropped" % num_cols)
                 continue
             elif 0 < def_cols < num_cols:
-                self.warn(WARN_UNKNOWN_CONTROLLER, type_id, node_name,
+                self.warn(WARN_UNKNOWN_CONTROLLER, k[5], node_name,
                           "controller %s has %d value columns for a %d-wide value: the game writes past the value; "
                           "only the first %d are kept" % (name, num_cols, def_cols, def_cols))
             out.append((name, num_cols, k, bezier, def_cols))
@@ -997,6 +1051,7 @@ class _Decompiler:
             return "seek out of bounds: %d (file size %d)" % (abs_ptr, self.size)
         self.skip(8)
         name, _ = self.read_fixed_string(64)
+        self.where = (name, "", "the animation header")
         root_node_ptr = self.read_u32()
         self.skip(4 + 12 + 12 + 4 + 4)
         length = self.read_f32()[0]
@@ -1005,6 +1060,7 @@ class _Decompiler:
         events_def, _ = self.read_array_def()
         anim = Animation(name, length, trans_time, root)
         if events_def[1] > 0 and events_def[0] != 0:
+            self.at("the events")
             evt_abs = self.go_to_pointer(events_def[0])
             if evt_abs + events_def[1] * 36 <= self.size and self.track_alloc(events_def[1] * 36):
                 if self.seek(evt_abs):
@@ -1033,6 +1089,7 @@ class _Decompiler:
 
         self.skip(24 + 4 + 4)
         node_name, _ = self.read_fixed_string(32)
+        self.where = (anim.name, node_name, "the node header")
         self.skip(8)
         children_def, _ = self.read_array_def()
         ctrl_keys_def, _ = self.read_array_def()
@@ -1074,6 +1131,7 @@ class _Decompiler:
         anim_mesh_data = None
         if has_anim:
             anim_mesh_data = AnimMeshData()
+            self.at("the animmesh header")
             anim_mesh_data.sample_period = self.read_f32()[0]
             self.skip(36)
             p_anim_verts = self.read_i32()
@@ -1083,10 +1141,12 @@ class _Decompiler:
             if anim_mesh_verts > 0:
                 total = n_vertex_sets * anim_mesh_verts
                 if 0 < total <= self.size and p_anim_verts > 0:
+                    self.at("animverts")
                     anim_mesh_data.anim_verts = self.read_vec3_array_at(
                         self.go_to_pointer(p_anim_verts), total, anim_mesh_data.anim_verts)
                 total = n_tvert_sets * anim_mesh_verts
                 if 0 < total <= self.size and p_anim_tverts > 0:
+                    self.at("animtverts")
                     anim_mesh_data.anim_tverts = self.read_vec2_array_at(
                         self.go_to_pointer(p_anim_tverts), total, anim_mesh_data.anim_tverts)
                 anim_mesh_data.anim_verts = anim_set_major(anim_mesh_data.anim_verts, anim_mesh_verts)
@@ -1102,8 +1162,10 @@ class _Decompiler:
             header_end = self.p
             mesh = MeshData()
             if anim_p_vertex >= 0:
+                self.at("verts")
                 mesh.verts = self.read_vec3_array_at(self.go_to_mdx_pointer(anim_p_vertex), anim_mesh_verts, mesh.verts)
             if anim_p_tex0 >= 0:
+                self.at("tverts")
                 mesh.tverts = self.read_vec2_array_at(self.go_to_mdx_pointer(anim_p_tex0), anim_mesh_verts, mesh.tverts)
             if anim_faces_def[1] > 0 and anim_faces_def[0] != 0:
                 self.read_faces(mesh, anim_faces_def)

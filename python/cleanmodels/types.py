@@ -330,6 +330,7 @@ class Model:
         self.nodes = []
         self.animations = []
         self.warnings = []
+        self.notes = []  # Model.Notes: dropped data that is known and harmless (info)
 
     def find_node(self, name):
         for n in self.nodes:

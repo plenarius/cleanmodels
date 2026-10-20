@@ -19,6 +19,9 @@ import (
 type Result struct {
 	File     string                 `json:"file"`
 	Warnings []mdl.DecompileWarning `json:"warnings,omitempty"`
+	// Notes are decompile notes at info level (mdl.Model.Notes): what was
+	// dropped that is known and harmless. Not counted as warnings.
+	Notes []mdl.DecompileWarning `json:"notes,omitempty"`
 	// ParseWarnings are the ASCII parser's complaints ("line 352: ... set to 0").
 	// They are in the text output; this puts them in JSON and JSON-lines too, so
 	// the GUI and scripts see what the parser had to work around.
@@ -711,6 +714,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 
 	if model != nil {
 		res.Warnings = model.Warnings
+		res.Notes = model.Notes
 	}
 
 	if !o.decompileOnly && model != nil {
