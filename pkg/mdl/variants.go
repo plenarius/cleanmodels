@@ -24,8 +24,14 @@ import (
 //     and only on the far side of the joint;
 //   - across the bone (x and y) by part of how much wider or narrower the
 //     target race's stock body part on that bone is (chest, pelvis, thighs,
-//     arms; see robeGirth). Shins take the thighs' value: a skirt hangs from
-//     the thighs, and dwarf boots would otherwise flare the hem.
+//     arms; see robeGirth). Shins and feet take the thighs' value: a skirt
+//     hangs from the thighs, and dwarf boots would otherwise flare the hem.
+//
+// The robe's other meshes, the bone copies' own (render 0, but most cast the
+// robe's shadow) and any hanging from them, are refitted like a vertex
+// weighted wholly to their bone; a bone with no stock part takes its nearest
+// ancestor's width (a head bone copy narrows with the torso). Bones the
+// target's template robe lacks come from the target's skeleton.
 //
 // Normals go through the inverse transpose of the same maps. Checked against
 // Bioware's own variants of the stock robes 003, 004, 006 and 030 (same mesh,
@@ -74,6 +80,11 @@ type VariantOptions struct {
 	// variants_learned.go), with how many pairs it was learned from. Not
 	// called for the measured fit.
 	Learned func(pairs int)
+
+	// noTemplate builds a cloak's bones from the target skeleton even when
+	// the target has a cloak to take them from: for judging that against
+	// the template.
+	noTemplate bool
 
 	// noLearn keeps armour parts to the measured fit (no slot choice), by
 	// the base parts' bounding boxes, or their centres of mass and spreads
@@ -174,6 +185,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		out, err := partVariant(src, srcPrefix, target, opts, warn)
 		if err == nil {
 			applyShape(out, target, opts.Shape, opts.Locs, warn)
+			bodySuperModel(out, target, opts.Locs)
 		}
 		return out, err
 	}
@@ -209,6 +221,9 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	sort.Strings(others)
 	candidates = append(candidates, others...)
 	for _, s := range candidates {
+		if opts.noTemplate {
+			break
+		}
 		locs := opts.Locs
 		if s == suffix {
 			locs = withoutDir(locs, opts.OutputDir)
@@ -225,10 +240,24 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		tmpl, tmplName = m, target+s
 		break
 	}
+	srcSkel, _ := loadBodySkeleton(srcPrefix, opts.Locs)
+	dstSkel, _ := loadBodySkeleton(target, opts.Locs)
+	if tmpl == nil && kind == "cloak" && srcSkel != nil && dstSkel != nil {
+		if m, ok := cloakBonesFromSkeleton(src, srcSkel, dstSkel, chestRatio(srcPrefix, target, opts.Locs)); ok {
+			tmpl, tmplName = m, "the "+target+" skeleton"
+			if !opts.noTemplate {
+				warn(fmt.Sprintf("no cloak of %s to take the bones from (no %s_cloak* found): the cloak bones were placed by the %s skeleton's torso, neck and shoulders", target, target, target))
+			}
+		}
+	}
 	if tmpl == nil {
 		return nil, fmt.Errorf("no %s of %s to take the bones from (no %s_%s* found); pass the game install or a hak with them", kind, target, target, kind)
 	}
+	if srcSkel == nil || dstSkel == nil {
+		warn(fmt.Sprintf("skeleton %s or %s not found: shins and forearms keep their source length", srcPrefix, target))
+	}
 
+	tmpl = withSkeletonBones(tmpl, src, dstSkel)
 	srcW := newWorldTransforms(src)
 	tmplW := newWorldTransforms(tmpl)
 	tmplNodes := map[string]*Node{}
@@ -249,23 +278,67 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	}
 	for b := range bones {
 		if _, ok := tmplNodes[b]; !ok {
-			warn(fmt.Sprintf("bone %s is not in %s: the vertices weighted to it stay where they are", b, tmplName))
+			warn(fmt.Sprintf("bone %s is not in %s or the %s skeleton: the vertices weighted to it stay where they are", b, tmplName, target))
 		}
 	}
 
-	srcSkel, _ := loadBodySkeleton(srcPrefix, opts.Locs)
-	dstSkel, _ := loadBodySkeleton(target, opts.Locs)
-	if srcSkel == nil || dstSkel == nil {
-		warn(fmt.Sprintf("skeleton %s or %s not found: shins and forearms keep their source length", srcPrefix, target))
+	// A mesh that is not a skin (a bone copy's own mesh, or one hanging from
+	// a bone copy, as a veil from the head) is refitted by its own bone, or
+	// failing that the nearest bone above it the template has.
+	rigidBone := map[*Node]string{}
+	{
+		byName := map[string]*Node{}
+		for _, n := range src.Nodes {
+			byName[strings.ToLower(n.Name)] = n
+		}
+		for _, n := range src.Nodes {
+			if n.Skin != nil || n.Mesh == nil || len(n.Mesh.Verts) == 0 || n == src.RootNode() {
+				continue
+			}
+			for a, depth := n, 0; a != nil && a != src.RootNode() && depth < 64; a, depth = byName[strings.ToLower(a.Parent)], depth+1 {
+				if _, ok := tmplNodes[strings.ToLower(a.Name)]; ok {
+					rigidBone[n] = strings.ToLower(a.Name)
+					break
+				}
+			}
+		}
 	}
-	axes := boneAxes(src, tmplNodes, bones, srcSkel, dstSkel)
+	axisBones := map[string]bool{}
+	for b := range bones {
+		axisBones[b] = true
+	}
+	for _, b := range rigidBone {
+		axisBones[b] = true
+	}
+
+	axes := boneAxes(src, tmplNodes, axisBones, srcSkel, dstSkel)
 	width, length := opts.factors()
 	for b, ax := range axes {
 		ax.ratio *= length
 		axes[b] = ax
 	}
 	girth := bodyGirth(srcPrefix, target, opts.Locs, warn)
-	widen := cloakWidening(kind, src, srcPrefix, target, tmplW, opts.Locs, warn)
+	// A cloak's cloth on its own bones (Cloak_g and the nodes under it) takes
+	// the torso's width: those bones have no stock body part, and the cloth
+	// would otherwise keep the source body's size around them (on a brownie,
+	// a collar ring standing off the neck). Against Bioware's cloaks 1 to 7
+	// of every race: 1.8 cm per vertex in phenotype 0 and 4.0 cm in phenotype
+	// 2, against 2.9 and 4.7 cm for widening the cloth by 0.4 of the chest's
+	// width ratio, the rule this replaced.
+	if kind == "cloak" {
+		if t, ok := girth["torso_g"]; ok {
+			for b := range cloakBones(src) {
+				if _, has := girth[b]; !has {
+					girth[b] = t
+				}
+			}
+		}
+	}
+	rigidGirth := girthScales{}
+	for b, v := range girth {
+		rigidGirth[b] = v
+	}
+	rigidGirth.inherit(src, axisBones)
 
 	out := cloneForBody(src, srcPrefix, target)
 	// Bone copies (and any other node the template has) take the template's
@@ -280,6 +353,43 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	}
 	outW := newWorldTransforms(out)
 
+	// movePoint and moveNormal refit a world point or normal by bone b: into
+	// the source bone's space, stretched along it and scaled across it, and
+	// out of the template's bone.
+	movePointBy := func(girth girthScales, b string, l [3]float64) ([3]float64, bool) {
+		bs, ok1 := srcW.lookup(b)
+		bd, ok2 := tmplW.lookup(b)
+		if !ok1 || !ok2 {
+			return l, false
+		}
+		l = bs.unapply(l)
+		ax := axes[b]
+		if d := dot3(l, ax.dir); d > 0 {
+			l = add3(l, scale3(ax.dir, (ax.ratio-1)*d))
+		}
+		g := girth.of(b)
+		g[0], g[1] = g[0]*width, g[1]*width
+		l = [3]float64{l[0] * g[0], l[1] * g[1], l[2]}
+		return bd.apply(l), true
+	}
+	moveNormalBy := func(girth girthScales, b string, l [3]float64) ([3]float64, bool) {
+		bs, ok1 := srcW.lookup(b)
+		bd, ok2 := tmplW.lookup(b)
+		if !ok1 || !ok2 {
+			return l, false
+		}
+		l = quatRotate(quatConj(bs.rot), l)
+		ax := axes[b]
+		d := dot3(l, ax.dir)
+		l = add3(l, scale3(ax.dir, (1/ax.ratio-1)*d))
+		g := girth.of(b)
+		g[0], g[1] = g[0]*width, g[1]*width
+		l = norm3([3]float64{l[0] / g[0], l[1] / g[1], l[2]})
+		return quatRotate(bd.rot, l), true
+	}
+	movePoint := func(b string, l [3]float64) ([3]float64, bool) { return movePointBy(girth, b, l) }
+	moveNormal := func(b string, l [3]float64) ([3]float64, bool) { return moveNormalBy(girth, b, l) }
+
 	for _, sk := range skins {
 		skW := srcW.of(sk.Name)
 		dst := out.Nodes[indexOfNode(src, sk)]
@@ -291,23 +401,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 			if vi < len(sk.Skin.Weights) {
 				ws = sk.Skin.Weights[vi]
 			}
-			q := blendBones(p, ws, func(b string, l [3]float64) ([3]float64, bool) {
-				bs, ok1 := srcW.lookup(b)
-				bd, ok2 := tmplW.lookup(b)
-				if !ok1 || !ok2 {
-					return l, false
-				}
-				l = bs.unapply(l)
-				ax := axes[b]
-				if d := dot3(l, ax.dir); d > 0 {
-					l = add3(l, scale3(ax.dir, (ax.ratio-1)*d))
-				}
-				g := girth.of(b)
-				g[0], g[1] = g[0]*width, g[1]*width
-				l = [3]float64{l[0] * g[0], l[1] * g[1], l[2]}
-				return bd.apply(l), true
-			})
-			q = widen.point(q, ws)
+			q := blendBones(p, ws, movePoint)
 			verts[vi] = vec3f(dstW.unapply(q))
 		}
 		dst.Mesh.Verts = verts
@@ -320,29 +414,197 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 				if vi < len(sk.Skin.Weights) {
 					ws = sk.Skin.Weights[vi]
 				}
-				q := blendBones(nm, ws, func(b string, l [3]float64) ([3]float64, bool) {
-					bs, ok1 := srcW.lookup(b)
-					bd, ok2 := tmplW.lookup(b)
-					if !ok1 || !ok2 {
-						return l, false
-					}
-					l = quatRotate(quatConj(bs.rot), l)
-					ax := axes[b]
-					d := dot3(l, ax.dir)
-					l = add3(l, scale3(ax.dir, (1/ax.ratio-1)*d))
-					g := girth.of(b)
-					g[0], g[1] = g[0]*width, g[1]*width
-					l = norm3([3]float64{l[0] / g[0], l[1] / g[1], l[2]})
-					return quatRotate(bd.rot, l), true
-				})
-				q = widen.normal(norm3(q), ws)
+				q := blendBones(nm, ws, moveNormal)
+				normals[vi] = vec3f(norm3(quatRotate(quatConj(dstW.rot), norm3(q))))
+			}
+			dst.Mesh.Normals = normals
+		}
+	}
+
+	// The other meshes (the bone copies' own, render 0 but most casting the
+	// robe's shadow) are refitted like a skin vertex weighted wholly to
+	// their bone: Bioware's race versions reshape them too (stock gnome robe 3).
+	for i, n := range src.Nodes {
+		dst := out.Nodes[i]
+		b, ok := rigidBone[n]
+		if !ok {
+			continue
+		}
+		nW, dstW := srcW.of(n.Name), outW.of(dst.Name)
+		verts := make([]Vec3, len(n.Mesh.Verts))
+		for vi, v := range n.Mesh.Verts {
+			q, _ := movePointBy(rigidGirth, b, nW.apply(vec3d(v)))
+			verts[vi] = vec3f(dstW.unapply(q))
+		}
+		dst.Mesh.Verts = verts
+		if len(n.Mesh.Normals) == len(n.Mesh.Verts) {
+			normals := make([]Vec3, len(n.Mesh.Normals))
+			for vi, nv := range n.Mesh.Normals {
+				q, _ := moveNormalBy(rigidGirth, b, quatRotate(nW.rot, vec3d(nv)))
 				normals[vi] = vec3f(norm3(quatRotate(quatConj(dstW.rot), norm3(q))))
 			}
 			dst.Mesh.Normals = normals
 		}
 	}
 	applyShape(out, target, opts.Shape, opts.Locs, warn)
+	bodySuperModel(out, target, opts.Locs)
 	return out, nil
+}
+
+// bodySuperModel points a variant whose supermodel is its body (pmb2_cloak_001
+// on pmb2) at the skeleton that body uses. A phenotype with no skeleton of
+// its own uses phenotype 0's (Layonara's Large brownies, pmb2, use pmb0), so
+// there is no model by the body's own name for the supermodel to find.
+func bodySuperModel(out *Model, target string, locs []string) {
+	if strings.EqualFold(out.SuperModel, target) {
+		out.SuperModel = bodySkeleton(target, locs)
+	}
+}
+
+// cloakBonesFromSkeleton builds a cloak template for a body that has no
+// cloak, from the source cloak's own bones: the tree moved so that torso_g
+// is where the target skeleton has it, and the offsets below torso_g scaled,
+// target over source: across and front to back by the base chest part's
+// spread (chest, from chestRatio; failing that both by the biceps' distance
+// from the torso); up and down by the torso-to-neck height for the bones on
+// torso_g (Cloak_g), and by the neck-to-feet height for the rest (the
+// cloak's hanging chains). In Bioware's cloaks of every race, Cloak_g sits
+// just under the neck, the shoulder bones scale with the body's width (0.87
+// to 1.48 of the human's for the gnome to the half-orc; biceps 0.90 to 1.50),
+// and the chains' length with the neck-to-feet height (0.69 to 1.10, against
+// 0.68 to 1.10; the female half-orc's is the exception, 1.28 against 1.11).
+// Over Bioware's stock cloaks 1 to 7, every race and phenotype, the cloth
+// made this way is 4.2 cm from Bioware's per vertex, against 2.7 cm with
+// Bioware's cloak of that body as the template. ok is false when the
+// skeletons lack torso_g, neck_g, the biceps or the feet.
+// chestRatio is the target's base chest part's spread across (x) and front
+// to back (y) over the source's, or zero when either is not found.
+func chestRatio(srcPrefix, target string, locs []string) [2]float64 {
+	a, b := partSpread(basePart(srcPrefix, "chest", locs), locs), partSpread(basePart(target, "chest", locs), locs)
+	if a == nil || b == nil || a[0] <= 0 || a[1] <= 0 {
+		return [2]float64{}
+	}
+	return [2]float64{b[0] / a[0], b[1] / a[1]}
+}
+
+func cloakBonesFromSkeleton(src *Model, srcSkel, dstSkel *skeleton, chest [2]float64) (*Model, bool) {
+	at := func(sk *skeleton, name string) ([3]float64, bool) {
+		i, ok := sk.index[name]
+		if !ok {
+			return [3]float64{}, false
+		}
+		return sk.pos[i], true
+	}
+	type frame struct{ torso, neck, lb, rb, lf, rf [3]float64 }
+	get := func(sk *skeleton) (f frame, ok bool) {
+		var ok1, ok2, ok3, ok4, ok5, ok6 bool
+		f.torso, ok1 = at(sk, "torso_g")
+		f.neck, ok2 = at(sk, "neck_g")
+		f.lb, ok3 = at(sk, "lbicep_g")
+		f.rb, ok4 = at(sk, "rbicep_g")
+		f.lf, ok5 = at(sk, "lfoot_g")
+		f.rf, ok6 = at(sk, "rfoot_g")
+		return f, ok1 && ok2 && ok3 && ok4 && ok5 && ok6
+	}
+	a, ok1 := get(srcSkel)
+	b, ok2 := get(dstSkel)
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+	width := func(f frame) float64 { return (math.Abs(f.lb[0]-f.torso[0]) + math.Abs(f.rb[0]-f.torso[0])) / 2 }
+	drop := func(f frame) float64 { return f.neck[2] - (f.lf[2]+f.rf[2])/2 }
+	if width(a) < 1e-4 || math.Abs(a.neck[2]-a.torso[2]) < 1e-4 || drop(a) < 1e-4 {
+		return nil, false
+	}
+	sx, sy := width(b)/width(a), width(b)/width(a)
+	if chest[0] > 0 && chest[1] > 0 {
+		sx, sy = chest[0], chest[1]
+	}
+	szNeck := (b.neck[2] - b.torso[2]) / (a.neck[2] - a.torso[2])
+	szDrop := drop(b) / drop(a)
+
+	// From the source cloak's own torso_g, not its skeleton's: Bioware's
+	// female human cloaks put it 5 cm back and 1.5 cm down from pfh0's.
+	srcTorso, ok := newWorldTransforms(src).lookup("torso_g")
+	if !ok {
+		return nil, false
+	}
+	at0 := srcTorso.apply([3]float64{})
+	shift := [3]float64{b.torso[0] - at0[0], b.torso[1] - at0[1], b.torso[2] - at0[2]}
+	out := *src
+	out.Nodes = make([]*Node, 0, len(src.Nodes))
+	byName := map[string]*Node{}
+	for _, n := range src.Nodes {
+		byName[strings.ToLower(n.Name)] = n
+	}
+	below := func(n *Node) bool {
+		for p, depth := byName[strings.ToLower(n.Parent)], 0; p != nil && depth < 64; p, depth = byName[strings.ToLower(p.Parent)], depth+1 {
+			if strings.EqualFold(p.Name, "torso_g") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, n := range src.Nodes {
+		if n.Skin != nil {
+			continue
+		}
+		c := &Node{Name: n.Name, Parent: n.Parent, Position: n.Position, Orientation: n.Orientation, Scale: 1}
+		switch {
+		case n == src.RootNode():
+		case strings.EqualFold(n.Parent, src.RootNode().Name):
+			// The top of the tree (rootdummy) moves with the torso.
+			c.Position = Vec3{X: n.Position.X + float32(shift[0]), Y: n.Position.Y + float32(shift[1]), Z: n.Position.Z + float32(shift[2])}
+		case below(n):
+			sz := szDrop
+			if strings.EqualFold(n.Parent, "torso_g") {
+				sz = szNeck
+			}
+			c.Position = Vec3{X: n.Position.X * float32(sx), Y: n.Position.Y * float32(sy), Z: n.Position.Z * float32(sz)}
+		}
+		out.Nodes = append(out.Nodes, c)
+	}
+	return &out, true
+}
+
+// withSkeletonBones returns tmpl, or a copy of it with the bones src has and
+// tmpl lacks taken from the target body's skeleton, under their parent in
+// tmpl. A robe template can lack bones the source robe uses: Layonara's
+// brownie robe 3 has no feet, where human robe 26 weights its hem to them;
+// without them those vertices and the foot bone copies keep the human body's
+// size and place.
+func withSkeletonBones(tmpl, src *Model, skel *skeleton) *Model {
+	if skel == nil {
+		return tmpl
+	}
+	have := map[string]string{}
+	for _, n := range tmpl.Nodes {
+		have[strings.ToLower(n.Name)] = n.Name
+	}
+	var added []*Node
+	for _, n := range src.Nodes {
+		name := strings.ToLower(n.Name)
+		if _, ok := have[name]; ok || n == src.RootNode() {
+			continue
+		}
+		i, ok := skel.index[name]
+		if !ok {
+			continue
+		}
+		sn := skel.order[i]
+		parent, ok := have[strings.ToLower(sn.Parent)]
+		if !ok {
+			continue
+		}
+		added = append(added, &Node{Name: sn.Name, Parent: parent, Position: sn.Position, Orientation: sn.Orientation, Scale: 1})
+		have[name] = sn.Name
+	}
+	if len(added) == 0 {
+		return tmpl
+	}
+	out := *tmpl
+	out.Nodes = append(append([]*Node(nil), tmpl.Nodes...), added...)
+	return &out
 }
 
 // blendBones returns the weighted blend of move(bone, p) over a vertex's
@@ -461,6 +723,28 @@ func (g girthScales) of(bone string) [2]float64 {
 	return [2]float64{1, 1}
 }
 
+// inherit gives each of bones that has no girth of its own (no stock body
+// part on it: feet, neck, head) its nearest ancestor's in m, so a foot bone
+// copy or a hem weighted to the feet narrows with the shin, and a head bone
+// copy with the torso.
+func (g girthScales) inherit(m *Model, bones map[string]bool) {
+	parent := map[string]string{}
+	for _, n := range m.Nodes {
+		parent[strings.ToLower(n.Name)] = strings.ToLower(n.Parent)
+	}
+	for b := range bones {
+		if _, ok := g[b]; ok {
+			continue
+		}
+		for a, depth := parent[b], 0; a != "" && depth < 64; a, depth = parent[a], depth+1 {
+			if s, ok := g[a]; ok {
+				g[b] = s
+				break
+			}
+		}
+	}
+}
+
 // robeGirth compares the source and target bodies' stock body parts (part
 // 001) on each bone: the spread of their vertices across the bone.
 func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girthScales {
@@ -488,6 +772,7 @@ func bodyGirth(srcPrefix, target string, locs []string, warn func(string)) girth
 	for _, side := range []string{"l", "r"} {
 		if s, ok := g[side+"thigh_g"]; ok {
 			g[side+"shin_g"] = s
+			g[side+"foot_g"] = s
 		}
 	}
 	if len(missing) > 0 {
@@ -708,41 +993,14 @@ func norm3(a [3]float64) [3]float64 {
 	return a
 }
 
-// cloakStrength is the share of the chest's width ratio a cloak is widened
-// by across the body. Bioware's versions of the stock cloaks fit best at 0.4
-// (2.9 cm mean per vertex in phenotype 0 and 4.7 cm in phenotype 2, against
-// 3.8 and 5.5 cm without widening and 18 cm for the unchanged human cloak);
-// making it deeper as well only made it worse.
-const cloakStrength = 0.4
-
-// cloakWiden widens a cloak's cloth across the body (x in the torso's space)
-// about the target chest's centre line, for the share of each vertex weighted
-// to the cloak's bones (Cloak_g and the nodes under it). The zero value
-// changes nothing, which is what robes get.
-type cloakWiden struct {
-	on     bool
-	bones  map[string]bool
-	torso  rigid
-	centre float64
-	scale  float64
-}
-
-func cloakWidening(kind string, src *Model, srcPrefix, target string, tmplW worldTransforms, locs []string, warn func(string)) cloakWiden {
-	if kind != "cloak" {
-		return cloakWiden{}
-	}
-	_, sa, okA := partStats(basePart(srcPrefix, "chest", locs), locs)
-	cb, sb, okB := partStats(basePart(target, "chest", locs), locs)
-	torso, okT := tmplW.lookup("torso_g")
-	if !okA || !okB || !okT || sa[0] <= 1e-4 {
-		warn(fmt.Sprintf("base chest %s_chest001 or %s_chest001, or the template's torso_g, not found: the cloak keeps its width", srcPrefix, target))
-		return cloakWiden{}
-	}
-	bones := map[string]bool{}
+// cloakBones returns the names of a cloak's own bones: Cloak_g and every
+// node under it.
+func cloakBones(src *Model) map[string]bool {
 	children := map[string][]string{}
 	for _, n := range src.Nodes {
 		children[strings.ToLower(n.Parent)] = append(children[strings.ToLower(n.Parent)], strings.ToLower(n.Name))
 	}
+	bones := map[string]bool{}
 	var mark func(string)
 	mark = func(name string) {
 		if bones[name] {
@@ -754,49 +1012,5 @@ func cloakWidening(kind string, src *Model, srcPrefix, target string, tmplW worl
 		}
 	}
 	mark("cloak_g")
-	return cloakWiden{on: true, bones: bones, torso: torso, centre: cb[0], scale: 1 + cloakStrength*(sb[0]/sa[0]-1)}
-}
-
-// share is the part of a vertex's weight on the cloak's bones.
-func (c cloakWiden) share(ws VertexWeight) float64 {
-	var on, tot float64
-	for i, b := range ws.Bones {
-		if i >= len(ws.Weights) || ws.Weights[i] <= 0 {
-			continue
-		}
-		tot += float64(ws.Weights[i])
-		if c.bones[strings.ToLower(b)] {
-			on += float64(ws.Weights[i])
-		}
-	}
-	if tot == 0 {
-		return 0
-	}
-	return on / tot
-}
-
-func (c cloakWiden) point(p [3]float64, ws VertexWeight) [3]float64 {
-	if !c.on {
-		return p
-	}
-	f := c.share(ws)
-	if f == 0 {
-		return p
-	}
-	l := c.torso.unapply(p)
-	l[0] = l[0] + f*((l[0]-c.centre)*c.scale+c.centre-l[0])
-	return c.torso.apply(l)
-}
-
-func (c cloakWiden) normal(n [3]float64, ws VertexWeight) [3]float64 {
-	if !c.on {
-		return n
-	}
-	f := c.share(ws)
-	if f == 0 {
-		return n
-	}
-	l := quatRotate(quatConj(c.torso.rot), n)
-	l[0] = l[0] * (1 + f*(1/c.scale-1))
-	return quatRotate(c.torso.rot, norm3(l))
+	return bones
 }

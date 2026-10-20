@@ -113,6 +113,80 @@ func TestVariantRefitsToTargetBones(t *testing.T) {
 	}
 }
 
+// TestVariantRefitsBoneCopies: a bone copy's own mesh is refitted like a
+// skin vertex weighted wholly to that bone, and a bone the target's template
+// robe lacks (the feet) comes from the target's skeleton.
+func TestVariantRefitsBoneCopies(t *testing.T) {
+	dir := t.TempDir()
+	for name, m := range map[string]*Model{
+		"pmd0_robe999": robeTestModel("pmd0_robe999", 0.7, 0.3, 0.3, false),
+		"pmh0":         skeletonTestModel("pmh0", 0.4),
+		"pmd0":         skeletonTestModel("pmd0", 0.2),
+	} {
+		if err := WriteFile(m, filepath.Join(dir, name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
+	// The shin bone copy's mesh: one vertex halfway down the shin.
+	shin := src.FindNode("lshin_g")
+	shin.Mesh = NewMeshData()
+	shin.Mesh.Verts = []Vec3{{0, 0, -0.2}}
+	shin.Mesh.Render = 0
+	// A foot bone copy the template robe does not have, with a skin vertex
+	// on it.
+	src.Nodes = append(src.Nodes, &Node{Name: "lfoot_g", Parent: "lshin_g", Position: Vec3{0, 0, -0.4}, Orientation: Vec4{0, 0, 1, 0}, Scale: 1})
+	robe := src.FindNode("robe")
+	robe.Mesh.Verts[0] = Vec3{-0.1, 0, 1 - 0.4 - 0.4 - 0.4}
+	robe.Skin.Weights[0] = VertexWeight{Bones: []string{"lfoot_g"}, Weights: []float32{1}}
+
+	var warnings []string
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(s string) { warnings = append(warnings, s) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Halfway down a shin half as long (its foot 0.2 below, not 0.4).
+	if got := out.FindNode("lshin_g").Mesh.Verts[0]; !near(got, Vec3{0, 0, -0.1}) {
+		t.Errorf("shin bone copy vertex at %v, want (0, 0, -0.1)", got)
+	}
+	if got := out.FindNode("lfoot_g").Position; !near(got, Vec3{0, 0, -0.2}) {
+		t.Errorf("lfoot_g at %v, want the pmd0 skeleton's (0, 0, -0.2)", got)
+	}
+	// The skin vertex on the foot moves with it, to the target's foot at
+	// 0.7 - 0.3 - 0.3 - 0.2 = -0.1.
+	if got := out.FindNode("robe").Mesh.Verts[0]; !near(got, Vec3{-0.1, 0, -0.1}) {
+		t.Errorf("foot vertex at %v, want (-0.1, 0, -0.1)", got)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "lfoot_g") {
+			t.Errorf("warning about lfoot_g: %q", w)
+		}
+	}
+}
+
+// TestVariantSuperModelIsTheBodysSkeleton: a body with no skeleton of its
+// own (pmd2 here) uses phenotype 0's, so its variant's supermodel names that
+// one: there is no pmd2 model to find.
+func TestVariantSuperModelIsTheBodysSkeleton(t *testing.T) {
+	dir := t.TempDir()
+	for name, m := range map[string]*Model{
+		"pmd2_robe999": robeTestModel("pmd2_robe999", 0.7, 0.3, 0.3, false),
+		"pmh0":         skeletonTestModel("pmh0", 0.4),
+		"pmd0":         skeletonTestModel("pmd0", 0.2),
+	} {
+		if err := WriteFile(m, filepath.Join(dir, name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := Variant(robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true), "pmd2", VariantOptions{Locs: []string{dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.SuperModel != "pmd0" {
+		t.Errorf("supermodel %q, want pmd0 (pmd2 has no skeleton of its own)", out.SuperModel)
+	}
+}
+
 func TestVariantNeedsATemplate(t *testing.T) {
 	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
 	if _, err := Variant(src, "pmd0", VariantOptions{Locs: []string{t.TempDir()}}); err == nil || !strings.Contains(err.Error(), "no robe of pmd0") {
@@ -378,7 +452,7 @@ func meanDistanceByUV(t *testing.T, a, b *Model, skinsOnly bool) (float64, int) 
 
 // TestVariantCloakMatchesBioware generates the dwarf cloak 1 from the human
 // one and compares its cloth with Bioware's dwarf cloak 1 (the same mesh).
-// Go and the prototype measured 2.9 cm mean over all stock cloaks in
+// Measured 1.8 cm mean over all stock cloaks in
 // phenotype 0. Needs the game install.
 func TestVariantCloakMatchesBioware(t *testing.T) {
 	game := os.Getenv("NWN_ROOT")
@@ -400,6 +474,35 @@ func TestVariantCloakMatchesBioware(t *testing.T) {
 	}
 	mean, n := meanDistanceByUV(t, out, ref, true)
 	t.Logf("pmd0_cloak_001 generated vs Bioware's: %.2f cm mean over %d vertices", mean, n)
+	if mean > 4 {
+		t.Errorf("%.2f cm from Bioware's, want under 4", mean)
+	}
+}
+
+// TestVariantCloakFromSkeleton builds the dwarf cloak 1 as for a body with
+// no cloak (the bones placed by its skeleton and chest) and compares it with
+// Bioware's: measured 3.2 cm, against 1.0 cm with Bioware's dwarf cloak as
+// the template. Needs the game install.
+func TestVariantCloakFromSkeleton(t *testing.T) {
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		home, _ := os.UserHomeDir()
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	locs := []string{game}
+	if sk, _ := loadSkeleton("pmh0", locs); sk == nil {
+		t.Skip("game install not available")
+	}
+	src, ref := loadGameModel(t, locs, "pmh0_cloak_001"), loadGameModel(t, locs, "pmd0_cloak_001")
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: locs, noTemplate: true, Warn: func(s string) { t.Error(s) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Compile(out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	mean, n := meanDistanceByUV(t, out, ref, true)
+	t.Logf("pmd0_cloak_001 built from the skeleton vs Bioware's: %.2f cm mean over %d vertices", mean, n)
 	if mean > 4 {
 		t.Errorf("%.2f cm from Bioware's, want under 4", mean)
 	}
