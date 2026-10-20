@@ -131,7 +131,24 @@ type decompiler struct {
 
 	readErr error // first read error encountered, for truncation detection
 
+	// where is the part of the model being read, so a NaN float can say
+	// whose it is; nanWarns holds one warning per part (warnNaN).
+	where    readPlace
+	nanWarns map[readPlace]*nanWarn
+
 	opts DecompileOptions
+}
+
+// readPlace names a part of the model: a list or header of a node, of an
+// animation's node when anim is set.
+type readPlace struct {
+	anim, node, list string
+}
+
+type nanWarn struct {
+	index int // into model.Warnings
+	count int
+	bits  uint32
 }
 
 type nodeInfo struct {
@@ -174,6 +191,16 @@ func (d *decompiler) trackAlloc(bytes int64) bool {
 
 func (d *decompiler) warn(kind DecompileWarnKind, offset int64, node string, format string, args ...interface{}) {
 	d.model.Warnings = append(d.model.Warnings, DecompileWarning{
+		Kind:    kind,
+		Offset:  offset,
+		Node:    node,
+		Message: fmt.Sprintf(format, args...),
+	})
+}
+
+// note is warn for Model.Notes.
+func (d *decompiler) note(kind DecompileWarnKind, offset int64, node string, format string, args ...interface{}) {
+	d.model.Notes = append(d.model.Notes, DecompileWarning{
 		Kind:    kind,
 		Offset:  offset,
 		Node:    node,
@@ -260,10 +287,39 @@ func (d *decompiler) readF32() (float32, error) {
 	}
 	v := math.Float32frombits(bits)
 	if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-		d.warn(WarnGeneral, d.pos()-4, "", "NaN/Inf float replaced with 0 (raw bits: 0x%08X)", bits)
+		d.warnNaN(d.pos()-4, bits)
 		return 0, nil
 	}
 	return v, nil
+}
+
+// at names the list or header about to be read, for warnNaN.
+func (d *decompiler) at(list string) { d.where.list = list }
+
+// warnNaN reports a NaN or infinite float, replaced with 0. A damaged stream
+// can hold thousands, so there is one warning per list of a node (its verts,
+// its tangents, a controller), with the count and the offset and bits of the
+// first.
+func (d *decompiler) warnNaN(offset int64, bits uint32) {
+	w := d.where
+	what := w.list
+	if what == "" {
+		what = "the model"
+	}
+	if w.anim != "" {
+		what += fmt.Sprintf(" in animation %q", w.anim)
+	}
+	if n, ok := d.nanWarns[w]; ok {
+		n.count++
+		d.model.Warnings[n.index].Message = fmt.Sprintf(
+			"%d NaN/Inf floats in %s replaced with 0 (the first at this offset, raw bits: 0x%08X)", n.count, what, n.bits)
+		return
+	}
+	if d.nanWarns == nil {
+		d.nanWarns = make(map[readPlace]*nanWarn)
+	}
+	d.nanWarns[w] = &nanWarn{index: len(d.model.Warnings), count: 1, bits: bits}
+	d.warn(WarnGeneral, offset, w.node, "NaN/Inf float in %s replaced with 0 (raw bits: 0x%08X)", what, bits)
 }
 
 // readVec3 reads three consecutive float32 values into a Vec3.
@@ -380,6 +436,7 @@ func (d *decompiler) readModelHeader() error {
 	}
 
 	// -- header_geometry --
+	d.where = readPlace{list: "the model header"}
 	d.skip(8) // p_func1, p_func2
 
 	modelName, err := d.readFixedString(64)
@@ -545,6 +602,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 
 	// char node_name[32]
 	nodeName, _ := d.readFixedString(32)
+	d.where = readPlace{node: nodeName, list: "the node header"}
 
 	// uint32 p_geometry, p_parent_node (2 * 4 = 8)
 	d.skip(8)
@@ -669,6 +727,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 // readLightHeader reads header_light (line 259).
 func (d *decompiler) readLightHeader(node *Node) {
 	l := node.Light
+	d.at("the light header")
 
 	l.FlareRadius, _ = d.readF32()
 
@@ -734,6 +793,7 @@ func (d *decompiler) readLightHeader(node *Node) {
 // readEmitterHeader reads header_emitter (line 321).
 func (d *decompiler) readEmitterHeader(node *Node) {
 	em := node.Emitter
+	d.at("the emitter header")
 	em.DeadSpace, _ = d.readF32()
 	em.BlastRadius, _ = d.readF32()
 	em.BlastLength, _ = d.readF32()
@@ -784,6 +844,7 @@ func (d *decompiler) readReferenceHeader(node *Node) {
 // This is the most complex header -- every field is specified in the .bt template.
 func (d *decompiler) readMeshHeader(node *Node) {
 	mesh := node.Mesh
+	d.at("the mesh header")
 
 	// uint32 p_func1, p_func2
 	d.skip(8)
@@ -917,30 +978,37 @@ func (d *decompiler) readMeshHeader(node *Node) {
 
 	// Vertices (MDX pointer)
 	if nVerts > 0 && pMdxVertex >= 0 {
+		d.at("verts")
 		d.readMDXVec3Array(&mesh.Verts, pMdxVertex, nVerts)
 	}
 
 	// TVerts (MDX pointers, only 2 floats each = texcoord not vec3)
 	if nVerts > 0 && pMdxTex0 >= 0 {
+		d.at("tverts")
 		d.readMDXTexCoords(&mesh.TVerts, pMdxTex0, nVerts)
 	}
 	if countTextures > 1 && pMdxTex1 >= 0 {
+		d.at("tverts1")
 		d.readMDXTexCoords(&mesh.TVerts1, pMdxTex1, nVerts)
 	}
 	if countTextures > 2 && pMdxTex2 >= 0 {
+		d.at("tverts2")
 		d.readMDXTexCoords(&mesh.TVerts2, pMdxTex2, nVerts)
 	}
 	if countTextures > 3 && pMdxTex3 >= 0 {
+		d.at("tverts3")
 		d.readMDXTexCoords(&mesh.TVerts3, pMdxTex3, nVerts)
 	}
 
 	// Normals (MDX pointer)
 	if nVerts > 0 && pMdxNormals >= 0 {
+		d.at("normals")
 		d.readMDXVec3Array(&mesh.Normals, pMdxNormals, nVerts)
 	}
 
 	// Colors (MDX pointer, RGBA bytes per spec, but Prolog reads as 3 floats)
 	if nVerts > 0 && pMdxColors >= 0 {
+		d.at("colors")
 		d.readMDXColors(&mesh.Colors, pMdxColors, nVerts)
 	}
 
@@ -1008,6 +1076,7 @@ func (d *decompiler) readSkinHeader(node *Node) {
 	skinBoneRefs := make([][4]int16, nVerts)
 
 	if pWeightVertex >= 0 {
+		d.at("weights")
 		absPtr := d.goToMDXPointer(pWeightVertex)
 		if absPtr >= 0 && absPtr+int64(nVerts)*16 <= d.fileSize {
 			if d.seek(absPtr) == nil {
@@ -1046,6 +1115,7 @@ func (d *decompiler) readSkinHeader(node *Node) {
 
 // readAnimMeshHeader reads header_anim (line 561).
 func (d *decompiler) readAnimMeshHeader(node *Node) {
+	d.at("the animmesh header")
 	node.AnimMesh.SamplePeriod, _ = d.readF32()
 	d.skip(12) // array_definition animation_vertices (legacy)
 	d.skip(12) // array_definition animation_texcoords (legacy)
@@ -1060,10 +1130,12 @@ func (d *decompiler) readAnimMeshHeader(node *Node) {
 	nVerts := len(node.Mesh.Verts)
 	totalAnimVerts := int64(nVertexSets) * int64(nVerts)
 	if totalAnimVerts > 0 && totalAnimVerts <= int64(d.fileSize) && pAnimVerts > 0 && nVerts > 0 {
+		d.at("animverts")
 		d.readCoreVec3Array(&node.AnimMesh.AnimVerts, pAnimVerts, int(totalAnimVerts))
 	}
 	totalAnimTVerts := int64(nTVertSets) * int64(nVerts)
 	if totalAnimTVerts > 0 && totalAnimTVerts <= int64(d.fileSize) && pAnimTVerts > 0 && nVerts > 0 {
+		d.at("animtverts")
 		d.readCoreVec2AsVec3Array(&node.AnimMesh.AnimTVerts, pAnimTVerts, int(totalAnimTVerts))
 	}
 	node.AnimMesh.AnimVerts = animSetMajor(node.AnimMesh.AnimVerts, nVerts)
@@ -1093,6 +1165,7 @@ func animSetMajor(list []Vec3, n int) []Vec3 {
 // readDanglyHeader reads header_dangly (line 586).
 func (d *decompiler) readDanglyHeader(node *Node) {
 	constraintsDef, _ := d.readArrayDef()
+	d.at("the danglymesh header")
 	node.Dangly.Displacement, _ = d.readF32()
 	node.Dangly.Tightness, _ = d.readF32()
 	node.Dangly.Period, _ = d.readF32()
@@ -1101,6 +1174,7 @@ func (d *decompiler) readDanglyHeader(node *Node) {
 	headerEnd := d.pos()
 
 	if constraintsDef.Count > 0 && constraintsDef.Ptr != 0 {
+		d.at("constraints")
 		d.readFloatArrayAt(&node.Dangly.Constraints, constraintsDef)
 	}
 
@@ -1119,6 +1193,7 @@ func (d *decompiler) readAABBHeader(node *Node) {
 // Uses an explicit work stack with visited-pointer tracking for cycle detection.
 // Ref: NWN1MDL.bt entry_aabb (line 605)
 func (d *decompiler) readAABBTree(aabb *AabbData, rootPtr uint32) {
+	d.at("aabb")
 	visited := make(map[uint32]bool)
 	stack := []uint32{rootPtr}
 
@@ -1181,6 +1256,7 @@ func (d *decompiler) readFaces(mesh *MeshData, facesDef binArrayDef) {
 	if !d.trackAlloc(int64(count) * 32) {
 		return
 	}
+	d.at("faces")
 	mesh.Faces = make([]Face, count)
 	for i := 0; i < count; i++ {
 		normal := d.readVec3()
@@ -1310,6 +1386,7 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr i
 	// times the data that is actually there and spill into whatever stream
 	// follows.
 	var handedness []float32
+	d.at("tangent handedness")
 	if handednessPtr >= 0 {
 		hAbs := d.goToMDXPointer(handednessPtr)
 		if hAbs >= 0 && hAbs+int64(count)*4 <= d.fileSize && d.trackAlloc(int64(count)*4) {
@@ -1325,6 +1402,7 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr i
 	if d.seek(tangentAbs) != nil {
 		return
 	}
+	d.at("tangents")
 	tangents := make([]Vec4, count)
 	unit := true
 	for i := 0; i < count; i++ {
@@ -1504,6 +1582,7 @@ func (d *decompiler) skeletonBoneNames(ps pendingSkin, used []int) []string {
 // binControllerKey holds one parsed controller struct entry from the binary file.
 // Ref: NWN1MDL.bt controller struct (line 233), 12 bytes each.
 type binControllerKey struct {
+	Offset      int64 // of the key in the file, for warnings
 	Type        uint32
 	ValueCount  uint16
 	TimeStart   uint16
@@ -1525,6 +1604,7 @@ func (d *decompiler) readControllerKeys(keysDef binArrayDef) []binControllerKey 
 	}
 	keys := make([]binControllerKey, keysDef.Count)
 	for i := uint32(0); i < keysDef.Count; i++ {
+		keys[i].Offset = d.pos()
 		keys[i].Type, _ = d.readU32()
 		keys[i].ValueCount, _ = d.readU16()
 		keys[i].TimeStart, _ = d.readU16()
@@ -1552,6 +1632,7 @@ func (d *decompiler) readControllerRows(def ControllerDef, dataPtr uint32, timeK
 	}
 	dataAbsPtr := goToPointer(dataPtr)
 	rows := make([]controllerRow, 0, numRows)
+	d.at("the " + def.Name + " controller")
 
 	for row := 0; row < numRows; row++ {
 		timePtr := dataAbsPtr + int64(timeKeyStart+row)*4
@@ -1605,8 +1686,16 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 	}
 	for _, k := range keys {
 		def, ok := ControllerID(k.Type, nodeFlag, d.compiler)
+		if !ok && k.Type == 144 && nodeFlag == 3 {
+			// Older EE compilers wrote it on lights (1,408 in the base game,
+			// value 1); the game's compiler writes it for no keyword, so
+			// ASCII cannot carry it (nwn-mdl-spec E51).
+			d.note(WarnUnknownController, k.Offset, nodeName,
+				"light controller 144 dropped: an older EE compiler wrote it, the game's compiler writes it for no keyword, and ASCII has none (nwn-mdl-spec E51)")
+			continue
+		}
 		if !ok {
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"unknown controller type %d for node flag %d", k.Type, nodeFlag)
 			continue
 		}
@@ -1635,13 +1724,13 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		// with no values (sscanf's -1); it is not a bezier byte, and the game
 		// skips the controller (low nibble 15).
 		if k.ColumnCount == 0xff {
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"controller %s has no values (numfloats=0xff); the game skips such a controller, so it was dropped", def.Name)
 			continue
 		}
 		bezier := k.ColumnCount&0x10 != 0
 		if bezier && (def.Name == "orientation" || def.NumCols <= 0) {
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"controller %s is a bezier controller (numfloats=0x%02x), which has no readable bezier form; it was dropped",
 				def.Name, k.ColumnCount)
 			continue
@@ -1656,7 +1745,7 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 		switch {
 		case bezier:
 			if !applied {
-				d.warn(WarnUnknownController, int64(k.Type), nodeName,
+				d.warn(WarnUnknownController, k.Offset, nodeName,
 					"controller %s (numfloats=0x%02x) is read with the width of its keyword; the game skips it, since it applies only 1, 3 or 4 columns",
 					def.Name, k.ColumnCount)
 			}
@@ -1665,16 +1754,16 @@ func (d *decompiler) resolveControllerDefs(keys []binControllerKey, nodeFlag uin
 			}
 			numCols *= 3
 		case !applied:
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"controller %s has %d value columns (numfloats=0x%02x); the game skips such a controller, so it was dropped",
 				def.Name, numCols, k.ColumnCount)
 			continue
 		case def.Name == "orientation" && numCols != 4:
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"orientation controller with %d value columns: the game writes them into its quaternion w first, which ASCII cannot express, so it was dropped", numCols)
 			continue
 		case def.NumCols > 0 && numCols > def.NumCols:
-			d.warn(WarnUnknownController, int64(k.Type), nodeName,
+			d.warn(WarnUnknownController, k.Offset, nodeName,
 				"controller %s has %d value columns for a %d-wide value: the game writes past the value; only the first %d are kept",
 				def.Name, numCols, def.NumCols, def.NumCols)
 		}
@@ -1839,6 +1928,7 @@ func (d *decompiler) readAnimation(ptr uint32) error {
 	// header_geometry (same struct as model)
 	d.skip(8) // p_func1, p_func2
 	animName, _ := d.readFixedString(64)
+	d.where = readPlace{anim: animName, list: "the animation header"}
 	rootNodePtr, _ := d.readU32()
 	d.skip(4)  // count_nodes
 	d.skip(12) // unknown1
@@ -1863,6 +1953,7 @@ func (d *decompiler) readAnimation(ptr uint32) error {
 
 	// Read events
 	if eventsDef.Count > 0 && eventsDef.Ptr != 0 {
+		d.at("the events")
 		evtAbs := goToPointer(eventsDef.Ptr)
 		if evtAbs+int64(eventsDef.Count)*36 <= d.fileSize && d.trackAlloc(int64(eventsDef.Count)*36) {
 			if d.seek(evtAbs) == nil {
@@ -1914,6 +2005,7 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	d.skip(4)  // inheritColor
 	d.skip(4)  // nodeNumber
 	nodeName, _ := d.readFixedString(32)
+	d.where = readPlace{anim: anim.Name, node: nodeName, list: "the node header"}
 	d.skip(8) // p_geometry, p_parent_node
 
 	childrenDef, _ := d.readArrayDef()
@@ -1972,6 +2064,7 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	var animMeshData *AnimMeshData
 	if hasAnim {
 		animMeshData = &AnimMeshData{}
+		d.at("the animmesh header")
 		animMeshData.SamplePeriod, _ = d.readF32()
 		d.skip(12) // array_definition animation_vertices (legacy)
 		d.skip(12) // array_definition animation_texcoords (legacy)
@@ -1984,10 +2077,12 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		if animMeshVerts > 0 {
 			totalAV := int64(nVertexSets) * int64(animMeshVerts)
 			if totalAV > 0 && totalAV <= int64(d.fileSize) && pAnimVerts > 0 {
+				d.at("animverts")
 				d.readCoreVec3Array(&animMeshData.AnimVerts, pAnimVerts, int(totalAV))
 			}
 			totalAT := int64(nTVertSets) * int64(animMeshVerts)
 			if totalAT > 0 && totalAT <= int64(d.fileSize) && pAnimTVerts > 0 {
+				d.at("animtverts")
 				d.readCoreVec2AsVec3Array(&animMeshData.AnimTVerts, pAnimTVerts, int(totalAT))
 			}
 			animMeshData.AnimVerts = animSetMajor(animMeshData.AnimVerts, int(animMeshVerts))
@@ -2011,9 +2106,11 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		headerEnd := d.pos()
 		mesh := NewMeshData()
 		if animPMdxVertex >= 0 {
+			d.at("verts")
 			d.readMDXVec3Array(&mesh.Verts, animPMdxVertex, animMeshVerts)
 		}
 		if animPMdxTex0 >= 0 {
+			d.at("tverts")
 			d.readMDXTexCoords(&mesh.TVerts, animPMdxTex0, animMeshVerts)
 		}
 		if animFacesDef.Count > 0 && animFacesDef.Ptr != 0 {

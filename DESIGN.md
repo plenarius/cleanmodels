@@ -147,7 +147,8 @@ The contract between CLI and GUI. Stable across releases.
 ```json
 {"type": "start",   "file": "foo.mdl", "index": 1, "total": 1234}
 {"type": "done",    "file": "foo.mdl", "index": 1, "total": 1234, "fixes": 3,
- "result": { "file": "foo.mdl", "checks": [...], "repairs": [...], "actions": [...], "warnings": [...] }}
+ "result": { "file": "foo.mdl", "checks": [...], "repairs": [...], "actions": [...], "warnings": [...],
+             "parse_warnings": [...], "notes": [...] }}
 {"type": "error",   "file": "bar.mdl", "index": 2, "total": 1234, "message": "..."}
 {"type": "summary", "total": 1234, "fixes": 421, "message": "Processed 1234 files, 12 warnings, 3 errors"}
 ```
@@ -171,6 +172,7 @@ Field rules:
 - `type` is always present and stable: `start`, `done`, `error`, `summary`, and `source` (`variants --preview-dir` only).
 - `file` is the model's base name (for `variants`, the version's).
 - `result` matches `Result` in `process.go` exactly. Only present on `done`.
+- `warnings` are decompile and compile warnings: `kind`, `offset` (in the binary, 0 when there is none), `node` and `message`. A NaN warning covers every NaN float of one list of one node and gives the count. `parse_warnings` are the ASCII parser's, as text with the line number, node and list. `notes` have the same fields as `warnings` but are info: what the decompiler dropped that is known and harmless, such as light controller 144. They are not counted as warnings, and the text output shows them only with `--verbose`.
 - `sameShape` (variants): this body got that body's fit, renamed (same skeleton joints and base parts); no preview is written for it.
 - `adjusts` (variants): the adjustments that change this variant, from `width`, `length` and the `--shape` regions (`shoulders`, `chest`, `waist`, `hips`, `hem`); a GUI can disable the others. `hem` is for robes and cloaks only; armour parts below the hips (shins, feet) have no regions.
 - `learnedFrom` (variants): the armour part's fit was learned from this many versions of its slot that already exist for both bodies; absent for the measured fit.

@@ -16,6 +16,8 @@ model = decompile_file(path, skeleton_dirs=lookup_dirs(path))  # skeletons: mode
 text = write(model)                                             # what `cleanmodels decompile` prints
 for w in model.warnings:
     print(w.node, w.message)
+for w in model.notes:                                           # Go's notes: info, not warnings
+    print(w.node, w.message)
 
 res = parse(open("c_wolf.mdl", "rb").read())                    # an ASCII model
 for e in res.errors:                                            # Go's parse_warnings
