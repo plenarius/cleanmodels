@@ -84,6 +84,13 @@ func (cf *commonFlags) apply(o *procOpts) {
 	o.overwrite = *cf.overwrite
 }
 
+// registerKeepLost adds --force to the commands that write a model back
+// (repair, compile, check --fix): write it even when reading the binary lost
+// triangles (refuseLostTriangles). decompile has a --force of its own.
+func registerKeepLost(fs *flag.FlagSet) *bool {
+	return fs.Bool("force", false, "write the model even when reading the binary lost triangles (a render list drawing triangles that are in no mesh's faces)")
+}
+
 // validateColorMode rejects values outside the documented set.
 // Empty string is permitted and treated as "auto" by shouldColorize.
 func validateColorMode(mode string) error {

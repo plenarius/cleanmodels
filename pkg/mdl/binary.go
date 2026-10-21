@@ -105,6 +105,7 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 	for _, ps := range d.pendingSkins {
 		d.resolveSkinWeights(ps)
 	}
+	d.unmergeRenderLists()
 
 	return d.model, nil
 }
@@ -130,6 +131,10 @@ type decompiler struct {
 	maxAlloc   int64
 
 	readErr error // first read error encountered, for truncation detection
+
+	// renderLists holds each geometry mesh's render index list
+	// (MDL-BIN-049), for unmergeRenderLists (binary_merged.go).
+	renderLists map[*Node][]uint16
 
 	// where is the part of the model being read, so a NaN float can say
 	// whose it is; nanWarns holds one warning per part (warnNaN).
@@ -915,10 +920,10 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	d.skip(12)
 	// array_definition face_leftover (12)
 	d.skip(12)
-	// array_definition vertex_indices_count (12)
-	d.skip(12)
-	// array_definition vertex_indices_offset (12)
-	d.skip(12)
+	// array_definition vertex_indices_count, vertex_indices_offset (12 each):
+	// the render index list (MDL-BIN-049), read below.
+	idxCountDef, _ := d.readArrayDef()
+	idxOffsetDef, _ := d.readArrayDef()
 
 	// int32 p_mdx_unknown1
 	d.skip(4)
@@ -1022,6 +1027,55 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	if facesDef.Count > 0 && facesDef.Ptr != 0 {
 		d.readFaces(mesh, facesDef)
 	}
+
+	if rl := d.readRenderList(idxCountDef, idxOffsetDef); rl != nil {
+		if d.renderLists == nil {
+			d.renderLists = map[*Node][]uint16{}
+		}
+		d.renderLists[node] = rl
+	}
+}
+
+// readRenderList reads a mesh's render index list: for each entry of the
+// counts array, that many u16 vertex indices at the matching offset in the
+// raw data. nil when there is none or it does not fit the file.
+func (d *decompiler) readRenderList(counts, offsets binArrayDef) []uint16 {
+	n := counts.Count
+	if offsets.Count < n {
+		n = offsets.Count
+	}
+	if n == 0 || n > 16 || counts.Ptr == 0 || offsets.Ptr == 0 {
+		return nil
+	}
+	var out []uint16
+	for i := uint32(0); i < n; i++ {
+		if d.seek(goToPointer(counts.Ptr)+int64(i)*4) != nil {
+			return nil
+		}
+		cnt, err := d.readU32()
+		if err != nil {
+			return nil
+		}
+		if d.seek(goToPointer(offsets.Ptr)+int64(i)*4) != nil {
+			return nil
+		}
+		off, err := d.readU32()
+		if err != nil {
+			return nil
+		}
+		abs := d.goToMDXPointer(int32(off))
+		if abs < 0 || abs+int64(cnt)*2 > d.fileSize || !d.trackAlloc(int64(cnt)*2) || d.seek(abs) != nil {
+			return nil
+		}
+		for j := uint32(0); j < cnt; j++ {
+			v, err := d.readU16()
+			if err != nil {
+				return nil
+			}
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // readSkinHeader reads header_skin (line 501).

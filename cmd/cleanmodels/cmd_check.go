@@ -25,6 +25,7 @@ func cmdCheck(args []string) int {
 
 	var cf commonFlags
 	cf.register(fs)
+	keepLost := registerKeepLost(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels check [flags] <input>...\n       cleanmodels check --fix [flags] <input> [output]\n\n")
@@ -73,6 +74,7 @@ func cmdCheck(args []string) int {
 		exclude: parseNameSet(*excludeStr),
 	}
 	cf.apply(&opts)
+	opts.force = *keepLost
 
 	if *fix {
 		setAllRepairs(&opts)

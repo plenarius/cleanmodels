@@ -535,6 +535,9 @@ type Model struct {
 	// Notes are what the decompiler dropped that is known and harmless, such
 	// as light controller 144: worth saying (info), not worth a warning.
 	Notes []DecompileWarning
+	// RenderMerges are the meshes of a binary whose render index list draws
+	// more than their own faces (binary_merged.go).
+	RenderMerges []RenderMerge
 }
 
 // FindNode returns the first node with the given name, or nil.
