@@ -93,6 +93,11 @@ def cli_compile(cli, paths):
     for p in paths:
         by_dir.setdefault(os.path.dirname(p), []).append(p)
     out = {}
+    # Since 4.13 the CLI refuses to write a model whose binary lost triangles
+    # (a damaged render list, as the mutations make); --force writes it, as
+    # the library does. Older CLIs have no such flag.
+    help_text = subprocess.run([cli, "compile", "--help"], capture_output=True, text=True)
+    force = ["--force"] if "-force" in help_text.stdout + help_text.stderr else []
     d = tempfile.mkdtemp(prefix="cmparity_cli")
     try:
         n = 0
@@ -102,7 +107,7 @@ def cli_compile(cli, paths):
                 o = os.path.join(d, str(n))
                 n += 1
                 os.makedirs(o)
-                subprocess.run([cli, "compile", "-q", "--workers", str(os.cpu_count() or 4)] + chunk + [o],
+                subprocess.run([cli, "compile", "-q", "--workers", str(os.cpu_count() or 4)] + force + chunk + [o],
                                capture_output=True)
                 for p in chunk:
                     q = os.path.join(o, os.path.basename(p))

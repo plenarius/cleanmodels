@@ -84,8 +84,10 @@ class ControllersMixin:
             keys.append((type_id, 1, ts, ds, cols))
 
         declared = n.declared
-        if not is_root_parent(n.parent):
+        root = is_root_parent(n.parent)  # the root only when declared (compiler_controllers.go)
+        if not root or "position" in declared:
             add(8, 3, list(n.position[:3]))
+        if not root or "orientation" in declared:
             add(20, 4, list(axis_angle_to_quat(n.orientation)))
         if n.scale != 1 or "scale" in declared:
             add(36, 1, [n.scale])

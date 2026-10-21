@@ -5,6 +5,8 @@ vertices: per-triangle dP/du, accumulated per vertex, a cloned vertex where a
 triangle's handedness disagrees, then Gram-Schmidt against the normal.
 """
 
+import math
+
 from .compiler_normals import game_normalize
 from .f32 import f32
 from .gostr import equal_fold_ascii
@@ -104,6 +106,21 @@ def resolve_tangents(mesh, exp, normal_mapped, anim_mesh):
     if mesh is None or not normal_mapped:
         return None, None
     return generate_tangents(exp, anim_mesh)
+
+
+def zero_length_tangents(mesh):
+    """ZeroLengthTangents: tangents with no direction (length under 1e-6)."""
+    if mesh is None:
+        return 0
+    z = 0
+    for t in mesh.tangents:
+        if math.sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]) < 1e-6:
+            z += 1
+    return z
+
+
+def use_existing_tangents(mesh, exp):
+    return _use_existing_tangents(mesh, exp)
 
 
 def _use_existing_tangents(mesh, exp):

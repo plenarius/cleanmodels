@@ -199,6 +199,7 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 | `--tilefade-z` | | Z height for tilefade slicing (default: 5.0) |
 | `--strip-degenerate` | | Remove zero-area faces |
 | `--fix-animations` | | Clamp negative/too-short animation lengths |
+| `--fix-tangents` | | Drop a mesh's tangents when any has zero length (they draw as white streaks), so the compiler computes them |
 | `--reparent-children` | | Reparent children of AABB/light nodes |
 | `--wrap-root` | | Wrap non-dummy root nodes in a dummy parent |
 | `--split-multiedge` | | Split faces sharing multiple edges |
@@ -212,6 +213,7 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 | `--force-white` | | Set ambient/diffuse to 1,1,1 |
 | `--merge-by-bitmap` | | Merge sibling trimeshes sharing a bitmap |
 | `--cull-invisible` | | Convert invisible meshes to dummy nodes |
+| `--force` | | Write the model even when reading the binary lost triangles: a render list drawing triangles that are in no mesh's faces, which ASCII cannot hold. Without it such a model is not written |
 
 ### compile — ASCII to binary MDL
 

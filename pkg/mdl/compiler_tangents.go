@@ -8,6 +8,8 @@
 package mdl
 
 import (
+	"fmt"
+	"math"
 	"strings"
 )
 
@@ -247,4 +249,41 @@ func renderHintValue(hint string) uint32 {
 // "normaltangents" to 3, case-insensitively, and only those two qualify.
 func hintWantsTangents(hint string) bool {
 	return strings.EqualFold(hint, "NormalAndSpecMapped") || strings.EqualFold(hint, "NormalTangents")
+}
+
+// ZeroLengthTangents counts the tangents of mesh with no direction (length
+// under 1e-6). The game draws them as given: with a normal map, those
+// vertices come out as white streaks. Decompiling a NaN tangent, or parsing
+// an unusable number in one, gives such a zero.
+func ZeroLengthTangents(mesh *MeshData) int {
+	if mesh == nil {
+		return 0
+	}
+	z := 0
+	for _, t := range mesh.Tangents {
+		x, y, w := float64(t.X), float64(t.Y), float64(t.Z)
+		if math.Sqrt(x*x+y*y+w*w) < 1e-6 {
+			z++
+		}
+	}
+	return z
+}
+
+// DropZeroLengthTangents removes the tangents of every mesh that has any of
+// zero length, so the compiler computes them from the geometry, as the game
+// does for an ASCII mesh without them (Layonara's tin01 walls lost their white
+// streaks that way). It returns a message per mesh.
+func DropZeroLengthTangents(m *Model) []string {
+	var out []string
+	for _, n := range m.Nodes {
+		if n == nil || n.Mesh == nil {
+			continue
+		}
+		if z := ZeroLengthTangents(n.Mesh); z > 0 {
+			out = append(out, fmt.Sprintf("mesh %q: dropped its tangents (%d of %d of zero length, drawn as white streaks); they are computed from the geometry when compiled",
+				n.Name, z, len(n.Mesh.Tangents)))
+			n.Mesh.Tangents = nil
+		}
+	}
+	return out
 }

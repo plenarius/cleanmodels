@@ -1,0 +1,32 @@
+newmodel zcm_rootpos
+setsupermodel zcm_rootpos NULL
+classification TILE
+setanimationscale 1.00
+beginmodelgeom zcm_rootpos
+node dummy zcm_rootpos
+  parent NULL
+  position 0 0 -1.75
+  orientation 0 0 1 0.5
+endnode
+node trimesh quad
+  parent zcm_rootpos
+  position 1 2 3
+  orientation 0 0 1 0
+  bitmap NULL
+  render 1
+  verts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 1
+    0 2 3 1 0 2 3 1
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+endnode
+endmodelgeom zcm_rootpos
+donemodel zcm_rootpos

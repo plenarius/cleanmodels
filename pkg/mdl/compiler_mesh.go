@@ -87,6 +87,12 @@ func (c *compiler) writeMeshHeaderInner(mesh *MeshData, n *Node) (facesPtrField,
 	// expanded mesh's positions, normals, and UV0 — meshes without UVs
 	// (e.g. AABB walkmesh) keep both pointers at -1.
 	tangentsOut, handednessOut := resolveTangents(mesh, &expanded, isNormalMapped(mesh, c.resourceDirs), n != nil && n.AnimMesh != nil)
+	if c.warn != nil && n != nil && useExistingTangents(mesh, &expanded) {
+		if z := ZeroLengthTangents(mesh); z > 0 {
+			c.warn(fmt.Sprintf("mesh %q has %d of %d tangents of zero length, compiled as they are, as the game does: those vertices draw with white streaks. repair --fix-tangents drops them so they are computed from the geometry",
+				n.Name, z, len(mesh.Tangents)))
+		}
+	}
 
 	// uint32 p_func1, p_func2 (8 bytes) — engine fills at load
 	c.core.zeros(8)
