@@ -837,7 +837,8 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 	case "rotatetexture":
 		p.intParam(tokens, &mesh.RotateTexture)
 	case "lightmapped":
-		p.intParam(tokens, &mesh.LightMapped)
+		// Not read by the game (nwn-mdl-spec MDL-BIN-051, MDL-ASCII-070);
+		// Older cleanmodels versions wrote it from an uninitialised byte.
 	case "center":
 		// center can be mn3 or man -- accept both forms
 		// As mn3: center x y z

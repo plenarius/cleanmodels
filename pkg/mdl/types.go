@@ -123,7 +123,6 @@ type MeshData struct {
 	SelfIllumColor   Vec3
 	TileFade         int32
 	RotateTexture    int32
-	LightMapped      int32 // EE: offset after RotateTexture
 
 	Multimaterial []string
 }

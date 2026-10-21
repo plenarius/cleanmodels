@@ -157,8 +157,6 @@ class _Writer:
         if m.tile_fade != 0:
             ind(4, "tilefade %d" % m.tile_fade)
         ind(4, "rotatetexture %d" % m.rotate_texture)
-        if m.light_mapped != 0:
-            ind(4, "lightmapped %d" % m.light_mapped)
         if m.multimaterial:
             ind(4, "multimaterial %d" % len(m.multimaterial))
             for mat in m.multimaterial:

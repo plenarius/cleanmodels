@@ -12,10 +12,9 @@ import (
 // engineFixtureLines drops the lines where our compile differs from the
 // engine's on purpose: the identity orientation controller we write on every
 // non-root node (see compiler_controllers.go, issue #12), which decompiles to
-// "orientation 0 0 1 0"; and the mesh lightmapped byte and the emitter xgrid
-// and ygrid of a source that does not set them, which the engine leaves
-// uninitialised (nwn-mdl-spec E55).
-var engineFixtureLines = regexp.MustCompile(`(?m)^\s*(orientation 0 0 1 0|lightmapped \d+|[xy]grid \d+)\n`)
+// "orientation 0 0 1 0"; and the emitter xgrid and ygrid of a source that
+// does not set them, which the engine leaves uninitialised (nwn-mdl-spec E55).
+var engineFixtureLines = regexp.MustCompile(`(?m)^\s*(orientation 0 0 1 0|[xy]grid \d+)\n`)
 
 // engineFixtureKnownGaps are probes whose engine behaviour cleanmodels does
 // not follow, each with the reason.

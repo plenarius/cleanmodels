@@ -64,7 +64,6 @@ class MeshData:
         self.self_illum_color = VEC3_ZERO
         self.tile_fade = 0
         self.rotate_texture = 0
-        self.light_mapped = 0
         self.multimaterial = []
 
 

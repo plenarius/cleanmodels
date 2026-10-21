@@ -362,9 +362,6 @@ func (w *writer) writeMeshData(n *Node, m *MeshData) {
 		w.indent(4, "tilefade %d", m.TileFade)
 	}
 	w.indent(4, "rotatetexture %d", m.RotateTexture)
-	if m.LightMapped != 0 {
-		w.indent(4, "lightmapped %d", m.LightMapped)
-	}
 
 	// Multimaterial
 	if len(m.Multimaterial) > 0 {

@@ -467,7 +467,7 @@ class MeshMixin:
             core.i32(0)
         else:
             core.i32(-1)
-        core.u8(mesh.light_mapped & 0xFF)
+        core.u8(0)  # lightmapped: the game reads it from no keyword (compiler_mesh.go)
         core.u8(mesh.rotate_texture & 0xFF)
         core.zeros(2)
         core.f32(0.0)
