@@ -82,6 +82,7 @@ func cmdRepair(args []string) int {
 
 	var cf commonFlags
 	cf.register(fs)
+	keepLost := registerKeepLost(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels repair [flags] <input>... [output]\n\n")
@@ -166,6 +167,7 @@ func cmdRepair(args []string) int {
 		},
 	}
 	cf.apply(&opts)
+	opts.force = *keepLost
 
 	if *fixAll {
 		setAllRepairs(&opts)

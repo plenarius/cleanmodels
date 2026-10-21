@@ -13,6 +13,7 @@ func cmdCompile(args []string) int {
 
 	var cf commonFlags
 	cf.register(fs)
+	keepLost := registerKeepLost(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels compile [flags] <input>... [output]\n\n")
@@ -47,6 +48,7 @@ func cmdCompile(args []string) int {
 		compile: true,
 	}
 	cf.apply(&opts)
+	opts.force = *keepLost
 
 	return dispatchInputs(inputs, outputPath, opts)
 }

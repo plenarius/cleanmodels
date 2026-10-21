@@ -116,6 +116,7 @@ type procOpts struct {
 	decompileOnly, dryRun                                          bool
 	compile                                                        bool
 	overwrite                                                      bool // replace an existing output file
+	force                                                          bool // write even when reading the model lost triangles
 	workers                                                        int
 	include, exclude                                               map[string]bool
 	colorMode                                                      string // "auto", "always", "never"
@@ -726,6 +727,13 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 		res.Checks = runChecks(model, path, o, o.include, o.exclude, fix)
 	}
 
+	if model != nil && !o.dryRun && !o.decompileOnly && (o.compile || outputPath != "") {
+		if err := refuseLostTriangles(model, o.force); err != nil {
+			res.Error = err.Error()
+			return res, model, parseErrs, err
+		}
+	}
+
 	if model != nil && !o.dryRun {
 		switch {
 		case o.compile:
@@ -777,6 +785,29 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	}
 
 	return res, model, parseErrs, nil
+}
+
+// refuseLostTriangles stops a repair or compile from writing a binary whose
+// render lists drew triangles that are in no mesh's faces (see
+// pkg/mdl/binary_merged.go): ASCII cannot hold them, so the output would
+// lose them, as Layonara's tin01 tiles lost their lower walls. force writes
+// it anyway; the warning still says what is lost.
+func refuseLostTriangles(model *mdl.Model, force bool) error {
+	if force {
+		return nil
+	}
+	lost, nodes := 0, []string{}
+	for _, m := range model.RenderMerges {
+		if m.Lost > 0 {
+			lost += m.Lost
+			nodes = append(nodes, m.Receiver)
+		}
+	}
+	if lost == 0 {
+		return nil
+	}
+	return fmt.Errorf("not written: %d triangles the binary draws (render lists of %s) are in no mesh's faces, so the output would lose them; pass --force to write it anyway",
+		lost, strings.Join(nodes, ", "))
 }
 
 // runSingle processes a single file with the given options and output configuration.

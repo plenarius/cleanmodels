@@ -330,6 +330,7 @@ class Model:
         self.animations = []
         self.warnings = []
         self.notes = []  # Model.Notes: dropped data that is known and harmless (info)
+        self.render_merges = []  # Model.RenderMerges: (receiver, donors, lost)
 
     def find_node(self, name):
         for n in self.nodes:

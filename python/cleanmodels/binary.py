@@ -17,7 +17,7 @@ from . import controllers
 from .controllers import controller_id
 from .compiler_tangents import hint_wants_tangents
 from .f32 import f32
-from .gostr import quote
+from .gostr import equal_fold, go_lower, quote
 from .types import (
     AabbData, AabbEntry, AnimMeshData, AnimNode, Animation, DanglyData, DecompileWarning,
     EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData, SkinData, VertexWeight,
@@ -89,6 +89,7 @@ def decompile(data, skeleton_dirs=()):
             d.warn(WARN_TRUNCATED_DATA, ptr, "", "animation read error: %s" % err)
     for ps in d.pending_skins:
         d.resolve_skin_weights(ps)
+    unmerge_render_lists(d)
     return d.model
 
 
@@ -134,6 +135,7 @@ class _Decompiler:
         # readPlace (anim, node, list) being read, for warn_nan; one warning per place
         self.where = ("", "", "")
         self.nan_warns = {}
+        self.render_lists = {}  # node -> render index list (binary_merged.go)
 
     # --- low-level reads (bytes.Reader + encoding/binary semantics) ---
 
@@ -549,7 +551,9 @@ class _Decompiler:
         if mat:
             mesh.material_name = mat
         mesh.tile_fade = _as_i32(self.read_u32())
-        self.skip(12 * 4)
+        self.skip(12 * 2)
+        idx_count_def, _ = self.read_array_def()   # the render index list (MDL-BIN-049)
+        idx_offset_def, _ = self.read_array_def()
         self.skip(4 + 4 + 4 + 4)
         p_vertex = self.read_i32()
         count_verts = self.read_u16()
@@ -596,8 +600,38 @@ class _Decompiler:
                 self.read_mdx_tangents(mesh, p_tangent, p_handedness, n)
             if faces_def[1] > 0 and faces_def[0] != 0:
                 self.read_faces(mesh, faces_def)
+            rl = self.read_render_list(idx_count_def, idx_offset_def)
+            if rl is not None:
+                self.render_lists[node] = rl
         finally:
             self.seek(header_end)
+
+    def read_render_list(self, counts, offsets):
+        """readRenderList: the u16 vertex indices of each entry, or None."""
+        n = min(counts[1], offsets[1])
+        if n == 0 or n > 16 or counts[0] == 0 or offsets[0] == 0:
+            return None
+        out = []
+        for i in range(n):
+            if not self.seek(self.go_to_pointer(counts[0]) + i * 4):
+                return None
+            cnt, ok = self.read_u32_ok()
+            if not ok:
+                return None
+            if not self.seek(self.go_to_pointer(offsets[0]) + i * 4):
+                return None
+            off, ok = self.read_u32_ok()
+            if not ok:
+                return None
+            at = self.go_to_mdx_pointer(_as_i32(off))
+            if at < 0 or at + cnt * 2 > self.size or not self.track_alloc(cnt * 2) or not self.seek(at):
+                return None
+            for _ in range(cnt):
+                v, ok = self._read(_U16, 2)
+                if not ok:
+                    return None
+                out.append(v)
+        return out
 
     def read_skin_header(self, node):
         self.skip(12)
@@ -1328,3 +1362,130 @@ def _is_unit_tangent(t):
     """binary.go isUnitTangent: squared length within 0.02 of 1, in float64."""
     l2 = t[0] * t[0] + t[1] * t[1] + t[2] * t[2]
     return 0.98 < l2 < 1.02
+
+
+# --- merged meshes (binary_merged.go) ---
+
+MERGE_TOLERANCE = 1e-3  # m
+
+
+def _mesh_tri(mesh, a, b, c):
+    """meshTri: (uv key, sorted side lengths), or None when an index is out of range."""
+    idx = (a, b, c)
+    for i in idx:
+        if i < 0 or i >= len(mesh.verts):
+            return None
+    uv = []
+    for i in idx:
+        if i < len(mesh.tverts):
+            uv.append((mesh.tverts[i][0], mesh.tverts[i][1]))
+        else:
+            uv.append((0.0, 0.0))
+    uv.sort()
+    side = []
+    for j in range(3):
+        p, q = mesh.verts[idx[j]], mesh.verts[idx[(j + 1) % 3]]
+        dx, dy, dz = p[0] - q[0], p[1] - q[1], p[2] - q[2]
+        side.append(math.sqrt(dx * dx + dy * dy + dz * dz))
+    side.sort()
+    return tuple(uv), side
+
+
+class _TriPool:
+    """triPool: triangles by their uv key, each taken once by one of the same shape."""
+    __slots__ = ("by_uv", "n")
+
+    def __init__(self):
+        self.by_uv = {}
+        self.n = 0
+
+    def add(self, t):
+        self.by_uv.setdefault(t[0], []).append(t)
+        self.n += 1
+
+    def find(self, t):
+        for i, c in enumerate(self.by_uv.get(t[0], ())):
+            if (abs(c[1][0] - t[1][0]) <= MERGE_TOLERANCE and abs(c[1][1] - t[1][1]) <= MERGE_TOLERANCE
+                    and abs(c[1][2] - t[1][2]) <= MERGE_TOLERANCE):
+                return i
+        return -1
+
+    def take(self, t, i):
+        del self.by_uv[t[0]][i]
+        self.n -= 1
+
+    def copy(self):
+        p = _TriPool()
+        p.by_uv = {k: list(v) for k, v in self.by_uv.items()}
+        p.n = self.n
+        return p
+
+
+def unmerge_render_lists(d):
+    """unmergeRenderLists: put merged donors back (render 1), note or warn per receiver."""
+    if not d.render_lists:
+        return
+    moves = set()  # nodes an animation moves: a donor among them was drawn still
+    for a in d.model.animations:
+        for an in a.nodes:
+            if len(an.position_keys) > 1 or len(an.orientation_keys) > 1:
+                moves.add(go_lower(an.name))
+    used = set()
+    for r in d.model.nodes:
+        rl = d.render_lists.get(r)
+        if r.mesh is None or rl is None or len(rl) <= 3 * len(r.mesh.faces):
+            continue
+        extra = _TriPool()
+        unreadable = 0
+        for k in range(0, len(rl) - 2, 3):
+            t = _mesh_tri(r.mesh, rl[k], rl[k + 1], rl[k + 2])
+            if t is not None:
+                extra.add(t)
+            else:
+                unreadable += 1
+        for f in r.mesh.faces:
+            t = _mesh_tri(r.mesh, f.verts[0], f.verts[1], f.verts[2])
+            if t is not None:
+                i = extra.find(t)
+                if i >= 0:
+                    extra.take(t, i)
+        if extra.n == 0 and unreadable == 0:
+            continue
+        donors = []
+        for n in d.model.nodes:
+            m = n.mesh
+            if (n is r or m is None or id(n) in used or m.render != 0 or d.render_lists.get(n) or not m.faces
+                    or not equal_fold(m.bitmap, r.mesh.bitmap)):
+                continue
+            trial = extra.copy()
+            ok = True
+            for f in m.faces:
+                t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2])
+                i = trial.find(t) if t is not None else -1
+                if i < 0:
+                    ok = False
+                    break
+                trial.take(t, i)
+            if not ok:
+                continue
+            extra = trial
+            used.add(id(n))
+            m.render = 1
+            donors.append(n.name)
+        lost = extra.n + unreadable
+        d.model.render_merges.append((r.name, donors, lost))
+        if donors:
+            d.note(WARN_GENERAL, 0, r.name,
+                   "its render list also draws %s, merged into it by the tool that compiled the model (render 0 and no "
+                   "render list of their own): written with render 1, which draws the same as separate meshes"
+                   % ", ".join(donors))
+        moving = [n for n in donors if go_lower(n) in moves]
+        if moving:
+            d.note(WARN_GENERAL, 0, r.name,
+                   "this model's animations move %s, which the game drew still, as part of this mesh's render list: with "
+                   "render 1, the animations move it" % ", ".join(moving))
+        if lost > 0:
+            d.warn(WARN_GENERAL, 0, r.name,
+                   "%d of the triangles its render list draws are in no mesh's faces: ASCII has no place for them, so a "
+                   "decompile, repair or recompile loses them" % lost)
+
