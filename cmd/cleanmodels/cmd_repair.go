@@ -20,6 +20,7 @@ func cmdRepair(args []string) int {
 	tilefadeZ := fs.Float64("tilefade-z", 5.0, "Z height for tilefade slicing")
 	stripDegen := fs.Bool("strip-degenerate", false, "remove zero-area faces")
 	fixAnims := fs.Bool("fix-animations", false, "clamp negative/too-short animation lengths")
+	fixTangents := fs.Bool("fix-tangents", false, "drop a mesh's tangents when any has zero length (drawn as white streaks), so they are computed from the geometry")
 	reparentChildren := fs.Bool("reparent-children", false, "reparent children of AABB/light nodes")
 	wrapRoot := fs.Bool("wrap-root", false, "wrap non-dummy root nodes in a dummy parent")
 	splitMultiEdge := fs.Bool("split-multiedge", false, "split faces at multiple edges")
@@ -177,6 +178,7 @@ func cmdRepair(args []string) int {
 		opts.fixTilefade = *fixTilefade
 		opts.stripDegenerate = *stripDegen
 		opts.fixAnimations = *fixAnims
+		opts.fixTangents = *fixTangents
 		opts.reparentChildren = *reparentChildren
 		opts.wrapRoot = *wrapRoot
 		opts.splitMultiEdge = *splitMultiEdge

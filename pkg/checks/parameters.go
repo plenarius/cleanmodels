@@ -13,7 +13,7 @@ func init() {
 	Register("black_ambient", "parameters", false, "Detect zero ambient with non-zero diffuse", checkBlackAmbient)
 	Register("black_diffuse", "parameters", false, "Detect zero diffuse color on mesh nodes", checkBlackDiffuse)
 	Register("renderhint_consistency", "parameters", true, "Clear mismatched renderhint/materialname pairs", checkRenderhintConsistency)
-	Register("tangent_validation", "parameters", false, "Detect missing tangents on normal-mapped meshes", checkTangentValidation)
+	Register("tangent_validation", "parameters", false, "Detect missing tangents on normal-mapped meshes, and tangents of zero length", checkTangentValidation)
 	Register("null_bitmaps", "parameters", true, "Set render=0 on meshes with missing bitmaps", checkNullBitmaps)
 	Register("shadow_render_consistency", "parameters", false, "Detect shadow=1 with render=0 inconsistency", checkShadowRenderConsistency)
 	Register("vertex_color_count", "parameters", true, "Fix vertex color array to match vertex count", checkVertexColorCount)
@@ -110,13 +110,33 @@ func checkRenderhintConsistency(model *mdl.Model, file string, fix bool) []mdl.C
 	return out
 }
 
-func checkTangentValidation(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+func checkTangentValidation(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
 	var out []mdl.CheckResult
 	for _, n := range model.Nodes {
 		if n == nil || n.Mesh == nil {
+			continue
+		}
+		// The game draws tangents as given: zero-length ones show as white
+		// streaks on a normal-mapped surface. Dropping them makes the
+		// compiler compute them all from the geometry.
+		if z := mdl.ZeroLengthTangents(n.Mesh); z > 0 {
+			total := len(n.Mesh.Tangents)
+			if fix {
+				n.Mesh.Tangents = nil
+			}
+			out = append(out, mdl.CheckResult{
+				Check:    "tangent_validation",
+				Node:     n.Name,
+				Severity: mdl.SevWarning,
+				Fixed:    fix,
+				Message: fmt.Sprintf(
+					"%s: mesh node %q has %d of %d tangents of zero length (drawn as white streaks); dropping them lets the compiler compute them",
+					file, n.Name, z, total,
+				),
+			})
 			continue
 		}
 		if n.Mesh.RenderHint != "NormalAndSpecMapped" {

@@ -158,7 +158,7 @@ def new_parsed_light_data():
 
 def _declared_name(n, keyword):
     """declared.go declaredName, or None."""
-    if keyword == "scale":
+    if keyword in ("scale", "position", "orientation"):
         return keyword
     if (keyword == "alpha" or keyword == "selfillumcolor") and n.mesh is not None:
         return keyword

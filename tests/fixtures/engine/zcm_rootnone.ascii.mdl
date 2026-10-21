@@ -1,0 +1,30 @@
+newmodel zcm_rootnone
+setsupermodel zcm_rootnone NULL
+classification TILE
+setanimationscale 1.00
+beginmodelgeom zcm_rootnone
+node dummy zcm_rootnone
+  parent NULL
+endnode
+node trimesh quad
+  parent zcm_rootnone
+  position 1 2 3
+  orientation 0 0 1 0
+  bitmap NULL
+  render 1
+  verts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 1
+    0 2 3 1 0 2 3 1
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+endnode
+endmodelgeom zcm_rootnone
+donemodel zcm_rootnone

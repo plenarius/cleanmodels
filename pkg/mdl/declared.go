@@ -42,7 +42,9 @@ func init() {
 // property of this node.
 func (n *Node) declaredName(keyword string) (string, bool) {
 	switch {
-	case keyword == "scale":
+	case keyword == "scale", keyword == "position", keyword == "orientation":
+		// position and orientation count on the model root only (the
+		// compiler writes them on every other node).
 		return keyword, true
 	case (keyword == "alpha" || keyword == "selfillumcolor") && n.Mesh != nil:
 		return keyword, true

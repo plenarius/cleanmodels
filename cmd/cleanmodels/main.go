@@ -278,6 +278,7 @@ func runLegacy(args []string) int {
 			reparentChildren: *reparentChildren || *fixAll,
 			wrapRoot:         *wrapRoot || *fixAll,
 			splitMultiEdge:   *splitMultiEdge || *fixAll,
+			fixTangents:      *fixAll,
 			scale:            float32(*scaleFactor),
 			scaleX:           float32(*scaleX),
 			scaleY:           float32(*scaleY),

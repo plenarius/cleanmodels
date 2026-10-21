@@ -91,12 +91,18 @@ func (c *compiler) encodeGeomNodeControllers(n *Node) (keys []binCtrlKey, dataAr
 	// for Dummy01, and its whole subtree vanished in-game despite the ASCII
 	// rendering fine when loaded directly.
 	//
-	// Skipping is still correct for the root node itself (Parent NULL):
-	// every stock file we checked omits both there too.
-	if !isRootParent(n.Parent) {
+	// The model root (Parent NULL) gets each only when the source declares
+	// it, as the game's compiler does: a root with `position 0 0 -1.75` and
+	// an orientation gets both controllers, explicit zeros give zero ones,
+	// and no lines give none (probes zcm_rootpos, zcm_rootzero and
+	// zcm_rootnone). Stock files have none there because their sources had
+	// no such lines. Layonara's ttr01_z01_01 lost its root's -1.75 m before.
+	root := isRootParent(n.Parent)
+	if !root || n.isDeclared("position") {
 		pos := n.Position
 		add(8, 3, []float32{pos.X, pos.Y, pos.Z})
-
+	}
+	if !root || n.isDeclared("orientation") {
 		// ASCII axis-angle → binary quaternion xyzw. axisAngleToQuat handles
 		// a zero axis correctly: sin(angle/2) scales X/Y/Z to 0 regardless of
 		// axis when angle is also 0, yielding the identity quaternion (0,0,0,1).

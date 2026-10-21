@@ -11,9 +11,9 @@ import math
 import struct
 
 from .compiler_normals import face_cross, generate_normals
-from .compiler_tangents import render_hint_value, resolve_tangents
+from .compiler_tangents import render_hint_value, resolve_tangents, use_existing_tangents, zero_length_tangents
 from .f32 import f32, f32_bits
-from .gomath import go_lower
+from .gomath import go_lower, go_quote
 from .materials import is_normal_mapped
 
 _MAX_F32 = 3.4028234663852886e38
@@ -384,6 +384,12 @@ class MeshMixin:
 
         tangents, handedness = resolve_tangents(
             mesh, exp, is_normal_mapped(mesh, self.resource_dirs), n is not None and n.anim_mesh is not None)
+        if self.warn is not None and n is not None and use_existing_tangents(mesh, exp):
+            z = zero_length_tangents(mesh)
+            if z > 0:
+                self.warn("mesh %s has %d of %d tangents of zero length, compiled as they are, as the game does: those "
+                          "vertices draw with white streaks. repair --fix-tangents drops them so they are computed from "
+                          "the geometry" % (go_quote(n.name), z, len(mesh.tangents)))
 
         core.zeros(8)
         faces_ptr_pos = core.placeholder()
