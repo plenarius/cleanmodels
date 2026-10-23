@@ -506,6 +506,26 @@ func TestVariantCloakFromSkeleton(t *testing.T) {
 	if mean > 4 {
 		t.Errorf("%.2f cm from Bioware's, want under 4", mean)
 	}
+
+	// A body bone beside the torso (neck_g under rootdummy, as in a
+	// server's backpack) is put at the dwarf's neck, not at the human's
+	// height over the dwarf's torso.
+	hs, _ := loadSkeleton("pmh0", locs)
+	ds, _ := loadSkeleton("pmd0", locs)
+	rd, ok := newWorldTransforms(src).lookup("rootdummy")
+	if !ok || hs == nil || ds == nil {
+		t.Fatal("no rootdummy or skeletons")
+	}
+	neck := rd.unapply(hs.pos[hs.index["neck_g"]])
+	src.Nodes = append(src.Nodes, &Node{Name: "neck_g", Parent: "rootdummy", Position: vec3f(neck), Orientation: Vec4{0, 0, 1, 0}, Scale: 1})
+	if out, err = Variant(src, "pmd0", VariantOptions{Locs: locs, noTemplate: true, Warn: func(string) {}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := newWorldTransforms(out).lookup("neck_g")
+	want := ds.pos[ds.index["neck_g"]]
+	if d := len3([3]float64{got.pos[0] - want[0], got.pos[1] - want[1], got.pos[2] - want[2]}); d > 0.02 {
+		t.Errorf("neck_g at %v, %.1f cm from the pmd0 skeleton's %v", got.pos, d*100, want)
+	}
 }
 
 // TestVariantRefitsSkinnedPart refits a skinned thigh piece bound to the
@@ -867,6 +887,191 @@ func TestVariantLearnsFromPairs(t *testing.T) {
 	for i, v := range out.Nodes[1].Mesh.Verts {
 		if w := fit(src.Nodes[1].Mesh.Verts[i]); !near(v, w) {
 			t.Errorf("vertex %d at %v, want %v (the pairs' fit)", i, v, w)
+		}
+	}
+}
+
+// variantTestDir writes the pmd0 template robe and the pmh0 and pmd0
+// skeletons TestVariantRefitsToTargetBones uses.
+func variantTestDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, m := range map[string]*Model{
+		"pmd0_robe999": robeTestModel("pmd0_robe999", 0.7, 0.3, 0.3, false),
+		"pmh0":         skeletonTestModel("pmh0", 0.4),
+		"pmd0":         skeletonTestModel("pmd0", 0.2),
+	} {
+		if err := WriteFile(m, filepath.Join(dir, name+".mdl")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// TestVariantRigidOnly: a robe of bone copies alone, with no skin (as a
+// server's backpacks and Bioware's robe 2), is refitted by its bones.
+func TestVariantRigidOnly(t *testing.T) {
+	dir := variantTestDir(t)
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, false)
+	shin := src.FindNode("lshin_g")
+	shin.Mesh = NewMeshData()
+	shin.Mesh.Verts = []Vec3{{0, 0, -0.2}}
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(string) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Halfway down a shin half as long (its foot 0.2 below, not 0.4).
+	if got := out.FindNode("lshin_g").Mesh.Verts[0]; !near(got, Vec3{0, 0, -0.1}) {
+		t.Errorf("shin bone copy vertex at %v, want (0, 0, -0.1)", got)
+	}
+	if _, err := Variant(robeTestModel("pmh0_robe999", 1, 0.4, 0.4, false), "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(string) {}}); err == nil ||
+		!strings.Contains(err.Error(), "no mesh to refit") {
+		t.Errorf("a robe with no mesh: err %v, want no mesh to refit", err)
+	}
+}
+
+// TestVariantCustomBones: a bone of the robe's own (a flap under the
+// pelvis) that neither the template nor the skeletons have is placed at its
+// offset scaled to the body (here the hip height, 1.0 against 1.2), and the
+// cloth on it follows; a body bone the template lacks is not added.
+func TestVariantCustomBones(t *testing.T) {
+	dir := variantTestDir(t)
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true)
+	src.Nodes = append(src.Nodes, &Node{Name: "flap", Parent: "pelvis_g", Position: Vec3{0, 0.1, -0.3}, Orientation: Vec4{0, 0, 1, 0}, Scale: 1})
+	robe := src.FindNode("robe")
+	robe.Mesh.Verts[2] = Vec3{0, 0.1, 1 - 0.3}
+	robe.Skin.Weights[2] = VertexWeight{Bones: []string{"flap"}, Weights: []float32{1}}
+	var warnings []string
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(s string) { warnings = append(warnings, s) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flap := out.FindNode("flap")
+	if flap == nil || !strings.EqualFold(flap.Parent, "pelvis_g") || !near(flap.Position, Vec3{0, 0.1, -0.25}) {
+		t.Fatalf("flap %+v, want under pelvis_g at (0, 0.1, -0.25)", flap)
+	}
+	// The pelvis at 0.7, the flap 0.25 below it.
+	if got := out.FindNode("robe").Mesh.Verts[2]; !near(got, Vec3{0, 0.1, 0.45}) {
+		t.Errorf("flap vertex at %v, want (0, 0.1, 0.45)", got)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "flap") {
+			t.Errorf("warning %q", w)
+		}
+	}
+
+	// A body bone the template lacks comes from the target's skeleton (a
+	// thigh of 0.4), not from the source scaled as the robe's own (0.33).
+	legless := robeTestModel("pmd0_robe999", 0.7, 0.3, 0.3, false)
+	legless.Nodes = legless.Nodes[:3]
+	if err := WriteFile(legless, filepath.Join(dir, "pmd0_robe999.mdl")); err != nil {
+		t.Fatal(err)
+	}
+	out, err = Variant(robeTestModel("pmh0_robe999", 1, 0.4, 0.4, true), "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(string) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.FindNode("lthigh_g").Position; !near(got, Vec3{-0.1, 0, -0.4}) {
+		t.Errorf("lthigh_g at %v, want the skeleton's (-0.1, 0, -0.4)", got)
+	}
+}
+
+// TestBoneAxesSkipsJointChildren: a child at the joint (an attachment
+// point, as the belt_g of Beamdog's HD robe 30 on its pelvis) does not set
+// the bone's axis. Matched alone, its offsets gave the pelvis a sideways
+// axis and a ratio of 0.001.
+func TestBoneAxesSkipsJointChildren(t *testing.T) {
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, false)
+	src.Nodes = append(src.Nodes, &Node{Name: "belt_g", Parent: "pelvis_g", Position: Vec3{0.005, 0, 0}, Orientation: Vec4{0, 0, 1, 0}, Scale: 1})
+	nodes := map[string]*Node{
+		"rootdummy": {Name: "rootdummy", Position: Vec3{0, 0, 0.7}},
+		"pelvis_g":  {Name: "pelvis_g"},
+		"belt_g":    {Name: "belt_g", Position: Vec3{0.000005, 0, 0}},
+	}
+	ax := boneAxes(src, nodes, map[string]bool{"pelvis_g": true}, nil, nil, nil)["pelvis_g"]
+	if ax.ratio < 0.5 || math.Abs(ax.dir[0]) > 0.5 {
+		t.Errorf("pelvis axis %v ratio %.4f: set by belt_g at the joint", ax.dir, ax.ratio)
+	}
+}
+
+// TestVariantRigidCape: a cape hanging from a shoulder pad, neither in the
+// template, is scaled to the body in all three directions (here the hip
+// height, 1.0 against 1.2), not left a human's length; a second node of the
+// cape's name is read from its own place.
+func TestVariantRigidCape(t *testing.T) {
+	dir := variantTestDir(t)
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, false)
+	add := func(name, parent string, pos, vert Vec3) {
+		n := &Node{Name: name, Parent: parent, Position: pos, Orientation: Vec4{0, 0, 1, 0}, Scale: 1, Mesh: NewMeshData()}
+		n.Mesh.Verts = []Vec3{vert}
+		src.Nodes = append(src.Nodes, n)
+	}
+	add("pmh0_shol001g", "pelvis_g", Vec3{0.2, 0, 0.12}, Vec3{})
+	add("cape", "pmh0_shol001g", Vec3{0, 0, -0.12}, Vec3{0, 0, -0.6})
+	add("cape", "pelvis_g", Vec3{-0.2, 0, 0}, Vec3{})
+	out, err := Variant(src, "pmd0", VariantOptions{Locs: []string{dir}, Warn: func(string) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pad := out.FindNode("pmd0_shol001g"); pad == nil || !near(pad.Position, Vec3{0.2, 0, 0.1}) {
+		t.Fatalf("shoulder pad %+v, want at (0.2, 0, 0.1)", pad)
+	}
+	w := nodeTransforms(out)
+	var capes []*Node
+	for _, n := range out.Nodes {
+		if n.Name == "cape" {
+			capes = append(capes, n)
+		}
+	}
+	// The pelvis at 0.7; the cape's bottom 0.6 x 5/6 below the pad's foot.
+	if got := vec3f(w[capes[0]].apply(vec3d(capes[0].Mesh.Verts[0]))); !near(got, Vec3{0.2, 0, 0.2}) {
+		t.Errorf("cape bottom at %v, want (0.2, 0, 0.2)", got)
+	}
+	if got := vec3f(w[capes[1]].apply(vec3d(capes[1].Mesh.Verts[0]))); math.Abs(float64(got.X)+0.2) > 0.01 {
+		t.Errorf("second cape at %v, want x about -0.2 (moved by the pelvis), not the first cape's 0.2", got)
+	}
+}
+
+// TestBoneAxesSkipsAttachments: meshes hanging from a bone that are no bone
+// (a backpack's pieces on the torso) do not set its axis.
+func TestBoneAxesSkipsAttachments(t *testing.T) {
+	src := robeTestModel("pmh0_robe999", 1, 0.4, 0.4, false)
+	bag := &Node{Name: "bag", Parent: "pelvis_g", Position: Vec3{0, -0.3, 0.5}, Orientation: Vec4{0, 0, 1, 0}, Scale: 1, Mesh: NewMeshData()}
+	src.Nodes = append(src.Nodes, bag)
+	nodes := map[string]*Node{}
+	for _, n := range robeTestModel("pmd0_robe999", 0.7, 0.3, 0.3, false).Nodes {
+		nodes[strings.ToLower(n.Name)] = n
+	}
+	nodes["bag"] = &Node{Name: "bag", Position: Vec3{0, -0.1, 0.2}}
+	ax := boneAxes(src, nodes, map[string]bool{"pelvis_g": true}, nil, nil, nil)["pelvis_g"]
+	// The thigh alone: (-0.1, 0, -0.3) against (-0.1, 0, -0.4).
+	if math.Abs(ax.ratio-math.Sqrt(0.1/0.17)) > 1e-3 || ax.dir[2] > -0.9 {
+		t.Errorf("pelvis axis %v ratio %.4f, want along the thigh", ax.dir, ax.ratio)
+	}
+}
+
+// TestVariantAnimSuperModel: a robe on the human's animations (Bioware's
+// robe 20 on a_ba_coat) gets the target body's set at its scale, as
+// Bioware's own race versions have.
+func TestVariantAnimSuperModel(t *testing.T) {
+	game := os.Getenv("NWN_ROOT")
+	if game == "" {
+		home, _ := os.UserHomeDir()
+		game = filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Neverwinter Nights")
+	}
+	locs := []string{game}
+	if sk, _ := loadSkeleton("pmh0", locs); sk == nil {
+		t.Skip("game install not available")
+	}
+	src := loadGameModel(t, locs, "pmh0_robe020")
+	for _, target := range []string{"pmd0", "pme0", "pmg0"} {
+		out, err := Variant(src, target, VariantOptions{Locs: locs, Warn: func(string) {}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref := loadGameModel(t, locs, target+"_robe020")
+		if !strings.EqualFold(out.SuperModel, ref.SuperModel) || math.Abs(float64(out.AnimationScale-ref.AnimationScale)) > 1e-4 {
+			t.Errorf("%s: supermodel %s at %g, Bioware's %s at %g", target, out.SuperModel, out.AnimationScale, ref.SuperModel, ref.AnimationScale)
 		}
 	}
 }
