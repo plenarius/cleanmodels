@@ -21,6 +21,7 @@ func cmdRepair(args []string) int {
 	stripDegen := fs.Bool("strip-degenerate", false, "remove zero-area faces")
 	fixAnims := fs.Bool("fix-animations", false, "clamp negative/too-short animation lengths")
 	fixTangents := fs.Bool("fix-tangents", false, "drop a mesh's tangents when any has zero length (drawn as white streaks), so they are computed from the geometry")
+	fixRobeTurns := fs.Bool("fix-robe-turns", false, "put the orientation of a robe's nodes under torso_g, which the game does not draw on a worn robe, into their geometry")
 	reparentChildren := fs.Bool("reparent-children", false, "reparent children of AABB/light nodes")
 	wrapRoot := fs.Bool("wrap-root", false, "wrap non-dummy root nodes in a dummy parent")
 	splitMultiEdge := fs.Bool("split-multiedge", false, "split faces at multiple edges")
@@ -179,6 +180,7 @@ func cmdRepair(args []string) int {
 		opts.stripDegenerate = *stripDegen
 		opts.fixAnimations = *fixAnims
 		opts.fixTangents = *fixTangents
+		opts.fixRobeTurns = *fixRobeTurns
 		opts.reparentChildren = *reparentChildren
 		opts.wrapRoot = *wrapRoot
 		opts.splitMultiEdge = *splitMultiEdge

@@ -202,10 +202,6 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 			skins = append(skins, n)
 		}
 	}
-	if len(skins) == 0 {
-		return nil, fmt.Errorf("%s has no skin to refit", src.Name)
-	}
-
 	// The target's bone copies, from a stock robe or cloak of that body.
 	var tmpl *Model
 	var tmplName string
@@ -259,11 +255,13 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 
 	tmpl = withSkeletonBones(tmpl, src, dstSkel)
 	srcW := newWorldTransforms(src)
-	tmplW := newWorldTransforms(tmpl)
-	tmplNodes := map[string]*Node{}
-	for _, n := range tmpl.Nodes {
-		if _, dup := tmplNodes[strings.ToLower(n.Name)]; !dup {
-			tmplNodes[strings.ToLower(n.Name)] = n
+	srcByName := map[string]*Node{}
+	// The first node of a name, as the game finds a bone by name: a later
+	// node of the same name (robe 202 of a server has two Cloak_Base) is
+	// never a bone.
+	for _, n := range src.Nodes {
+		if _, dup := srcByName[strings.ToLower(n.Name)]; !dup {
+			srcByName[strings.ToLower(n.Name)] = n
 		}
 	}
 
@@ -276,91 +274,100 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 			}
 		}
 	}
-	for b := range bones {
-		if _, ok := tmplNodes[b]; !ok {
-			warn(fmt.Sprintf("bone %s is not in %s or the %s skeleton: the vertices weighted to it stay where they are", b, tmplName, target))
-		}
-	}
 
-	// A mesh that is not a skin (a bone copy's own mesh, or one hanging from
-	// a bone copy, as a veil from the head) is refitted by its own bone, or
-	// failing that the nearest bone above it the template has.
-	rigidBone := map[*Node]string{}
-	{
-		byName := map[string]*Node{}
-		for _, n := range src.Nodes {
-			byName[strings.ToLower(n.Name)] = n
+	width, length := opts.factors()
+	baseGirth := bodyGirth(srcPrefix, target, opts.Locs, warn)
+	custom := map[string]bool{} // the robe's own bones (addCustomBones)
+	var scale [3]float64        // and the body's size, for the cloth on them
+	var (
+		tmplW      worldTransforms
+		tmplNodes  map[string]*Node
+		rigidBone  map[*Node]string
+		axisBones  map[string]bool
+		axes       map[string]boneAxis
+		girth      girthScales
+		rigidGirth girthScales
+	)
+	// fit works out, for the template as it is, where each bone goes, each
+	// rigid mesh's bone, and each bone's stretch and width.
+	fit := func() {
+		tmplW = newWorldTransforms(tmpl)
+		tmplNodes = map[string]*Node{}
+		for _, n := range tmpl.Nodes {
+			if _, dup := tmplNodes[strings.ToLower(n.Name)]; !dup {
+				tmplNodes[strings.ToLower(n.Name)] = n
+			}
 		}
+		// A mesh that is not a skin (a bone copy's own mesh, or one hanging
+		// from a bone copy, as a veil from the head) is refitted by its own
+		// bone, or failing that the nearest bone above it the template has.
+		rigidBone = map[*Node]string{}
 		for _, n := range src.Nodes {
 			if n.Skin != nil || n.Mesh == nil || len(n.Mesh.Verts) == 0 || n == src.RootNode() {
 				continue
 			}
-			for a, depth := n, 0; a != nil && a != src.RootNode() && depth < 64; a, depth = byName[strings.ToLower(a.Parent)], depth+1 {
-				if _, ok := tmplNodes[strings.ToLower(a.Name)]; ok {
+			for a, depth := n, 0; a != nil && a != src.RootNode() && depth < 64; a, depth = srcByName[strings.ToLower(a.Parent)], depth+1 {
+				if _, ok := tmplNodes[strings.ToLower(a.Name)]; ok && srcByName[strings.ToLower(a.Name)] == a {
 					rigidBone[n] = strings.ToLower(a.Name)
 					break
 				}
 			}
 		}
-	}
-	axisBones := map[string]bool{}
-	for b := range bones {
-		axisBones[b] = true
-	}
-	for _, b := range rigidBone {
-		axisBones[b] = true
-	}
-
-	axes := boneAxes(src, tmplNodes, axisBones, srcSkel, dstSkel)
-	width, length := opts.factors()
-	for b, ax := range axes {
-		ax.ratio *= length
-		axes[b] = ax
-	}
-	girth := bodyGirth(srcPrefix, target, opts.Locs, warn)
-	// A cloak's cloth on its own bones (Cloak_g and the nodes under it) takes
-	// the torso's width: those bones have no stock body part, and the cloth
-	// would otherwise keep the source body's size around them (on a brownie,
-	// a collar ring standing off the neck). Against Bioware's cloaks 1 to 7
-	// of every race: 1.8 cm per vertex in phenotype 0 and 4.0 cm in phenotype
-	// 2, against 2.9 and 4.7 cm for widening the cloth by 0.4 of the chest's
-	// width ratio, the rule this replaced.
-	if kind == "cloak" {
-		if t, ok := girth["torso_g"]; ok {
-			for b := range cloakBones(src) {
-				if _, has := girth[b]; !has {
-					girth[b] = t
+		axisBones = map[string]bool{}
+		for b := range bones {
+			axisBones[b] = true
+		}
+		for _, b := range rigidBone {
+			axisBones[b] = true
+		}
+		axes = boneAxes(src, tmplNodes, axisBones, custom, srcSkel, dstSkel)
+		for b, ax := range axes {
+			ax.ratio *= length
+			axes[b] = ax
+		}
+		girth = girthScales{}
+		for b, v := range baseGirth {
+			girth[b] = v
+		}
+		// A cloak's cloth on its own bones (Cloak_g and the nodes under it)
+		// takes the torso's width: those bones have no stock body part, and
+		// the cloth would otherwise keep the source body's size around them
+		// (on a brownie, a collar ring standing off the neck). Against
+		// Bioware's cloaks 1 to 7 of every race: 1.8 cm per vertex in
+		// phenotype 0 and 4.0 cm in phenotype 2, against 2.9 and 4.7 cm for
+		// widening the cloth by 0.4 of the chest's width ratio, the rule
+		// this replaced.
+		if kind == "cloak" {
+			if t, ok := girth["torso_g"]; ok {
+				for b := range cloakBones(src) {
+					if _, has := girth[b]; !has {
+						girth[b] = t
+					}
 				}
 			}
 		}
-	}
-	rigidGirth := girthScales{}
-	for b, v := range girth {
-		rigidGirth[b] = v
-	}
-	rigidGirth.inherit(src, axisBones)
-
-	out := cloneForBody(src, srcPrefix, target)
-	// Bone copies (and any other node the template has) take the template's
-	// placement.
-	for _, n := range out.Nodes {
-		if n.Skin != nil || n == out.RootNode() {
-			continue
+		rigidGirth = girthScales{}
+		for b, v := range girth {
+			rigidGirth[b] = v
 		}
-		if t, ok := tmplNodes[strings.ToLower(n.Name)]; ok {
-			n.Position, n.Orientation = t.Position, t.Orientation
-		}
+		rigidGirth.inherit(src, axisBones)
 	}
-	outW := newWorldTransforms(out)
-
-	// movePoint and moveNormal refit a world point or normal by bone b: into
-	// the source bone's space, stretched along it and scaled across it, and
-	// out of the template's bone.
+	// movePointBy and moveNormalBy refit a world point or normal by bone b:
+	// into the source bone's space, stretched along it and scaled across it,
+	// and out of the template's bone. On a bone of the robe's own, the
+	// offset from the bone is scaled by the body's size instead (bodyScale,
+	// in the model's axes: such a bone's own axes say nothing of the body),
+	// as its offset from its parent was.
 	movePointBy := func(girth girthScales, b string, l [3]float64) ([3]float64, bool) {
 		bs, ok1 := srcW.lookup(b)
 		bd, ok2 := tmplW.lookup(b)
 		if !ok1 || !ok2 {
 			return l, false
+		}
+		if custom[b] {
+			o := [3]float64{l[0] - bs.pos[0], l[1] - bs.pos[1], l[2] - bs.pos[2]}
+			o = [3]float64{o[0] * scale[0] * width, o[1] * scale[1] * width, o[2] * scale[2] * length}
+			return bd.apply(quatRotate(quatConj(bs.rot), o)), true
 		}
 		l = bs.unapply(l)
 		ax := axes[b]
@@ -378,6 +385,10 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		if !ok1 || !ok2 {
 			return l, false
 		}
+		if custom[b] {
+			l = norm3([3]float64{l[0] / (scale[0] * width), l[1] / (scale[1] * width), l[2] / (scale[2] * length)})
+			return quatRotate(bd.rot, quatRotate(quatConj(bs.rot), l)), true
+		}
 		l = quatRotate(quatConj(bs.rot), l)
 		ax := axes[b]
 		d := dot3(l, ax.dir)
@@ -387,13 +398,64 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		l = norm3([3]float64{l[0] / g[0], l[1] / g[1], l[2]})
 		return quatRotate(bd.rot, l), true
 	}
+
+	fit()
+	// Bones of the robe's own that neither the template nor the skeleton has
+	// (flaps, coat tails, skirt panels: Beamdog's robes 30 to 33, many of a
+	// server's), and the nodes of its rigid meshes it lacks (a cape hanging
+	// from shoulder pads), keep their offsets from their parents scaled to
+	// the body: across and front to back by its chest, up and down by its
+	// hip height (bodyScale); the cloth on them is scaled the same about
+	// them. Without them that cloth kept the source body's size and place
+	// (a human's cape on a brownie reached below its feet).
+	// A copy of the template: the one read may be shared (resource cache).
+	tc := *tmpl
+	tc.Nodes = append([]*Node(nil), tmpl.Nodes...)
+	tmpl = &tc
+	scale = bodyScale(srcPrefix, target, srcSkel, dstSkel, opts.Locs)
+	own := map[string]bool{}
+	for b := range bones {
+		own[b] = true
+	}
+	for n := range rigidBone {
+		own[strings.ToLower(n.Name)] = true
+	}
+	if custom = addCustomBones(tmpl, src, srcByName, srcW, tmplW, own, tmplNodes, scale); len(custom) > 0 {
+		fit()
+	}
+	for b := range bones {
+		if _, ok := tmplNodes[b]; !ok {
+			warn(fmt.Sprintf("bone %s is not in %s or the %s skeleton: the vertices weighted to it stay where they are", b, tmplName, target))
+		}
+	}
+	if len(skins) == 0 && len(rigidBone) == 0 {
+		return nil, fmt.Errorf("%s has no mesh to refit", src.Name)
+	}
+	out := cloneForBody(src, srcPrefix, target)
+	// Bone copies (and any other node the template has) take the template's
+	// placement.
+	// Looked up by the source's name: cloneForBody renames the robe's own
+	// nodes that carry the body's prefix (pmh0_shol001g), which the template
+	// has under the source's name (addCustomBones).
+	for i, n := range out.Nodes {
+		sn := src.Nodes[i]
+		if n.Skin != nil || n == out.RootNode() || srcByName[strings.ToLower(sn.Name)] != sn {
+			continue
+		}
+		if t, ok := tmplNodes[strings.ToLower(sn.Name)]; ok {
+			n.Position, n.Orientation = t.Position, t.Orientation
+		}
+	}
+	// Each mesh's own transforms, by node: a name may be on two nodes.
+	srcN, outN := nodeTransforms(src), nodeTransforms(out)
+
 	movePoint := func(b string, l [3]float64) ([3]float64, bool) { return movePointBy(girth, b, l) }
 	moveNormal := func(b string, l [3]float64) ([3]float64, bool) { return moveNormalBy(girth, b, l) }
 
 	for _, sk := range skins {
-		skW := srcW.of(sk.Name)
+		skW := srcN[sk]
 		dst := out.Nodes[indexOfNode(src, sk)]
-		dstW := outW.of(dst.Name)
+		dstW := outN[dst]
 		verts := make([]Vec3, len(sk.Mesh.Verts))
 		for vi, v := range sk.Mesh.Verts {
 			p := skW.apply(vec3d(v))
@@ -430,7 +492,7 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 		if !ok {
 			continue
 		}
-		nW, dstW := srcW.of(n.Name), outW.of(dst.Name)
+		nW, dstW := srcN[n], outN[dst]
 		verts := make([]Vec3, len(n.Mesh.Verts))
 		for vi, v := range n.Mesh.Verts {
 			q, _ := movePointBy(rigidGirth, b, nW.apply(vec3d(v)))
@@ -448,7 +510,42 @@ func Variant(src *Model, target string, opts VariantOptions) (*Model, error) {
 	}
 	applyShape(out, target, opts.Shape, opts.Locs, warn)
 	bodySuperModel(out, target, opts.Locs)
+	animSuperModel(out, target, srcSkel, dstSkel, opts.Locs, warn)
 	return out, nil
+}
+
+// animSuperModel points a variant whose supermodel is the source body's
+// animations, or a set built on them (pmh0's a_ba; a_ba_coat, a_fa_skirt),
+// at the target body's own set of them (a_da_coat for a dwarf, whose pmd0
+// plays a_da) with the target body's animation scale, as Bioware's robes 20
+// and 21 do (pmd0_robe020: a_da_coat at 0.66, pmd0's scale). Without the
+// scale the animations play at the source body's size: a brownie's robe 202
+// on a_ba floated over its head. When there is no such set, the variant
+// names the target's skeleton instead, which plays its own animations.
+func animSuperModel(out *Model, target string, srcSkel, dstSkel *skeleton, locs []string, warn func(string)) {
+	if srcSkel == nil || dstSkel == nil {
+		return
+	}
+	sm, sa := strings.ToLower(out.SuperModel), strings.ToLower(srcSkel.model.SuperModel)
+	if sa == "" || sm != sa && !strings.HasPrefix(sm, sa+"_") {
+		return
+	}
+	scale := func(m *Model) float32 {
+		if m.AnimationScale == 0 {
+			return 1
+		}
+		return m.AnimationScale
+	}
+	if da := strings.ToLower(dstSkel.model.SuperModel); da != "" && findModelResource(da+sm[len(sa):], locs) != nil {
+		out.SuperModel = da + sm[len(sa):]
+		out.AnimationScale = scale(out) * scale(dstSkel.model) / scale(srcSkel.model)
+		return
+	}
+	out.SuperModel = bodySkeleton(target, locs)
+	if sm != sa {
+		warn(fmt.Sprintf("supermodel %s, not %s: the %s skeleton plays %s, and there is no %s%s; what only %s animates (coat tails, a skirt's own bones) keeps still",
+			out.SuperModel, sm, out.SuperModel, dstSkel.model.SuperModel, dstSkel.model.SuperModel, sm[len(sa):], sm))
+	}
 }
 
 // bodySuperModel points a variant whose supermodel is its body (pmb2_cloak_001
@@ -552,6 +649,12 @@ func cloakBonesFromSkeleton(src *Model, srcSkel, dstSkel *skeleton, chest [2]flo
 		c := &Node{Name: n.Name, Parent: n.Parent, Position: n.Position, Orientation: n.Orientation, Scale: 1}
 		switch {
 		case n == src.RootNode():
+		case !below(n) && !strings.EqualFold(n.Parent, src.RootNode().Name) && !strings.EqualFold(n.Name, "torso_g") &&
+			dstSkel.has(n.Name):
+			// A body bone beside the torso (neck_g under rootdummy, in a
+			// server's backpack 201) comes from the skeleton
+			// (withSkeletonBones): its source offset is the source body's.
+			continue
 		case strings.EqualFold(n.Parent, src.RootNode().Name):
 			// The top of the tree (rootdummy) moves with the torso.
 			c.Position = Vec3{X: n.Position.X + float32(shift[0]), Y: n.Position.Y + float32(shift[1]), Z: n.Position.Z + float32(shift[2])}
@@ -565,6 +668,129 @@ func cloakBonesFromSkeleton(src *Model, srcSkel, dstSkel *skeleton, chest [2]flo
 		out.Nodes = append(out.Nodes, c)
 	}
 	return &out, true
+}
+
+// addCustomBones adds to tmpl the nodes named in want (the bones src's
+// skins are weighted to, its rigid meshes), and their ancestors, that
+// neither tmpl nor the skeleton has and that are not body bones, under the bone
+// above them that tmpl has, each at its source offset from its parent
+// scaled by scale (x, y, z in the model's axes), with its own rotation. It
+// returns the names added, lower case.
+func addCustomBones(tmpl, src *Model, srcByName map[string]*Node, srcW, tmplW worldTransforms, want map[string]bool,
+	have map[string]*Node, scale [3]float64) map[string]bool {
+	inTmpl := func(n *Node) bool { _, ok := have[strings.ToLower(n.Name)]; return ok }
+	// A body bone (isBodyBone) the template lacks stays out (a wemic's
+	// robes have no legs): only the robe's own bones are added. Not every
+	// bone of the source skeleton: the game's pmh0 has the cloth bones of
+	// Beamdog's HD robe 30 (TF1_g, FB1_g01, ...), which a custom race's
+	// skeleton lacks.
+	anchored := func(n *Node) bool {
+		for a, depth := srcByName[strings.ToLower(n.Parent)], 0; a != nil && depth < 64; a, depth = srcByName[strings.ToLower(a.Parent)], depth+1 {
+			if inTmpl(a) {
+				return true
+			}
+		}
+		return false
+	}
+	need := map[string]bool{}
+	for b := range want {
+		for n, depth := srcByName[b], 0; n != nil && depth < 64 && !inTmpl(n) && !isBodyBone(strings.ToLower(n.Name)) && anchored(n); n, depth = srcByName[strings.ToLower(n.Parent)], depth+1 {
+			need[strings.ToLower(n.Name)] = true
+		}
+	}
+	added := map[string]rigid{}
+	// Until no more can be placed: a hand-written model may list a child
+	// before its parent.
+	for progress := true; progress; {
+		progress = false
+		for _, n := range src.Nodes {
+			name := strings.ToLower(n.Name)
+			if _, done := added[name]; !need[name] || done || srcByName[name] != n {
+				continue
+			}
+			parent := strings.ToLower(n.Parent)
+			pw, ok := added[parent]
+			parentName := n.Parent
+			if !ok {
+				pn, isTmpl := have[parent]
+				if !isTmpl {
+					continue
+				}
+				if pw, ok = tmplW.lookup(parent); !ok {
+					continue
+				}
+				parentName = pn.Name
+			}
+			sp, ok := srcW.lookup(parent)
+			if !ok {
+				continue
+			}
+			o := quatRotate(sp.rot, vec3d(n.Position))
+			local := quatRotate(quatConj(sp.rot), [3]float64{o[0] * scale[0], o[1] * scale[1], o[2] * scale[2]})
+			lq := axisAngleToQuat(n.Orientation)
+			added[name] = rigid{rot: quatNormalize(quatMul(pw.rot, [4]float64{float64(lq.X), float64(lq.Y), float64(lq.Z), float64(lq.W)})), pos: pw.apply(local)}
+			tmpl.Nodes = append(tmpl.Nodes, &Node{Name: n.Name, Parent: parentName, Scale: 1, Orientation: n.Orientation,
+				Position: Vec3{X: float32(local[0]), Y: float32(local[1]), Z: float32(local[2])}})
+			progress = true
+		}
+	}
+	out := map[string]bool{}
+	for k := range added {
+		out[k] = true
+	}
+	return out
+}
+
+// isBodyBone reports whether name (lower case) is a bone a body part or the
+// head hangs from, or rootdummy.
+func isBodyBone(name string) bool {
+	if name == "rootdummy" || name == "head_g" {
+		return true
+	}
+	for _, b := range partAttachNodes {
+		if b == name {
+			return true
+		}
+	}
+	return false
+}
+
+// bodyScale is the target body's size over the source's: across and front to
+// back by the base chest part's spread (chestRatio), up and down by the hip
+// height, pelvis to feet (either foot when only one is found), in the
+// skeletons. 1 where either is missing.
+func bodyScale(srcPrefix, target string, srcSkel, dstSkel *skeleton, locs []string) [3]float64 {
+	s := [3]float64{1, 1, 1}
+	if c := chestRatio(srcPrefix, target, locs); c[0] > 0 && c[1] > 0 {
+		s[0], s[1] = c[0], c[1]
+	}
+	hip := func(sk *skeleton) float64 {
+		if sk == nil {
+			return 0
+		}
+		p, ok := sk.index["pelvis_g"]
+		if !ok {
+			return 0
+		}
+		var feet []float64
+		for _, f := range []string{"lfoot_g", "rfoot_g"} {
+			if i, ok := sk.index[f]; ok {
+				feet = append(feet, sk.pos[i][2])
+			}
+		}
+		if len(feet) == 0 {
+			return 0
+		}
+		sum := 0.0
+		for _, z := range feet {
+			sum += z
+		}
+		return sk.pos[p][2] - sum/float64(len(feet))
+	}
+	if a, b := hip(srcSkel), hip(dstSkel); a > 1e-4 && b > 0 {
+		s[2] = b / a
+	}
+	return s
 }
 
 // withSkeletonBones returns tmpl, or a copy of it with the bones src has and
@@ -638,10 +864,18 @@ type boneAxis struct {
 // (source robe against template robe); a bone with no child in the robe takes
 // it from the race skeletons (shin -> foot, forearm -> hand), and failing
 // that from its parent.
-func boneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcSkel, dstSkel *skeleton) map[string]boneAxis {
+func boneAxes(src *Model, tmpl map[string]*Node, bones, custom map[string]bool, srcSkel, dstSkel *skeleton) map[string]boneAxis {
 	children := map[string][]*Node{}
 	parentOf := map[string]string{}
+	weighted := map[string]bool{}
 	for _, n := range src.Nodes {
+		if n.Skin != nil {
+			for _, vw := range n.Skin.Weights {
+				for _, b := range vw.Bones {
+					weighted[strings.ToLower(b)] = true
+				}
+			}
+		}
 		p := strings.ToLower(n.Parent)
 		children[p] = append(children[p], n)
 		parentOf[strings.ToLower(n.Name)] = p
@@ -685,6 +919,23 @@ func boneAxes(src *Model, tmpl map[string]*Node, bones map[string]bool, srcSkel,
 		var a, b [][3]float64
 		for _, c := range children[name] {
 			if c.Skin != nil {
+				continue
+			}
+			// A child at the joint (under 2 cm: an attachment point such as
+			// the belt_g of Beamdog's HD robe 30 on its pelvis) says nothing
+			// of the bone's length; its tiny offset gave the pelvis a
+			// sideways axis and a ratio of 0.001, squashing half the robe.
+			if len3(vec3d(c.Position)) < 0.02 {
+				continue
+			}
+			// Nor does a bone of the robe's own (addCustomBones): its
+			// offset was scaled by the body's size, not the bone's length.
+			// Nor a mesh hanging from it that is no bone (no skin weighted
+			// to it, not in a skeleton, not a body bone): the pieces of a
+			// server's backpack 201 on torso_g, above and below the joint,
+			// gave the torso a backward axis.
+			cn := strings.ToLower(c.Name)
+			if custom[cn] || c.Mesh != nil && !weighted[cn] && !isBodyBone(cn) && (srcSkel == nil || !srcSkel.has(cn)) && (dstSkel == nil || !dstSkel.has(cn)) {
 				continue
 			}
 			if t, ok := tmpl[strings.ToLower(c.Name)]; ok {
@@ -964,6 +1215,29 @@ func newWorldTransforms(m *Model) worldTransforms {
 		}
 	}
 	return w
+}
+
+// nodeTransforms is each node's world transform, by node.
+func nodeTransforms(m *Model) map[*Node]rigid {
+	c := newCompiler(m)
+	if root := m.RootNode(); root != nil {
+		c.assignNodeIDs(root)
+	}
+	c.computeWorldTransforms()
+	w := map[*Node]rigid{}
+	for _, n := range m.Nodes {
+		if rot, ok := c.worldRot[n]; ok {
+			w[n] = rigid{rot: rot, pos: c.worldPos[n]}
+		} else {
+			w[n] = rigid{rot: [4]float64{0, 0, 0, 1}}
+		}
+	}
+	return w
+}
+
+func (sk *skeleton) has(name string) bool {
+	_, ok := sk.index[strings.ToLower(name)]
+	return ok
 }
 
 func (w worldTransforms) lookup(name string) (rigid, bool) {
