@@ -200,6 +200,7 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 | `--strip-degenerate` | | Remove zero-area faces |
 | `--fix-animations` | | Clamp negative/too-short animation lengths |
 | `--fix-tangents` | | Drop a mesh's tangents when any has zero length (they draw as white streaks), so the compiler computes them |
+| `--fix-robe-turns` | | Put the turn of a robe's nodes under `torso_g` into their geometry: on a worn robe the game draws those nodes unturned (a cape panel on a turned shoulder pad stands up above the shoulder; nwn-mdl-spec MDL-NODE-050). Body bones, and nodes the robe's own animations turn, are left alone |
 | `--reparent-children` | | Reparent children of AABB/light nodes |
 | `--wrap-root` | | Wrap non-dummy root nodes in a dummy parent |
 | `--split-multiedge` | | Split faces sharing multiple edges |

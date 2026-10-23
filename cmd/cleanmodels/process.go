@@ -73,6 +73,7 @@ type repairOpts struct {
 	fixPivots, fixAABB, fixTilefade, stripDegenerate bool
 	fixAnimations, reparentChildren, wrapRoot        bool
 	fixTangents                                      bool
+	fixRobeTurns                                     bool
 	splitMultiEdge                                   bool
 	forceWhite, mergeByBitmap, cullInvisible         bool
 	scale                                            float32
@@ -145,6 +146,7 @@ func setAllRepairs(o *procOpts) {
 	o.wrapRoot = true
 	o.splitMultiEdge = true
 	o.fixTangents = true
+	o.fixRobeTurns = true
 }
 
 var eventMu sync.Mutex
@@ -415,6 +417,9 @@ func applyRepairs(model *mdl.Model, o procOpts, res *Result) {
 	}
 	if o.fixTangents {
 		res.Repairs = append(res.Repairs, mdl.DropZeroLengthTangents(model)...)
+	}
+	if o.fixRobeTurns {
+		res.Repairs = append(res.Repairs, mdl.BakeTorsoTurns(model)...)
 	}
 	if o.reparentChildren {
 		for _, m := range mdl.ReparentFromRestrictedNodes(model) {
