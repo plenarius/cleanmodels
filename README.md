@@ -75,6 +75,9 @@ cleanmodels check -r models/
 # Repair all common issues in a tileset, output to a separate folder
 cleanmodels repair -a -r tiles/ repaired/
 
+# A tile (a model with an aabb walkmesh node) also gets its walkmesh written
+# beside the output as <name>.wok, by repair, compile and decompile
+
 # Decompile a binary MDL to ASCII
 cleanmodels decompile plc_torch.mdl plc_torch.mdl
 
