@@ -53,6 +53,35 @@ func Write(model *Model, w io.Writer) error {
 	return wr.err
 }
 
+// WalkmeshNode returns the first aabb node of a model, the walkmesh a tile's
+// .wok holds, or nil.
+func (m *Model) WalkmeshNode() *Node {
+	for _, n := range m.Nodes {
+		if n != nil && n.Aabb != nil {
+			return n
+		}
+	}
+	return nil
+}
+
+// WriteWalkmesh writes the ASCII walkmesh (.wok) of a model: its aabb node
+// between beginwalkmeshgeom and endwalkmeshgeom. It writes nothing and returns
+// false for a model with no aabb node.
+// Ref: output_models.pl output_file/1 (the .wok clause)
+func WriteWalkmesh(model *Model, w io.Writer) (bool, error) {
+	n := model.WalkmeshNode()
+	if n == nil {
+		return false, nil
+	}
+	wr := &writer{w: w, useTexture0: model.UseTexture0}
+	wr.printf("# Rewritten by cleanmodels\n")
+	wr.line("#MAXWALKMESH  ASCII")
+	wr.printf("beginwalkmeshgeom %s\n", model.Name)
+	wr.writeNode(n)
+	wr.printf("endwalkmeshgeom %s\n", model.Name)
+	return true, wr.err
+}
+
 type writer struct {
 	w           io.Writer
 	err         error

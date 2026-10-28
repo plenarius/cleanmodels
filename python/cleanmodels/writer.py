@@ -41,6 +41,21 @@ def write(model):
     return "".join(w.out)
 
 
+def write_walkmesh(model):
+    """Return the model's walkmesh (.wok) as ASCII text, or None without an aabb node
+    (writer.go WriteWalkmesh)."""
+    node = next((n for n in model.nodes if n is not None and n.aabb is not None), None)
+    if node is None:
+        return None
+    w = _Writer(model.use_texture0)
+    w.raw("# Rewritten by cleanmodels\n")
+    w.raw("#MAXWALKMESH  ASCII\n")
+    w.raw("beginwalkmeshgeom %s\n" % model.name)
+    w.write_node(node)
+    w.raw("endwalkmeshgeom %s\n" % model.name)
+    return "".join(w.out)
+
+
 def write_file(model, path):
     with open(path, "w", encoding="latin-1", newline="\n") as f:
         f.write(write(model))

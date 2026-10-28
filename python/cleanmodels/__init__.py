@@ -17,10 +17,10 @@ from .binary import DecompileError, decompile, decompile_file, is_binary_mdl
 from .parser import NotModelError, ParseError, ParseResult, parse, parse_file
 from .compiler import CompileError, compile, compile_file  # noqa: A004 - mirrors Go's mdl.Compile
 from .resources import find_game_install, lookup_dirs
-from .writer import write, write_file
+from .writer import write, write_file, write_walkmesh
 
 PORTED_FROM = "v4.14.0"
 
 __all__ = ["DecompileError", "decompile", "decompile_file", "is_binary_mdl", "NotModelError", "ParseError",
            "ParseResult", "parse", "parse_file", "CompileError", "compile", "compile_file", "find_game_install",
-           "lookup_dirs", "write", "write_file", "PORTED_FROM"]
+           "lookup_dirs", "write", "write_file", "write_walkmesh", "PORTED_FROM"]

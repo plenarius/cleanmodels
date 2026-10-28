@@ -36,7 +36,7 @@ for file:
 | Python | Go |
 |---|---|
 | `binary.py` | `binary.go` (decompiler), `binary_merged.go` (merged render lists) |
-| `writer.py` | `writer.go` (ASCII writer) |
+| `writer.py` | `writer.go` (ASCII writer, `write_walkmesh` for the .wok) |
 | `parser.py` | `parser.go`, `declared.go` (ASCII parser) |
 | `nearmatch.py` | `nearmatch.go` |
 | `compiler.py` | `compiler.go`, `compiler_dropped.go` (compiler) |

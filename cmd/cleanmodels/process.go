@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -759,11 +760,19 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 					res.Warnings = append(res.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: msg})
 				},
 			}
+			// The compiler fills in normals on the model it is given; the
+			// walkmesh is written from the model as it was.
+			var wok bytes.Buffer
+			hasWok, _ := mdl.WriteWalkmesh(model, &wok)
 			if err := mdl.CompileFileWithOptions(model, outPath, copts); err != nil {
 				res.Error = err.Error()
 				return res, model, parseErrs, err
 			}
 			res.Actions = append(res.Actions, fmt.Sprintf("compiled to binary: %s", outPath))
+			if err := writeWok(hasWok, wok.Bytes(), outPath, &res); err != nil {
+				res.Error = err.Error()
+				return res, model, parseErrs, err
+			}
 		case outputPath != "":
 			// Explicit output target: write the (re-serialized) ASCII
 			// model there. Honored for any mode that reaches here —
@@ -771,6 +780,12 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			// cleaned/repaired to a new file — since asking for an
 			// output target is a strong "yes, write the model" signal.
 			if err := mdl.WriteFile(model, outputPath); err != nil {
+				res.Error = err.Error()
+				return res, model, parseErrs, err
+			}
+			var wok bytes.Buffer
+			hasWok, _ := mdl.WriteWalkmesh(model, &wok)
+			if err := writeWok(hasWok, wok.Bytes(), outputPath, &res); err != nil {
 				res.Error = err.Error()
 				return res, model, parseErrs, err
 			}
@@ -795,6 +810,28 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	}
 
 	return res, model, parseErrs, nil
+}
+
+// writeWok writes the model's walkmesh beside the model just written to
+// modelPath, as <name>.wok, when the model has an aabb node (a tile). A .wok is
+// always ASCII. The old Prolog tool did this on every run.
+func writeWok(has bool, data []byte, modelPath string, res *Result) error {
+	if !has {
+		return nil
+	}
+	stem := strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
+	wokPath := filepath.Join(filepath.Dir(modelPath), stem+".wok")
+	tmp := wokPath + ".tmp"
+	err := os.WriteFile(tmp, data, 0o644)
+	if err == nil {
+		err = os.Rename(tmp, wokPath)
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("writing %s: %w", wokPath, err)
+	}
+	res.Actions = append(res.Actions, fmt.Sprintf("walkmesh written: %s", wokPath))
+	return nil
 }
 
 // refuseLostTriangles stops a repair or compile from writing a binary whose
