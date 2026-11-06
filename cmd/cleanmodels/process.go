@@ -118,6 +118,7 @@ type tileOpts struct {
 type procOpts struct {
 	check, forceBin, jsonOut, jsonLines, verbose, quiet, recursive bool
 	decompileOnly, dryRun                                          bool
+	keepVertexSplits                                               bool // decompile with one position per binary vertex
 	compile                                                        bool
 	overwrite                                                      bool // replace an existing output file
 	force                                                          bool // write even when reading the model lost triangles
@@ -703,7 +704,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 
 	if o.forceBin || binMode {
 		superDirs, _ := lookupDirs(path, o)
-		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs})
+		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs, KeepVertexSplits: o.keepVertexSplits})
 		if err != nil {
 			res.Error = wrapWithSuggestion(err, path).Error()
 			return res, nil, nil, err

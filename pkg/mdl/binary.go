@@ -51,6 +51,10 @@ type DecompileOptions struct {
 	// can only be recovered from the skeleton. Without it, those bones are
 	// left unnamed and a warning says so.
 	SkeletonDirs []string
+	// KeepVertexSplits writes one position per binary vertex, as before
+	// sharePositions: a compile of the result then links no faces across a
+	// split corner (nwn-mdl-spec MDL-MESH-025).
+	KeepVertexSplits bool
 }
 
 // DecompileFileWithOptions is DecompileFile with options.
@@ -106,6 +110,11 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 		d.resolveSkinWeights(ps)
 	}
 	d.unmergeRenderLists()
+	if !opts.KeepVertexSplits {
+		for _, n := range d.model.Nodes {
+			sharePositions(n)
+		}
+	}
 
 	return d.model, nil
 }

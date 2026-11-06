@@ -14,6 +14,7 @@ func cmdDecompile(args []string) int {
 	force := fs.Bool("force", false, "treat input as binary even if auto-detection fails")
 
 	fs.BoolVar(force, "f", false, "alias for --force")
+	keepSplits := fs.Bool("keep-vertex-splits", false, "write one position per binary vertex instead of sharing positions where the source did (a compile then links no faces across a UV seam, nwn-mdl-spec MDL-MESH-025)")
 
 	var cf commonFlags
 	cf.register(fs)
@@ -48,8 +49,9 @@ func cmdDecompile(args []string) int {
 	}
 
 	opts := procOpts{
-		decompileOnly: true,
-		forceBin:      *force,
+		decompileOnly:    true,
+		forceBin:         *force,
+		keepVertexSplits: *keepSplits,
 	}
 	cf.apply(&opts)
 

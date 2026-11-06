@@ -592,7 +592,7 @@ func TestVariantHDPartsMatchBeamdog(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m, err := DecompileWithOptions(bytes.NewReader(data), int64(len(data)), DecompileOptions{SkeletonDirs: []string{game}})
+			m, err := DecompileWithOptions(bytes.NewReader(data), int64(len(data)), DecompileOptions{SkeletonDirs: []string{game}, KeepVertexSplits: true})
 			if err != nil {
 				t.Fatal(err)
 			}

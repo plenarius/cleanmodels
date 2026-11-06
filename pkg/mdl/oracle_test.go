@@ -748,7 +748,9 @@ func compareOracleVertParity(t *testing.T, binaryName string) {
 	if err != nil {
 		t.Fatalf("read game binary: %v", err)
 	}
-	gameModel, err := Decompile(bytes.NewReader(gameData), int64(len(gameData)))
+	// Counting the binaries' vertices: one per binary vertex.
+	keep := DecompileOptions{KeepVertexSplits: true}
+	gameModel, err := DecompileWithOptions(bytes.NewReader(gameData), int64(len(gameData)), keep)
 	if err != nil {
 		t.Fatalf("decompile game binary: %v", err)
 	}
@@ -762,7 +764,7 @@ func compareOracleVertParity(t *testing.T, binaryName string) {
 	if err := Compile(pr.Model, &buf); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	ourModel, err := Decompile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	ourModel, err := DecompileWithOptions(bytes.NewReader(buf.Bytes()), int64(buf.Len()), keep)
 	if err != nil {
 		t.Fatalf("decompile our binary: %v", err)
 	}
