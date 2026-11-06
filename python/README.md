@@ -91,16 +91,20 @@ python python/parity_parse.py --corpus /tmp/stock --mutate-corpus 20
 python python/parity_compile.py --corpus /tmp/stock --cli ./cleanmodels   # --cli: also the CLI's own output
 ```
 
-At v4.14.0, on the game's 32,832 models (25,597 binary, 7,235 ASCII), against
+At v4.16.0, on the game's 32,832 models (25,597 binary, 7,235 ASCII), against
 the Go build of the release commit:
-- decompile: every binary model identical, and so are its warnings and notes
-  (46 warnings, 5,760 notes: 1,408 for light controller 144, the rest for
-  merged meshes);
+- decompile: every binary model identical (with positions shared again along
+  the stored neighbours, MDL-MESH-025), and so are its warnings and notes;
 - parse (output and parse warnings): every ASCII model identical, and 20
-  mutations of every 50th one identical or refused by both;
+  mutations of every 50th one identical or refused by both (3,039 identical,
+  6 refused by both);
 - compile (bytes and warnings): every model identical, the binary ones
   decompiled first and the ASCII ones parsed, and the same as
   `cleanmodels compile` itself (`--cli`).
+
+v4.14.0 had the same result on the same models; its decompile wrote 46
+warnings and 5,760 notes (1,408 for light controller 144, the rest for merged
+meshes).
 
 (v4.8.0 was also checked on the 32,832 ASCII files `cleanmodels decompile`
 writes for these models.)
