@@ -277,10 +277,13 @@ func ResolvePartBinding(modelName string, locs []string) (*PartBinding, error) {
 	return b, nil
 }
 
-// readModelBytes reads a model from memory, binary or ASCII.
+// readModelBytes reads a model from memory, binary or ASCII. A binary keeps
+// one position per vertex (KeepVertexSplits): skeletons and the stock parts
+// variants are fitted to are read, never written, and the fitting weighs
+// vertices as the binary stores them.
 func readModelBytes(data []byte) (*Model, error) {
 	if len(data) >= 12 && binary.LittleEndian.Uint32(data[0:4]) == 0 {
-		return Decompile(bytes.NewReader(data), int64(len(data)))
+		return DecompileWithOptions(bytes.NewReader(data), int64(len(data)), DecompileOptions{KeepVertexSplits: true})
 	}
 	res, err := Parse(bytes.NewReader(data))
 	if res != nil {

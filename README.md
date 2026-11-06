@@ -206,7 +206,8 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 | `--fix-robe-turns` | | Put the turn of a robe's nodes under `torso_g` into their geometry: on a worn robe the game draws those nodes unturned (a cape panel on a turned shoulder pad stands up above the shoulder; nwn-mdl-spec MDL-NODE-050). Body bones, and nodes the robe's own animations turn, are left alone |
 | `--reparent-children` | | Reparent children of AABB/light nodes |
 | `--wrap-root` | | Wrap non-dummy root nodes in a dummy parent |
-| `--split-multiedge` | | Split faces sharing multiple edges |
+| `--split-multiedge` | | Split faces sharing multiple edges (ASCII; a binary is rewritten, use `--open-multiedges` instead) |
+| `--open-multiedges` | | Binary models: set the stored face neighbours across edges shared by 3+ faces to none, so the shadow doesn't tear (nwn-mdl-spec E68). Writes the input's own bytes with only those 2-byte fields changed; not combined with other repairs, not part of `--all` |
 | `--check` | | Run validation checks after repair |
 | `--scale` | | Scale all vertex positions |
 | `--scale-x/y/z` | | Scale individual axes |
@@ -252,6 +253,9 @@ cleanmodels decompile -f mystery_file.bin output.mdl
 | Flag | Short | Description |
 |---|---|---|
 | `--force` | `-f` | Treat input as binary even if auto-detection fails |
+| `--keep-vertex-splits` | | Write one position per binary vertex. By default vertices the source shared are given one position again, found from the binary's stored face neighbours, so a compile of the ASCII links the same faces and casts the same shadows (nwn-mdl-spec MDL-MESH-025) |
+
+A binary splits a vertex wherever its UVs differ. The decompiler joins those copies back into one position (faces keep their own UV indices) only along edges the binary's stored neighbours link, and only when the copies agree in everything the ASCII writes per position (normal, tangent, colour, skin weights, dangly constraint). Walkmeshes, animmeshes and meshes with UV sets 1-3 are left split. Not recovered: a link across a hard edge (normals differ), and faces the binary merged by value that its source never linked (a round trip links them, as before).
 
 ### variants — a robe's, cloak's or armour part's versions for other races and phenotypes
 

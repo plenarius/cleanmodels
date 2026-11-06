@@ -335,10 +335,17 @@ func checkFacelessTrimesh(model *mdl.Model, file string, fix bool) []mdl.CheckRe
 }
 
 // checkMultipleEdges detects edges shared by 3+ faces on shadow-casting meshes.
-// "Multiple edges" cause shadow tearing/stretching in NWN's stencil shadow
-// renderer. See: nwn.wiki Model Shadows page.
-// The fix (--split-multiedge) duplicates vertices at affected edges so each
-// edge is shared by at most 2 faces, eliminating shadow artifacts.
+// The game builds shadow volumes from each face's stored neighbours
+// (nwn-mdl-spec E68): a face stores one neighbour per edge, so at an edge
+// shared by three or more faces some lit/unlit pairs never name each other and
+// the edge drops out of the silhouette, tearing the shadow.
+//
+// A binary read unchanged is judged by its stored neighbours
+// (mdl.StoredMultiEdges), what the game reads; its decompiled faces use merged
+// vertices, which would report edges the file does not have. An ASCII model
+// (or a binary a repair changed) is judged by its faces' vertex indices, which
+// is how the compiler will compute the neighbours. --open-multiedges fixes a
+// binary in place; --split-multiedge fixes an ASCII model.
 func checkMultipleEdges(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -346,6 +353,22 @@ func checkMultipleEdges(model *mdl.Model, file string, _ bool) []mdl.CheckResult
 	var out []mdl.CheckResult
 	for _, n := range model.Nodes {
 		if n == nil || !n.IsShadowCaster() {
+			continue
+		}
+
+		if _, edges, ok := mdl.StoredMultiEdges(n.Mesh); ok {
+			if edges > 0 {
+				out = append(out, mdl.CheckResult{
+					Check:    "multiple_edges",
+					Node:     n.Name,
+					Severity: mdl.SevWarning,
+					Message: fmt.Sprintf(
+						"%s: shadow-casting node %q has %d multiple edge(s) (3+ faces linked by their stored neighbours), causes shadow tearing (use --open-multiedges to fix the binary in place)",
+						file, n.Name, edges,
+					),
+					Fixed: false,
+				})
+			}
 			continue
 		}
 

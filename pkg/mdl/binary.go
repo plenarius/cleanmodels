@@ -51,6 +51,10 @@ type DecompileOptions struct {
 	// can only be recovered from the skeleton. Without it, those bones are
 	// left unnamed and a warning says so.
 	SkeletonDirs []string
+	// KeepVertexSplits writes one position per binary vertex, as before
+	// sharePositions: a compile of the result then links no faces across a
+	// split corner (nwn-mdl-spec MDL-MESH-025).
+	KeepVertexSplits bool
 }
 
 // DecompileFileWithOptions is DecompileFile with options.
@@ -106,6 +110,11 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 		d.resolveSkinWeights(ps)
 	}
 	d.unmergeRenderLists()
+	if !opts.KeepVertexSplits {
+		for _, n := range d.model.Nodes {
+			sharePositions(n)
+		}
+	}
 
 	return d.model, nil
 }
@@ -1313,11 +1322,16 @@ func (d *decompiler) readFaces(mesh *MeshData, facesDef binArrayDef) {
 	}
 	d.at("faces")
 	mesh.Faces = make([]Face, count)
+	mesh.StoredAdjacency = make([][3]int16, count)
+	mesh.FacesOffset = absPtr
 	for i := 0; i < count; i++ {
 		normal := d.readVec3()
 		d.skip(4) // float distance
 		surfaceID, _ := d.readI32()
-		d.skip(6) // ushort adj_face_ids[3]
+		for k := 0; k < 3; k++ { // short adj_face_ids[3], -1 for none
+			a, _ := d.readU16()
+			mesh.StoredAdjacency[i][k] = int16(a)
+		}
 		v0, _ := d.readU16()
 		v1, _ := d.readU16()
 		v2, _ := d.readU16()

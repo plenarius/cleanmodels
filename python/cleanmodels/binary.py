@@ -14,6 +14,7 @@ import math
 import struct
 
 from . import controllers
+from .share_positions import share_positions
 from .controllers import controller_id
 from .compiler_tangents import hint_wants_tangents
 from .f32 import f32
@@ -57,13 +58,13 @@ def is_binary_mdl(data):
     return len(data) >= 12 and _U32.unpack_from(data, 0)[0] == 0
 
 
-def decompile_file(path, skeleton_dirs=()):
+def decompile_file(path, skeleton_dirs=(), keep_vertex_splits=False):
     with open(path, "rb") as f:
         data = f.read()
-    return decompile(data, skeleton_dirs)
+    return decompile(data, skeleton_dirs, keep_vertex_splits)
 
 
-def decompile(data, skeleton_dirs=()):
+def decompile(data, skeleton_dirs=(), keep_vertex_splits=False):
     """Decompile binary MDL bytes into a Model (binary.go DecompileWithOptions)."""
     d = _Decompiler(data, skeleton_dirs)
     try:
@@ -90,6 +91,9 @@ def decompile(data, skeleton_dirs=()):
     for ps in d.pending_skins:
         d.resolve_skin_weights(ps)
     unmerge_render_lists(d)
+    if not keep_vertex_splits:
+        for n in d.model.nodes:
+            share_positions(n)
     return d.model
 
 
@@ -757,13 +761,17 @@ class _Decompiler:
             return
         self.at("faces")
         faces = []
+        adjacency = []
         for _ in range(count):
             normal = self.read_vec3()
             self.skip(4)
             surface = self.read_i32()
-            self.skip(6)
+            # short adj_face_ids[3], -1 for none
+            adjacency.append([self.read_i16(), self.read_i16(), self.read_i16()])
             v = (self.read_u16(), self.read_u16(), self.read_u16())
             faces.append(Face(v, 0, v, surface, normal))
+        mesh.stored_adjacency = adjacency
+        mesh.faces_offset = abs_ptr
         n = len(mesh.verts)
         if n > 0:
             for f in faces:

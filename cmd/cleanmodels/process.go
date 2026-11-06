@@ -76,6 +76,7 @@ type repairOpts struct {
 	fixTangents                                      bool
 	fixRobeTurns                                     bool
 	splitMultiEdge                                   bool
+	openMultiEdges                                   bool // binary in, binary out; never with other repairs
 	forceWhite, mergeByBitmap, cullInvisible         bool
 	scale                                            float32
 	scaleX, scaleY, scaleZ                           float32
@@ -117,6 +118,7 @@ type tileOpts struct {
 type procOpts struct {
 	check, forceBin, jsonOut, jsonLines, verbose, quiet, recursive bool
 	decompileOnly, dryRun                                          bool
+	keepVertexSplits                                               bool // decompile with one position per binary vertex
 	compile                                                        bool
 	overwrite                                                      bool // replace an existing output file
 	force                                                          bool // write even when reading the model lost triangles
@@ -702,7 +704,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 
 	if o.forceBin || binMode {
 		superDirs, _ := lookupDirs(path, o)
-		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs})
+		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs, KeepVertexSplits: o.keepVertexSplits})
 		if err != nil {
 			res.Error = wrapWithSuggestion(err, path).Error()
 			return res, nil, nil, err
@@ -731,11 +733,47 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 
 	if !o.decompileOnly && model != nil {
 		applyRepairs(model, o, &res)
+		if len(res.Repairs) > 0 {
+			// The faces may no longer be the file's; its stored neighbours are stale.
+			model.ClearStoredAdjacency()
+		}
+	}
+
+	var patched []byte
+	if o.openMultiEdges && model != nil {
+		if model.FileType != "binary" {
+			err := fmt.Errorf("%s is an ASCII model: --open-multiedges patches a binary's stored face neighbours (for ASCII use --split-multiedge)", path)
+			res.Error = err.Error()
+			return res, model, parseErrs, err
+		}
+		data, err := os.ReadFile(path)
+		if err == nil {
+			var msgs []string
+			patched, msgs, err = mdl.OpenMultiEdgesBinary(data, model)
+			res.Repairs = append(res.Repairs, msgs...)
+		}
+		if err != nil {
+			res.Error = err.Error()
+			return res, model, parseErrs, err
+		}
 	}
 
 	if o.check && !o.decompileOnly && model != nil {
 		fix := !o.dryRun
 		res.Checks = runChecks(model, path, o, o.include, o.exclude, fix)
+	}
+
+	if patched != nil {
+		// The file's own bytes with only the opened neighbours changed: no
+		// rewrite, so nothing the decompiler can't express is lost.
+		if !o.dryRun && outputPath != "" {
+			if err := os.WriteFile(outputPath, patched, 0o644); err != nil {
+				res.Error = err.Error()
+				return res, model, parseErrs, err
+			}
+			res.Actions = append(res.Actions, fmt.Sprintf("wrote the patched binary: %s", outputPath))
+		}
+		return res, model, parseErrs, nil
 	}
 
 	if model != nil && !o.dryRun && !o.decompileOnly && (o.compile || outputPath != "") {

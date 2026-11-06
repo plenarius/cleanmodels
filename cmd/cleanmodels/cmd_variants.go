@@ -391,7 +391,8 @@ func loadVariantSource(path string, dirs []string) (*mdl.Model, error) {
 		return nil, err
 	}
 	if bin {
-		return mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: dirs})
+		// Fitting weighs vertices as the binary stores them (KeepVertexSplits).
+		return mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: dirs, KeepVertexSplits: true})
 	}
 	res, err := mdl.ParseFile(path)
 	if res == nil || res.Model == nil {

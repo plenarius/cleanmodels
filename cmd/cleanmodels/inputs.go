@@ -50,7 +50,7 @@ const noOutputNoteLegacy = "\nnote: no output was given, so nothing was written.
 func (o procOpts) wantsRepairs() bool {
 	r, t := o.repairOpts, o.tileOpts
 	return r.fixPivots || r.fixAABB || r.fixTilefade || r.stripDegenerate || r.fixAnimations ||
-		r.reparentChildren || r.wrapRoot || r.splitMultiEdge || r.forceWhite || r.mergeByBitmap ||
+		r.reparentChildren || r.wrapRoot || r.splitMultiEdge || r.openMultiEdges || r.forceWhite || r.mergeByBitmap ||
 		r.cullInvisible || r.placeableTransparency || r.tilefadeUndo || r.standardizeTexture0 ||
 		r.stripEEExtras || r.scale != 0 || r.scaleX != 0 || r.scaleY != 0 || r.scaleZ != 0 ||
 		r.classification != "" || r.snapMode != "" || r.renderOverride != "" || r.shadowOverride != "" ||
