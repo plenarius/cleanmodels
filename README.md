@@ -41,6 +41,16 @@ The builds are also on the [Neverwinter Vault](https://neverwintervault.org/proj
 | macOS (Apple Silicon) | `cleanmodels-darwin-arm64.zip` |
 | Windows (x86_64) | `cleanmodels-windows-amd64.zip` |
 
+Each release also has a `SHA256SUMS.txt` listing the checksum of every zip.
+
+> **Windows warns about the download?** The Windows build is not code-signed yet, so SmartScreen may say "Windows protected your PC" (unknown publisher), and Defender sometimes flags small unsigned Go programs by mistake. These warnings are about the file having no reputation yet, not about anything found in it. To check that your copy is the one GitHub Actions built from this repository, compare its checksum with the release's `SHA256SUMS.txt`:
+>
+> ```
+> Get-FileHash cleanmodels-windows-amd64.zip -Algorithm SHA256
+> ```
+>
+> If Defender quarantines it, please [open an issue](https://github.com/plenarius/cleanmodels/issues) with the detection name so it can be reported to Microsoft as a false positive.
+
 > **Looking for the legacy Prolog version?** The last Prolog-based release is
 > [build3.7.0-HEAD](https://github.com/plenarius/cleanmodels/releases/tag/build3.7.0-HEAD).
 > Its sources (the `.pl` files cited in code comments) are at
