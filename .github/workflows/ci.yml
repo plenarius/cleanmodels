@@ -99,6 +99,27 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Windows version info
+        # Embeds product name, version, description and an asInvoker manifest
+        # in the .exe. A PE file with no metadata looks suspicious to
+        # antivirus heuristics. The tool runs here only; it is not a module
+        # dependency, and the .syso is linked into Windows builds only.
+        if: matrix.goos == 'windows'
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+        run: |
+          V="${VERSION_TAG#v}"
+          go run github.com/tc-hib/go-winres@v0.3.3 simply \
+            --arch "${{ matrix.goarch }}" \
+            --out cmd/cleanmodels/rsrc \
+            --manifest cli \
+            --product-name cleanmodels \
+            --product-version "${V}" \
+            --file-version "${V}" \
+            --file-description "NWN:EE MDL model checker, repairer and compiler" \
+            --copyright "Copyright (c) 2020-2026 plenarius. MIT License." \
+            --original-filename cleanmodels.exe
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -174,8 +195,13 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Checksums
+        run: sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          files: "*.zip"
+          files: |
+            *.zip
+            SHA256SUMS.txt
