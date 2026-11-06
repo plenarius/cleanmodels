@@ -34,6 +34,10 @@ class MeshData:
     def __init__(self):
         self.verts = []
         self.faces = []
+        # Each face's three stored neighbours (-1 none) and the face list's file
+        # offset, as read from a binary; empty for ASCII (Go: StoredAdjacency).
+        self.stored_adjacency = []
+        self.faces_offset = 0
         self.normals = []
         self.corner_normals = []  # per-face-corner normals, filled in by the compiler
         self.tangents = []

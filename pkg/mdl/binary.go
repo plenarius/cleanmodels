@@ -1313,11 +1313,16 @@ func (d *decompiler) readFaces(mesh *MeshData, facesDef binArrayDef) {
 	}
 	d.at("faces")
 	mesh.Faces = make([]Face, count)
+	mesh.StoredAdjacency = make([][3]int16, count)
+	mesh.FacesOffset = absPtr
 	for i := 0; i < count; i++ {
 		normal := d.readVec3()
 		d.skip(4) // float distance
 		surfaceID, _ := d.readI32()
-		d.skip(6) // ushort adj_face_ids[3]
+		for k := 0; k < 3; k++ { // short adj_face_ids[3], -1 for none
+			a, _ := d.readU16()
+			mesh.StoredAdjacency[i][k] = int16(a)
+		}
 		v0, _ := d.readU16()
 		v1, _ := d.readU16()
 		v2, _ := d.readU16()

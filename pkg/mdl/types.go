@@ -84,16 +84,23 @@ func NewMeshData() *MeshData {
 }
 
 type MeshData struct {
-	Verts         []Vec3
-	Faces         []Face
-	Normals       []Vec3
-	CornerNormals [][3]Vec3 // per-face-corner normals from smoothing groups (compiler-generated)
-	Tangents      []Vec4
-	Colors        []Vec3
-	TVerts        []Vec3
-	TVerts1       []Vec3
-	TVerts2       []Vec3
-	TVerts3       []Vec3
+	Verts []Vec3
+	Faces []Face
+	// StoredAdjacency is each face's three stored neighbours (-1 for none) as
+	// read from a binary (nwn-mdl-spec MDL-MESH-022), nil for an ASCII model.
+	// The game builds shadow volumes from them (E68). FacesOffset is the file
+	// offset of the binary's face list. Both describe the file as it was read:
+	// a repair that changes the faces makes them stale (Model.ClearStoredAdjacency).
+	StoredAdjacency [][3]int16
+	FacesOffset     int64
+	Normals         []Vec3
+	CornerNormals   [][3]Vec3 // per-face-corner normals from smoothing groups (compiler-generated)
+	Tangents        []Vec4
+	Colors          []Vec3
+	TVerts          []Vec3
+	TVerts1         []Vec3
+	TVerts2         []Vec3
+	TVerts3         []Vec3
 
 	TexIndices0 [][3]int32
 	TexIndices1 [][3]int32

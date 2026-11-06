@@ -25,6 +25,7 @@ func cmdRepair(args []string) int {
 	reparentChildren := fs.Bool("reparent-children", false, "reparent children of AABB/light nodes")
 	wrapRoot := fs.Bool("wrap-root", false, "wrap non-dummy root nodes in a dummy parent")
 	splitMultiEdge := fs.Bool("split-multiedge", false, "split faces at multiple edges")
+	openMultiEdges := fs.Bool("open-multiedges", false, "binary models: set the stored face neighbours across edges shared by 3+ faces to none, so their shadows don't tear; writes the binary with nothing else changed (not with other repairs; for ASCII use --split-multiedge)")
 	check := fs.Bool("check", false, "run validation checks after repair")
 
 	// Pivot sub-options
@@ -184,6 +185,14 @@ func cmdRepair(args []string) int {
 		opts.reparentChildren = *reparentChildren
 		opts.wrapRoot = *wrapRoot
 		opts.splitMultiEdge = *splitMultiEdge
+	}
+
+	if *openMultiEdges {
+		if opts.wantsRepairs() {
+			fmt.Fprintf(os.Stderr, "cleanmodels: --open-multiedges patches the binary as it is and can't be combined with other repairs; run them separately\n")
+			return exitUsage
+		}
+		opts.openMultiEdges = true
 	}
 
 	code := dispatchInputs(inputs, outputPath, opts)

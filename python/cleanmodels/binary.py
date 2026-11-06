@@ -757,13 +757,17 @@ class _Decompiler:
             return
         self.at("faces")
         faces = []
+        adjacency = []
         for _ in range(count):
             normal = self.read_vec3()
             self.skip(4)
             surface = self.read_i32()
-            self.skip(6)
+            # short adj_face_ids[3], -1 for none
+            adjacency.append([self.read_i16(), self.read_i16(), self.read_i16()])
             v = (self.read_u16(), self.read_u16(), self.read_u16())
             faces.append(Face(v, 0, v, surface, normal))
+        mesh.stored_adjacency = adjacency
+        mesh.faces_offset = abs_ptr
         n = len(mesh.verts)
         if n > 0:
             for f in faces:

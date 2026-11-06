@@ -206,7 +206,8 @@ cleanmodels repair --fix-tilefade --tilefade-z 5.0 tiles/
 | `--fix-robe-turns` | | Put the turn of a robe's nodes under `torso_g` into their geometry: on a worn robe the game draws those nodes unturned (a cape panel on a turned shoulder pad stands up above the shoulder; nwn-mdl-spec MDL-NODE-050). Body bones, and nodes the robe's own animations turn, are left alone |
 | `--reparent-children` | | Reparent children of AABB/light nodes |
 | `--wrap-root` | | Wrap non-dummy root nodes in a dummy parent |
-| `--split-multiedge` | | Split faces sharing multiple edges |
+| `--split-multiedge` | | Split faces sharing multiple edges (ASCII; a binary is rewritten, use `--open-multiedges` instead) |
+| `--open-multiedges` | | Binary models: set the stored face neighbours across edges shared by 3+ faces to none, so the shadow doesn't tear (nwn-mdl-spec E68). Writes the input's own bytes with only those 2-byte fields changed; not combined with other repairs, not part of `--all` |
 | `--check` | | Run validation checks after repair |
 | `--scale` | | Scale all vertex positions |
 | `--scale-x/y/z` | | Scale individual axes |
