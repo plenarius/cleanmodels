@@ -43,6 +43,8 @@ The builds are also on the [Neverwinter Vault](https://neverwintervault.org/proj
 
 Each release also has a `SHA256SUMS.txt` listing the checksum of every zip.
 
+Windows code signing: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). This is being set up; until the first signed release, see the note below.
+
 > **Windows warns about the download?** The Windows build is not code-signed yet, so SmartScreen may say "Windows protected your PC" (unknown publisher), and Defender sometimes flags small unsigned Go programs by mistake. These warnings are about the file having no reputation yet, not about anything found in it. To check that your copy is the one GitHub Actions built from this repository, compare its checksum with the release's `SHA256SUMS.txt`:
 >
 > ```
@@ -338,6 +340,8 @@ cleanmodels report --command "repair --fix-pivots" --notes "visual artifacts" ti
 | `--command` | The cleanmodels command that was run |
 | `--error` | Error output or description of the problem (optional) |
 | `--notes` | Additional notes or context |
+
+The model files and text you send become a public GitHub issue; see [PRIVACY.md](PRIVACY.md) for what a report contains and how to have one removed.
 
 Found something wrong, or a model that cleanmodels handles badly? Run `cleanmodels report` as above, or [open an issue](https://github.com/plenarius/cleanmodels/issues/new/choose). Include the output of `cleanmodels -v` and, if you can share it, the model file.
 
