@@ -370,12 +370,13 @@ cleanmodels understands the full MDL format for Neverwinter Nights: Enhanced Edi
 
 **Variants** — `variants` refits a robe, cloak or armour part (also Beamdog's skinned HD parts) made for one body to the other races and phenotypes, using the game's own skeletons, body parts and robes.
 
-**Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. The same model compiles to the same bytes on every run and every platform. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`.
+**Compile/Decompile** — Convert between ASCII and binary MDL formats. The compiler follows the engine's own mesh pipeline (normals, vertex merging, degenerate faces, face adjacency, tangents) and is checked against the NWN:EE game compiler on the engine-compiled models in the test suite. The same model compiles to the same bytes on every run and every platform. `COMPILE.md` describes how it works; known differences are listed in `RELEASE-v4.md`. The format it follows is written up, with evidence, in [nwn-mdl-spec](https://github.com/plenarius/nwn-mdl-spec).
 
 ## Specifications
 
 The MDL parser and compiler trace to these references:
 
+- [nwn-mdl-spec](https://github.com/plenarius/nwn-mdl-spec) — the NWN:EE MDL specification and conformance suite: what the engine was seen to do, with the evidence for each rule, machine-readable tables, and probe models with the game's own compiles. Rule IDs cited in this README and the code (`MDL-MESH-025`, `E68`) refer to it. Its probes and the game's compiles of them are in `tests/fixtures/engine/`, and the tests compile every probe and compare the result with the game's
 - [nwn.wiki MDL Format](https://nwn.wiki/display/NWN1/MDL) — parameter-level documentation
 - [xoreos-docs](https://github.com/xoreos/xoreos-docs) — Torlack's binary MDL specification and 010 Editor templates
 - [neverwinter.nim](https://github.com/niv/neverwinter.nim) — Nim MDL implementation
