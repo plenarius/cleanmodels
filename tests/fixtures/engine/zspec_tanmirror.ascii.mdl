@@ -1,0 +1,37 @@
+# nwn-mdl-spec conformance probe zspec_tanmirror (CC0-1.0)
+# Tangent generation across a UV mirror seam: the left quad's U runs one
+# way, the right quad's the other, sharing the seam vertices (same UV at
+# the seam). Handedness differs, so seam vertices are cloned.
+newmodel zspec_tanmirror
+setsupermodel zspec_tanmirror NULL
+classification character
+beginmodelgeom zspec_tanmirror
+node dummy zspec_tanmirror
+  parent NULL
+endnode
+node trimesh strip
+  parent zspec_tanmirror
+  bitmap zspec_t0
+  renderhint NormalAndSpecMapped
+  verts 6
+    -1 -1 0
+     0 -1 0
+     1 -1 0
+    -1  1 0
+     0  1 0
+     1  1 0
+  tverts 6
+    0 0 0
+    1 0 0
+    0 0 0
+    0 1 0
+    1 1 0
+    0 1 0
+  faces 4
+    0 1 4 1 0 1 4 0
+    0 4 3 1 0 4 3 0
+    1 2 5 1 1 2 5 0
+    1 5 4 1 1 5 4 0
+endnode
+endmodelgeom zspec_tanmirror
+donemodel zspec_tanmirror

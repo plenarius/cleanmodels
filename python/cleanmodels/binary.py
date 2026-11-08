@@ -90,6 +90,7 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False):
             d.warn(WARN_TRUNCATED_DATA, ptr, "", "animation read error: %s" % err)
     for ps in d.pending_skins:
         d.resolve_skin_weights(ps)
+    apply_tangent_clones(d)
     unmerge_render_lists(d)
     if not keep_vertex_splits:
         for n in d.model.nodes:
@@ -1552,6 +1553,38 @@ def _donor_normals(m, pairs):
     for v, cd in enumerate(cands):
         if cd is not None and not cd[1] and _dist3(m.normals[v], cd[0]) > MERGE_NORMAL_TOLERANCE:
             m.normals[v] = (f32(cd[0][0]), f32(cd[0][1]), f32(cd[0][2]))
+
+
+def _same_corner(m, a, b):
+    """sameCorner: one vertex, or a tangent clone of it (same position and UV)."""
+    if a == b:
+        return True
+    if a < 0 or b < 0 or a >= len(m.verts) or b >= len(m.verts) or m.verts[a] != m.verts[b]:
+        return False
+    if m.tverts:
+        if a >= len(m.tverts) or b >= len(m.tverts) or m.tverts[a] != m.tverts[b]:
+            return False
+    return True
+
+
+def apply_tangent_clones(d):
+    """applyTangentClones: point each face at the vertices its triangle of the
+    index list uses, when they are its own vertices or tangent clones of them
+    (MDL-BIN-049, MDL-MESH-043)."""
+    for n in d.model.nodes:
+        m = n.mesh
+        rl = d.render_lists.get(n) if d.render_lists else None
+        if m is None or not rl:
+            continue
+        for i, f in enumerate(m.faces):
+            if 3 * i + 2 >= len(rl):
+                break
+            want = [rl[3 * i], rl[3 * i + 1], rl[3 * i + 2]]
+            if want == list(f.verts):
+                continue
+            if all(_same_corner(m, f.verts[k], want[k]) for k in range(3)):
+                f.verts = list(want)
+                f.uvs = list(want)
 
 
 def unmerge_render_lists(d):
