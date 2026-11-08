@@ -1,0 +1,23 @@
+# cleanmodels test fixture zcm_chunk16 (CC0-1.0)
+# An emitter whose chunkName is 16 characters, the longest legal resref: the
+# compiled field must hold all 16 (nwn-mdl-spec MDL-BIN-006).
+newmodel zcm_chunk16
+setsupermodel zcm_chunk16 NULL
+classification EFFECT
+setanimationscale 1.00
+beginmodelgeom zcm_chunk16
+  node dummy zcm_chunk16
+    parent NULL
+  endnode
+  node emitter chunky
+    parent zcm_chunk16
+    update Explosion
+    render Normal
+    blend Normal
+    texture zspec_t0
+    birthrate 4
+    lifeexp 2
+    chunkName zcm_chunk16_abcd
+  endnode
+endmodelgeom zcm_chunk16
+donemodel zcm_chunk16
