@@ -26,6 +26,14 @@ type CompileOptions struct {
 	// Warn, if set, receives non-fatal notes such as a supermodel that could
 	// not be found.
 	Warn func(msg string)
+
+	// Dependency, if set, receives every resource the compile looks up in
+	// SupermodelDirs or ResourceDirs, found or not, with a hash of what was
+	// found: the supermodel and each one down its chain, a body part's skeleton
+	// and capart.2da, and the materials that decide tangents. With the model's
+	// own bytes, the search paths and the compiler, these are everything the
+	// output depends on; see ResolveDependency.
+	Dependency func(Dependency)
 }
 
 // superNode is one supermodel node as the engine numbered it.
@@ -51,6 +59,9 @@ type supermodelInfo struct {
 	path  string
 	root  *superNode
 	count int32
+	// lookups are the supermodels looked up down this one's chain (an ASCII
+	// supermodel is numbered against its own), in order.
+	lookups []lookup
 }
 
 // superTree builds the supermodel's tree from its root, children in file
@@ -136,9 +147,14 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 		return nil, fmt.Errorf("%s: supermodel has no root node", path)
 	}
 	c := newCompiler(model)
-	if parent := findSupermodelFor(model, dirs, seen); parent != nil {
-		if sm, err := loadSupermodel(parent, dirs, seen); err == nil {
-			c.assignNodeIDsFromSupermodel(root, sm)
+	if name, ok := supermodelToFind(model, seen); ok {
+		parent := findModelResource(name, dirs)
+		info.lookups = append(info.lookups, lookup{depKindModel, name, depListSupermodel, parent})
+		if parent != nil {
+			if sm, err := loadSupermodel(parent, dirs, seen); err == nil {
+				info.lookups = append(info.lookups, sm.lookups...)
+				c.assignNodeIDsFromSupermodel(root, sm)
+			}
 		}
 	}
 	if len(c.nodeIDs) == 0 {
@@ -198,15 +214,16 @@ func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 	c.nodeCountOverride = base + count
 }
 
-// findSupermodelFor returns model's supermodel in dirs, or nil
-// if it has none, names itself, was already visited, or cannot be found.
-func findSupermodelFor(model *Model, dirs []string, seen map[string]bool) *resourceRef {
+// supermodelToFind returns the name of model's supermodel to look up, and
+// false if it has none, names itself or was already visited (seen guards
+// against cycles and is updated).
+func supermodelToFind(model *Model, seen map[string]bool) (string, bool) {
 	name := strings.ToLower(strings.TrimSpace(model.SuperModel))
 	if name == "" || name == "null" || name == strings.ToLower(model.Name) || seen[name] {
-		return nil
+		return "", false
 	}
 	seen[name] = true
-	return findModelResource(name, dirs)
+	return name, true
 }
 
 // resolveSupermodel finds and loads the model's supermodel from opts, or
@@ -226,6 +243,7 @@ func (c *compiler) resolveSupermodel(opts CompileOptions) *supermodelInfo {
 		}
 	}
 	ref := findModelResource(name, opts.SupermodelDirs)
+	c.record(depKindModel, name, depListSupermodel, ref)
 	if ref == nil {
 		warn("supermodel %q not found in %s; node numbers assume no supermodel and may not match its animations",
 			name, strings.Join(opts.SupermodelDirs, ", "))
@@ -235,6 +253,9 @@ func (c *compiler) resolveSupermodel(opts CompileOptions) *supermodelInfo {
 	if err != nil {
 		warn("supermodel %q could not be read (%v); node numbers assume no supermodel", name, err)
 		return nil
+	}
+	for _, l := range sm.lookups {
+		c.record(l.kind, l.name, l.list, l.ref)
 	}
 	return sm
 }

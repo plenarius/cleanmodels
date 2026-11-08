@@ -31,6 +31,9 @@ type Result struct {
 	Repairs       []string          `json:"repairs,omitempty"`
 	Actions       []string          `json:"actions,omitempty"`
 	Error         string            `json:"error,omitempty"`
+	// Cached: compile --cache-dir wrote the stored output of an earlier
+	// compile, whose model and resources were all the same.
+	Cached bool `json:"cached,omitempty"`
 }
 
 // Event is a streaming JSON-lines event for real-time GUI consumption.
@@ -128,6 +131,7 @@ type procOpts struct {
 	supermodelDirs                                                 []string
 	resourceDirs                                                   []string
 	gameDir                                                        string
+	cacheDir                                                       string // compile --cache-dir
 
 	repairOpts
 	tileOpts
@@ -702,6 +706,23 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	var parseErrs []mdl.ParseError
 	var err error
 
+	// compile --cache-dir: an ASCII model whose stored compile still holds is
+	// written from the cache, without parsing it. (Binary input is decompiled
+	// first, which looks up skeletons the cache does not track: it is always
+	// compiled.)
+	var cacheRun *compileCacheRun
+	if o.cacheDir != "" && o.compile && !binMode && !o.dryRun {
+		outPath := outputPath
+		if outPath == "" {
+			outPath = path
+		}
+		run, pErrs, hit, cerr := startCompileCache(path, outPath, o, &res)
+		if hit {
+			return res, nil, pErrs, cerr
+		}
+		cacheRun = run
+	}
+
 	if o.forceBin || binMode {
 		superDirs, _ := lookupDirs(path, o)
 		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs, KeepVertexSplits: o.keepVertexSplits})
@@ -798,6 +819,9 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 					res.Warnings = append(res.Warnings, mdl.DecompileWarning{Kind: mdl.WarnGeneral, Message: msg})
 				},
 			}
+			if cacheRun != nil {
+				copts.Dependency = cacheRun.dependency
+			}
 			// The compiler fills in normals on the model it is given; the
 			// walkmesh is written from the model as it was.
 			var wok bytes.Buffer
@@ -810,6 +834,13 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 			if err := writeWok(hasWok, wok.Bytes(), outPath, &res); err != nil {
 				res.Error = err.Error()
 				return res, model, parseErrs, err
+			}
+			if cacheRun != nil {
+				var wokData []byte
+				if hasWok {
+					wokData = wok.Bytes()
+				}
+				cacheRun.store(outPath, wokData, parseErrs, &res)
 			}
 		case outputPath != "":
 			// Explicit output target: write the (re-serialized) ASCII

@@ -55,7 +55,7 @@ func (m *materialIndex) load() map[string]string {
 // installs are indexed by resources.go.
 func findMaterial(name string, locs []string) *resourceRef {
 	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" || name == "null" {
+	if !materialLookedUp(name) {
 		return nil
 	}
 	for _, loc := range locs {
@@ -71,6 +71,13 @@ func findMaterial(name string, locs []string) *resourceRef {
 		}
 	}
 	return nil
+}
+
+// materialLookedUp reports whether findMaterial searches for name at all: an
+// empty name or NULL is no material.
+func materialLookedUp(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name != "" && name != "null"
 }
 
 func materialRenderHint(ref *resourceRef) string {
@@ -89,8 +96,9 @@ func materialRenderHint(ref *resourceRef) string {
 
 // isNormalMapped reports whether the mesh's effective render hint is one the
 // game generates tangents for (NormalAndSpecMapped or NormalTangents): its own
-// hint, or its material's when dirs can find one.
-func isNormalMapped(mesh *MeshData, dirs []string) bool {
+// hint, or its material's when dirs can find one. Each material looked up is
+// passed to found, if set.
+func isNormalMapped(mesh *MeshData, dirs []string, found func(name string, ref *resourceRef)) bool {
 	if mesh == nil {
 		return false
 	}
@@ -101,7 +109,11 @@ func isNormalMapped(mesh *MeshData, dirs []string) bool {
 		return false
 	}
 	for _, name := range []string{mesh.MaterialName, mesh.Bitmap} {
-		if ref := findMaterial(name, dirs); ref != nil {
+		ref := findMaterial(name, dirs)
+		if found != nil && materialLookedUp(name) {
+			found(name, ref)
+		}
+		if ref != nil {
 			return hintWantsTangents(materialRenderHint(ref))
 		}
 	}

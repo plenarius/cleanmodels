@@ -115,7 +115,21 @@ var skeletonCache sync.Map
 // loadSkeleton finds <name>.mdl in locs and numbers its nodes in tree order.
 // It returns nil, nil when the model is not found.
 func loadSkeleton(name string, locs []string) (*skeleton, error) {
+	sk, _, err := loadSkeletonRef(name, locs)
+	return sk, err
+}
+
+// loadSkeletonRef is loadSkeleton that also returns the resource it found (nil
+// when not found), for the compile's dependencies.
+func loadSkeletonRef(name string, locs []string) (*skeleton, *resourceRef, error) {
 	ref := findModelResource(name, locs)
+	sk, err := readSkeleton(ref)
+	return sk, ref, err
+}
+
+// readSkeleton reads and numbers the skeleton ref, or returns nil, nil for a
+// nil ref.
+func readSkeleton(ref *resourceRef) (*skeleton, error) {
 	if ref == nil {
 		return nil, nil
 	}
@@ -178,7 +192,8 @@ func (c *compiler) resolvePartSkeleton(opts CompileOptions) {
 	}
 	skelName := partSkeletonName(c.model.Name)
 	const consequence = "its skins are bound to the part's own node tree, but the game binds a body part's skin to the creature skeleton by tree position, so the compiled part will render torn in game. Give --game-dir (stock skeletons) or a --supermodel-dir holding the skeleton, or ship the part as ASCII"
-	sk, err := loadSkeleton(skelName, opts.SupermodelDirs)
+	sk, skRef, err := loadSkeletonRef(skelName, opts.SupermodelDirs)
+	c.record(depKindModel, skelName, depListSupermodel, skRef)
 	switch {
 	case err != nil:
 		warn("body part %q: skeleton %s.mdl could not be read (%v); %s", c.model.Name, skelName, err, consequence)
@@ -188,7 +203,9 @@ func (c *compiler) resolvePartSkeleton(opts CompileOptions) {
 		return
 	}
 	from := "the stock capart.2da (no capart.2da was found; put yours next to the model or give the hak or folder holding it with --resource-dir)"
-	if table, path := findCapart(opts.SupermodelDirs); table != nil {
+	table, path, capRef := findCapartRef(opts.SupermodelDirs)
+	c.record(depKind2DA, "capart", depListSupermodel, capRef)
+	if table != nil {
 		if node, ok := table[partKind(c.model.Name)]; ok {
 			attach, from = node, path
 		}

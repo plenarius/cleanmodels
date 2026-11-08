@@ -150,6 +150,7 @@ func runBatch(inputs []string, outputDir string, o procOpts, tw, errTw *termWrit
 		totalW       int
 		totalE       int
 		totalRepairs int
+		totalCached  int
 		procN        int // files started; numbers the JSON-lines start/done events
 		doneN        int // files finished; numbers the plain progress lines so they count up in order
 		exitCode     = exitOK
@@ -237,6 +238,9 @@ func runBatch(inputs []string, outputDir string, o procOpts, tw, errTw *termWrit
 			totalW += w
 			totalE += e
 			totalRepairs += fixes
+			if res.Cached {
+				totalCached++
+			}
 			doneN++
 			if e > 0 {
 				exitCode = exitErrors
@@ -308,10 +312,10 @@ func runBatch(inputs []string, outputDir string, o procOpts, tw, errTw *termWrit
 		// Quiet emits nothing; json-lines already emitted a summary event.
 	case o.jsonOut:
 		// Stdout carries the JSON array; route the human counts to stderr.
-		errTw.printBatchSummary(procN, totalRepairs, totalW, totalE)
+		errTw.printBatchSummary(procN, totalCached, totalRepairs, totalW, totalE)
 	default:
 		// Plain mode: per-file lines went to stdout, summary follows them.
-		tw.printBatchSummary(procN, totalRepairs, totalW, totalE)
+		tw.printBatchSummary(procN, totalCached, totalRepairs, totalW, totalE)
 	}
 	return exitCode
 }

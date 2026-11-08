@@ -23,6 +23,7 @@ var subcommands = map[string]func([]string) int{
 	"decompile": cmdDecompile,
 	"report":    cmdReport,
 	"variants":  cmdVariants,
+	"cache":     cmdCache,
 }
 
 func main() {
@@ -75,6 +76,7 @@ Commands:
   decompile   Decompile binary MDL to ASCII
   report      Submit a bug report with model files
   variants    Make a robe's, cloak's or armour part's versions for other races and phenotypes
+  cache       Trim the folder compile --cache-dir keeps (cache prune)
 
 Run 'cleanmodels <command> --help' for command-specific flags.
 Run 'cleanmodels --version' (or -v) for the version, commit, and build date.
