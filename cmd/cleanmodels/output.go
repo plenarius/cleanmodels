@@ -179,8 +179,12 @@ func (tw *termWriter) printBatchLine(idx, total int, baseName string, res Result
 }
 
 // printBatchSummary formats the final summary line for batch processing.
-func (tw *termWriter) printBatchSummary(totalFiles, totalRepairs, totalWarnings, totalErrors int) {
+// cached is how many models compile --cache-dir wrote from its cache.
+func (tw *termWriter) printBatchSummary(totalFiles, cached, totalRepairs, totalWarnings, totalErrors int) {
 	parts := []string{fmt.Sprintf("%d %s", totalFiles, pluralize(totalFiles, "file", "files"))}
+	if cached > 0 {
+		parts = append(parts, fmt.Sprintf("%d from the cache", cached))
+	}
 	if totalRepairs > 0 {
 		parts = append(parts, tw.green(fmt.Sprintf("%d %s", totalRepairs, pluralize(totalRepairs, "repair", "repairs"))))
 	}

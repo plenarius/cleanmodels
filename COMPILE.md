@@ -264,6 +264,25 @@ words the game matches case-sensitively (`node`, `endnode`, `endlist`, `event`,
 `animlength`, `endmodelgeom`, `doneanim`, `donemodel`) are read in any case
 with a warning.
 
+## The compile cache
+
+`compile --cache-dir` (`cmd/cleanmodels/cache.go`) stores each compile under a
+key made of the cleanmodels version and a hash of its executable, the model's
+bytes and file name, `--force`, and the supermodel and resource search paths.
+With the key it stores the resources the compile looked up, as the compiler
+reports them through `CompileOptions.Dependency` (`pkg/mdl/deps.go`): kind,
+name, which search path, whether it was found and the SHA-256 of what was.
+The supermodel chain is reported from `supermodelInfo.lookups`, so a
+supermodel taken from the process's `supermodelCache` still reports the ones
+below it. A stored compile is reused only when `ResolveDependency` finds every
+one of them the same again, the way ccache's direct mode works: a lookup that
+found nothing and would now find a file is a change like any other.
+
+The dependencies are the compiler's own lookups, so there is no list to keep
+in step: a new lookup in the compiler reports itself once it goes through
+`c.record`. Decompiling binary input looks up skeletons outside the compiler,
+so binary input is not cached.
+
 ## Same output everywhere
 
 The compiled bytes depend only on the model and the files found next to it or

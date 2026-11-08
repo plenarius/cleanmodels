@@ -152,6 +152,9 @@ type compiler struct {
 	resourceDirs []string
 	// warn receives non-fatal notes (CompileOptions.Warn); nil discards them.
 	warn func(string)
+	// dependency receives every resource lookup (CompileOptions.Dependency);
+	// nil when no one asked.
+	dependency func(Dependency)
 
 	// nodeCountOverride, when non-zero, replaces the geometry header's
 	// count_nodes. Set when nodes are numbered against a supermodel.
@@ -245,6 +248,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 	c := newCompiler(model)
 	c.resourceDirs = opts.ResourceDirs
 	c.warn = opts.Warn
+	c.dependency = opts.Dependency
 
 	// Pre-pass: assign part numbers to every geometry node.
 	root := model.RootNode()

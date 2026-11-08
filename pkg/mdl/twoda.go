@@ -80,7 +80,20 @@ var capartCache sync.Map
 // nodes by part type (MDLNAME, lower case) and where it was read from. It
 // returns nil when no capart.2da is found or it cannot be read.
 func findCapart(locs []string) (map[string]string, string) {
+	table, path, _ := findCapartRef(locs)
+	return table, path
+}
+
+// findCapartRef is findCapart that also returns the resource it found (nil
+// when there is none), for the compile's dependencies.
+func findCapartRef(locs []string) (map[string]string, string, *resourceRef) {
 	ref := findResource("capart", resType2DA, ".2da", locs)
+	table, path := readCapart(ref)
+	return table, path, ref
+}
+
+// readCapart reads the capart.2da ref; nil, "" for a nil or unreadable one.
+func readCapart(ref *resourceRef) (map[string]string, string) {
 	if ref == nil {
 		return nil, ""
 	}

@@ -62,7 +62,7 @@ func TestResourcesFromERF(t *testing.T) {
 	if findModelResource("ignored", []string{hak}) != nil || findMaterial("missing", []string{hak}) != nil {
 		t.Fatal("found a resource that is not there")
 	}
-	if !isNormalMapped(&MeshData{MaterialName: "wall_stone"}, []string{hak}) {
+	if !isNormalMapped(&MeshData{MaterialName: "wall_stone"}, []string{hak}, nil) {
 		t.Fatal("mesh with a normal-mapped material in a hak should get tangents")
 	}
 }

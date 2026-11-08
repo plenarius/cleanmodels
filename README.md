@@ -241,6 +241,10 @@ cleanmodels compile -r models/ compiled/
 # Body-part models and normal-mapped tiles: let the compiler see the game's data
 cleanmodels compile --game-dir "/path/to/Neverwinter Nights" -r parts/ compiled/
 cleanmodels compile --resource-dir my_haks/ --resource-dir ts_pbr.hak -r tiles/ compiled/
+
+# A build that compiles everything every time: only what changed is compiled
+cleanmodels compile --cache-dir ~/.cache/cleanmodels -r models/ compiled/
+cleanmodels cache prune --unused-for 30d ~/.cache/cleanmodels
 ```
 
 | Flag | Description |
@@ -248,12 +252,15 @@ cleanmodels compile --resource-dir my_haks/ --resource-dir ts_pbr.hak -r tiles/ 
 | `--game-dir DIR` | NWN install directory (the one with `data/nwn_base.key`). Stock supermodels and materials are read straight from its BIF files. Defaults to `$NWN_ROOT`, then the usual Steam and GOG install locations. |
 | `--resource-dir PATH` | Extra folder, or `.hak`/`.erf`/`.mod` archive, searched for supermodels and for `.mtr` materials (repeatable). The input file's own folder is always searched. |
 | `--supermodel-dir DIR` | Extra folder searched for the model's supermodel (repeatable). |
+| `--cache-dir DIR` | Keep each compile in this folder (created if missing) and write it again, without compiling, while nothing it depends on has changed. See below. |
 
 `compile` always needs an output. `cleanmodels compile plc_torch.mdl` on its own is refused, because it would replace your ASCII source with the binary. To compile in place, name the input twice, as in the first example above.
 
 A model's node numbers follow its supermodel, and a mesh whose material is normal-mapped gets tangents baked in, so the compiler needs to find both. If a supermodel can't be found the compile still succeeds and a warning says so. Without materials in reach, only a mesh's own `renderhint` decides about tangents.
 
 Compile looks for the game's data on its own: `--game-dir`, then `$NWN_ROOT`, then the usual Steam and GOG folders for your system (a folder only counts if it holds `data/nwn_base.key`). `--verbose` shows which one was used, and if none is found a one-line note says that materials and supermodels from the game were not consulted. A copy of NWN in an unusual place, or in a second Steam library, needs `--game-dir` or `NWN_ROOT`. Because of this, the same model can compile differently on a machine with NWN installed and one without, when its tangents or node numbers depend on game data; the compile with the data in reach is the correct one.
+
+**The compile cache.** With `--cache-dir`, a model is compiled again only when something its output depends on has changed: the model itself (its bytes and file name), this build of cleanmodels, the folders searched, or any resource the compile looked up there. Those are its supermodel and each one down the supermodel's chain, a body part's skeleton and `capart.2da`, and the `.mtr` of each mesh. A resource that was looked for and not found counts too, so adding a material or a supermodel where the compile would find it compiles the models that would use it. The output, its walkmesh and the warnings are stored; a model written from the cache reports the same warnings, the summary says how many came from it, and `--json`/`--json-lines` results carry `"cached": true`. Binary input is always compiled. Several builds can share one folder. It grows with every changed model: `cleanmodels cache prune --unused-for 30d DIR` removes what no compile has used for that long (`12h` and `7d` work too).
 
 ### decompile — binary to ASCII MDL
 

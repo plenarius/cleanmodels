@@ -14,6 +14,7 @@ func cmdCompile(args []string) int {
 	var cf commonFlags
 	cf.register(fs)
 	keepLost := registerKeepLost(fs)
+	cacheDir := fs.String("cache-dir", "", "keep each compile in this folder and reuse it while the model, cleanmodels and every supermodel, skeleton, capart.2da and material the compile looked up are unchanged (created if missing; trim it with 'cleanmodels cache prune')")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: cleanmodels compile [flags] <input>... [output]\n\n")
@@ -49,6 +50,7 @@ func cmdCompile(args []string) int {
 	}
 	cf.apply(&opts)
 	opts.force = *keepLost
+	opts.cacheDir = *cacheDir
 
 	return dispatchInputs(inputs, outputPath, opts)
 }
