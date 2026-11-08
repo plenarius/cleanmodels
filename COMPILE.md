@@ -67,8 +67,12 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
    AABB, light, emitter, reference), then deferred face/MDX data, then its
    children.
 4. **Animation blocks** — `writeAnimation` per animation, each with its own
-  `header_animation` and an animation-node tree. Animation nodes reuse
-   geometry node IDs so bone references stay consistent.
+  `header_animation` and an animation-node tree. The engine binds animation
+   nodes to model nodes by part number, so each animation node takes the
+   number the game's compiler gives it (`animNodeNumbers`, nwn-mdl-spec
+   MDL-NODE-040): its path is walked down the geometry tree, and a match takes
+   that geometry node's number; a node the geometry lacks gets -1 under a
+   matched parent and otherwise its declaration index in the animation.
 5. **File header** — `{0, core_len, mdx_len}` is written last with the final
   buffer sizes, then `core` and `vol` are appended.
 

@@ -179,6 +179,11 @@ type compiler struct {
 	// written to their geometry counterparts. Reset per animation.
 	animGeomPair map[*AnimNode]*Node
 
+	// animNumbers holds the part numbers of the animation nodes of the
+	// animation currently being written (animNodeNumbers). Reset per
+	// animation.
+	animNumbers map[*AnimNode]int32
+
 	// mergeAnim, while a mesh header is written for an animmesh node, holds
 	// the animation sets that take part in its vertex merge.
 	mergeAnim *AnimMeshData
@@ -453,6 +458,7 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 	if rootAnimNode == nil && len(anim.Nodes) > 0 {
 		rootAnimNode = &anim.Nodes[0]
 	}
+	c.animNumbers = c.animNodeNumbers(anim.Nodes, rootAnimNode)
 	if rootAnimNode != nil {
 		visited := make(map[*AnimNode]bool, len(anim.Nodes))
 		rootAnimOff = c.writeAnimNode(rootAnimNode, animChildIdx, 0, &animNodeCount, visited)
@@ -551,18 +557,12 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	*count++
 
 	// ---- header_node (112 bytes) ----
-	c.core.zeros(24) // p_func1..p_func6
-	c.core.i32le(0)  // inheritColor
-	partNum := int32(0)
-	if geomNode != nil {
-		if id, ok := c.nodeIDs[geomNode]; ok {
-			partNum = id
-		}
-	}
-	c.core.i32le(partNum)        // node_number / m_ID
-	c.core.fixedStr(an.Name, 32) // node_name
-	c.core.i32le(0)              // p_geometry (tree ptr) — engine fills at load
-	c.core.i32le(parentOff)      // p_parent_node
+	c.core.zeros(24)                // p_func1..p_func6
+	c.core.i32le(0)                 // inheritColor
+	c.core.i32le(c.animNumbers[an]) // node_number / m_ID (MDL-NODE-040)
+	c.core.fixedStr(an.Name, 32)    // node_name
+	c.core.i32le(0)                 // p_geometry (tree ptr) — engine fills at load
+	c.core.i32le(parentOff)         // p_parent_node
 
 	// children ProxyList — will be patched
 	childListOffPos := c.core.placeholder()

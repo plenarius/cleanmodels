@@ -19,7 +19,7 @@ from .compiler_mesh import CompileError, MeshMixin, anim_sets, anim_vertex_major
 from .compiler_node import NodeMixin
 from .compiler_order import reorder_children
 from .compiler_skinbind import SkinBindMixin, SkinBindPatch
-from .compiler_tree import is_root_parent, node_occurrences, pair_anim_nodes_to_geom, resolve_anim_tree, \
+from .compiler_tree import anim_node_numbers, is_root_parent, node_occurrences, pair_anim_nodes_to_geom, resolve_anim_tree, \
     resolve_geom_tree
 from .f32 import f32
 from .gomath import go_lower, go_quote
@@ -108,6 +108,7 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         self.geom_node_index = gi
         self.geom_occur = node_occurrences(model.nodes)
         self.anim_geom_pair = {}
+        self.anim_numbers = {}
         self.last_expanded = None
         self.merge_anim = None    # animmesh sets taking part in the vertex merge
         self.dangly_constraints_ptr_pos = 0
@@ -379,6 +380,8 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
                 break
         if root_an is None and anim.nodes:
             root_an = anim.nodes[0]
+        self.anim_numbers = anim_node_numbers(anim.nodes, root_an, self.model.root_node(), self.children_of,
+                                              self.node_ids)
         if root_an is not None:
             visited = set()
             root_off, count = self.write_anim_tree(root_an, anim_children, visited)
@@ -452,7 +455,7 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
 
         core.zeros(24)
         core.i32(0)
-        core.i32(self.node_ids.get(geom, 0) if geom is not None else 0)
+        core.i32(self.anim_numbers[an])  # node_number (MDL-NODE-040)
         core.fixed_str(an.name, 32)
         core.i32(0)
         core.i32(parent_off)
