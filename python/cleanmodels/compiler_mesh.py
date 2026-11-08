@@ -2,8 +2,9 @@
 
 Face corners are merged into GPU vertices the way the game's
 InternalGenVertices merges them (position, UV0-3, normal, colour, mirrorlist
-value, and the bone influences / constraint of skin and dangly meshes, floats
-compared by value), degenerate faces are dropped, and the vertex streams go to
+value, the bone influences / constraint of skin and dangly meshes, and the
+tangent and handedness when the ASCII gives tangents, floats compared by
+value), degenerate faces are dropped, and the vertex streams go to
 the MDX block in the order real binaries use.
 """
 
@@ -124,6 +125,10 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
     has_tex_idx0 = bool(mesh.tex_indices0)
     has_normals = bool(mesh.normals)
     has_colors = bool(mesh.colors)
+    # Tangents from the file are part of the merge key (MDL-MESH-010, probe
+    # zspec_tanmerge) when they cover every vertex and the mesh has normals.
+    tangents = mesh.tangents
+    has_tangents = has_normals and len(verts) > 0 and len(tangents) >= len(verts)
     corner_normals = mesh.corner_normals
     normals = mesh.normals
     colors = mesh.colors
@@ -148,7 +153,8 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
     nan = (_has_nan(verts) or _has_nan(tverts) or _has_nan(tverts1) or _has_nan(tverts2)
            or _has_nan(tverts3) or _has_nan(normals) or _has_nan(colors)
            or any(_has_nan(c) for c in corner_normals)
-           or (constraints is not None and any(x != x for x in constraints)))
+           or (constraints is not None and any(x != x for x in constraints))
+           or (has_tangents and _has_nan(tangents)))
     kb = _bits if nan else (lambda v: v)
 
     positions, origv, origt = exp.positions, exp.orig_vert, exp.orig_tvert
@@ -230,6 +236,11 @@ def build_expanded_mesh(mesh, strip_degenerate=False, skin_keys=None, dangly=Non
                    skin_keys[vert_idx] if 0 <= vert_idx < nsk else "",
                    kb(constraints[vert_idx]) if 0 <= vert_idx < ncons else 0.0,
                    anim_merge_key(mesh, anim, vert_idx, tv_idx) if anim is not None else "")
+            if has_tangents and 0 <= vert_idx < len(tangents):
+                t = tangents[vert_idx]
+                key += (kb(t[0]), kb(t[1]), kb(t[2]), -1 if t[3] < 0 else 1)
+            else:
+                key += (0, 0, 0, 0)
             cs.append((key, vert_idx, tv_idx, pos, uv, uv1, uv2, uv3, nor, col))
 
         if aabb_merge:

@@ -13,7 +13,8 @@ import (
 // NodeVertex::operator== (and the Skin/Dangly subclass comparisons): two face
 // corners share a GPU vertex when position, UV0-3, normal and color all match,
 // plus the bone influences on skin meshes and the constraint on dangly
-// meshes. Material and smoothing group are deliberately NOT part of it: the
+// meshes, and the tangent and handedness when the ASCII gives tangents
+// (nwn-mdl-spec MDL-MESH-010, probe zspec_tanmerge). Material and smoothing group are deliberately NOT part of it: the
 // game merges across both, and the oracle fixtures compiled by EE only match
 // when we do too. Floats are compared by value (-0 == +0), via f32bits.
 type vertKey struct {
@@ -28,6 +29,8 @@ type vertKey struct {
 	skin       string // skinmesh: bone names that influence the vertex
 	dangly     uint32 // danglymesh: constraint bits
 	anim       string // animmesh: the corner's animation sets (animMergeKey)
+	tx, ty, tz uint32 // tangent bits, when the ASCII's tangents are used
+	tw         int8   // handedness as stored (-1 or +1), likewise; 0 otherwise
 }
 
 // f32bits maps a float to its dedup-key bits. The game compares vertex
@@ -637,6 +640,11 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 	hasUV3 := len(mesh.TVerts3) > 0
 	hasNormals := len(mesh.Normals) > 0
 	hasColors := len(mesh.Colors) > 0
+	// Tangents from the file are stored per vertex as written (MDL-MESH-044),
+	// and the game compares them when merging: corners that differ only in
+	// tangent or handedness stay separate vertices. They are used when they
+	// cover every vertex and the mesh has normals (useExistingTangents).
+	hasTangents := hasNormals && len(mesh.Verts) > 0 && len(mesh.Tangents) >= len(mesh.Verts)
 
 	exp := expandedMesh{
 		faceVerts: make([][3]uint16, 0, len(mesh.Faces)),
@@ -794,6 +802,14 @@ func buildExpandedMeshOpts(mesh *MeshData, opts expandOpts) (expandedMesh, error
 			}
 			if opts.anim != nil {
 				key.anim = animMergeKey(mesh, opts.anim, vertIdx, tvIdx)
+			}
+			if hasTangents && vertIdx >= 0 && vertIdx < len(mesh.Tangents) {
+				t := mesh.Tangents[vertIdx]
+				key.tx, key.ty, key.tz = f32bits(t.X), f32bits(t.Y), f32bits(t.Z)
+				key.tw = 1
+				if t.W < 0 {
+					key.tw = -1
+				}
 			}
 			cs[vi] = expCorner{key: key, vertIdx: vertIdx, tvIdx: tvIdx, pos: pos, uv: uv, uv1: uv1, uv2: uv2, uv3: uv3, nor: nor, col: col}
 		}

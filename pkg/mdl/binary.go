@@ -109,6 +109,7 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 	for _, ps := range d.pendingSkins {
 		d.resolveSkinWeights(ps)
 	}
+	d.applyTangentClones()
 	d.unmergeRenderLists()
 	if !opts.KeepVertexSplits {
 		for _, n := range d.model.Nodes {

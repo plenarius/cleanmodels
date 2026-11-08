@@ -153,6 +153,20 @@ block, and the next compile will either bake tangents (for normal-mapped
 meshes) or leave the pointers unset for the engine to generate at load
 time.
 
+### Tangent clones
+
+When the game generates tangents, a vertex reached by triangles of both
+handedness is cloned: the clone goes to the end of the vertex list and only
+the index list is rewritten to use it; the face records keep the original
+(nwn-mdl-spec MDL-MESH-043). The engine draws the index list (MDL-BIN-049).
+`applyTangentClones` (`binary_clones.go`) therefore points each face at the
+vertices of its triangle in the index list when they are the face's own
+vertices or clones of them (the same position and UV), so the decompiled
+faces draw the clones' tangent and handedness and no clone is left unused.
+A list triangle that is some other triangle leaves the face as read.
+`TestDecompileDrawsTangentClones` checks this against the game's compile of
+`zspec_tanmirror`.
+
 ## Skin meshes
 
 Skin nodes carry a per-vertex bone weight table and a per-mesh
