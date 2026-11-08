@@ -1,0 +1,98 @@
+# nwn-mdl-spec conformance probe zspec_tanmerge (CC0-1.0)
+# Tangents given in the file: are they part of the vertex-merge key?
+# Vertices 4, 5 and 6 repeat the position, UV and normal of 2, 0 and 1.
+# 4 differs from 2 only in its tangent, 5 from 0 only in its handedness,
+# and 6 equals 1 in everything (the control). With tangent and handedness
+# in the key the game keeps 6 vertices; without, 4. Mesh `hinted` has a
+# normal-mapped render hint, mesh `plain` none (as decompiled Layonara
+# tiles have).
+newmodel zspec_tanmerge
+setsupermodel zspec_tanmerge NULL
+classification character
+beginmodelgeom zspec_tanmerge
+node dummy zspec_tanmerge
+  parent NULL
+endnode
+node trimesh hinted
+  parent zspec_tanmerge
+  bitmap zspec_t0
+  renderhint NormalAndSpecMapped
+  verts 7
+    -1 -1 0
+     1 -1 0
+     1  1 0
+    -1  1 0
+     1  1 0
+    -1 -1 0
+     1 -1 0
+  normals 7
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+  tangents 7
+    1 0 0 1
+    1 0 0 1
+    1 0 0 1
+    1 0 0 1
+    0.8 0.6 0 1
+    1 0 0 -1
+    1 0 0 1
+  tverts 7
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+    1 1 0
+    0 0 0
+    1 0 0
+  faces 3
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+    5 6 4 1 5 6 4 0
+endnode
+node trimesh plain
+  parent zspec_tanmerge
+  bitmap zspec_t0
+  verts 7
+    -1 -1 0
+     1 -1 0
+     1  1 0
+    -1  1 0
+     1  1 0
+    -1 -1 0
+     1 -1 0
+  normals 7
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+    0 0 1
+  tangents 7
+    1 0 0 1
+    1 0 0 1
+    1 0 0 1
+    1 0 0 1
+    0.8 0.6 0 1
+    1 0 0 -1
+    1 0 0 1
+  tverts 7
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+    1 1 0
+    0 0 0
+    1 0 0
+  faces 3
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+    5 6 4 1 5 6 4 0
+endnode
+endmodelgeom zspec_tanmerge
+donemodel zspec_tanmerge

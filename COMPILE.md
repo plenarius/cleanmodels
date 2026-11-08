@@ -108,6 +108,11 @@ the heavy lifting:
   - The face's `mirrorlist` value (low byte), when the ASCII has one.
   - Skin meshes: the bone names and weights of the original vertex.
   - Danglymesh: the vertex constraint.
+  - Tangents from the ASCII (`tangents`, when they cover every vertex and
+   the mesh has normals): the tangent and the handedness as stored (−1 or
+   +1). Corners that differ only there stay separate vertices, as in the
+   game (nwn-mdl-spec MDL-MESH-010, probe `zspec_tanmerge`). Generated
+   tangents come after the merge, so they are not in the key.
    Material index and smoothing group are **not** in the key. The game merges
    across both, and the EE-compiled oracle fixtures only match when we do
    too.
