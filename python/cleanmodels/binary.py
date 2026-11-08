@@ -1378,7 +1378,7 @@ MERGE_TOLERANCE = 1e-3  # m
 
 
 def _mesh_tri(mesh, a, b, c):
-    """meshTri: (uv key, sorted side lengths), or None when an index is out of range."""
+    """meshTri: (uv key, sorted side lengths, mesh, vertex indices), or None when an index is out of range."""
     idx = (a, b, c)
     for i in idx:
         if i < 0 or i >= len(mesh.verts):
@@ -1396,7 +1396,7 @@ def _mesh_tri(mesh, a, b, c):
         dx, dy, dz = p[0] - q[0], p[1] - q[1], p[2] - q[2]
         side.append(math.sqrt(dx * dx + dy * dy + dz * dz))
     side.sort()
-    return tuple(uv), side
+    return tuple(uv), side, mesh, idx
 
 
 class _TriPool:
@@ -1418,6 +1418,9 @@ class _TriPool:
                 return i
         return -1
 
+    def get(self, t, i):
+        return self.by_uv[t[0]][i]
+
     def take(self, t, i):
         del self.by_uv[t[0]][i]
         self.n -= 1
@@ -1427,6 +1430,128 @@ class _TriPool:
         p.by_uv = {k: list(v) for k, v in self.by_uv.items()}
         p.n = self.n
         return p
+
+
+MERGE_NORMAL_TOLERANCE = 0.01
+
+
+def _dist3(a, b):
+    dx, dy, dz = a[0] - b[0], a[1] - b[1], a[2] - b[2]
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
+def _cross3(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _dot3(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _uv_at(m, i):
+    if i < len(m.tverts):
+        return (m.tverts[i][0], m.tverts[i][1])
+    return (0.0, 0.0)
+
+
+def _copy_corners(d, c):
+    """copyCorners: r such that corner j of d is corner (j+r)%3 of c, or None."""
+    found = -1
+    dm, dvi, cm, cvi = d[2], d[3], c[2], c[3]
+    for r in range(3):
+        fits = True
+        for j in range(3):
+            a, b = dvi[j], cvi[(j + r) % 3]
+            if _uv_at(dm, a) != _uv_at(cm, b):
+                fits = False
+                break
+            a2, b2 = dvi[(j + 1) % 3], cvi[(j + r + 1) % 3]
+            sd = _dist3(dm.verts[a], dm.verts[a2])
+            sc = _dist3(cm.verts[b], cm.verts[b2])
+            if abs(sd - sc) > MERGE_TOLERANCE:
+                fits = False
+            if not fits:
+                break
+        if not fits:
+            continue
+        if found >= 0:
+            return None
+        found = r
+    return found if found >= 0 else None
+
+
+def _tri_frame(p):
+    """triFrame: (first edge, in-plane perpendicular, face normal), or None."""
+    e1 = (p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2])
+    e2 = (p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2])
+    z = _cross3(e1, e2)
+    l1, lz = math.sqrt(_dot3(e1, e1)), math.sqrt(_dot3(z, z))
+    if l1 < 1e-9 or lz < 1e-12:
+        return None
+    x = (e1[0] * (1 / l1), e1[1] * (1 / l1), e1[2] * (1 / l1))
+    zz = (z[0] * (1 / lz), z[1] * (1 / lz), z[2] * (1 / lz))
+    return (x, _cross3(zz, x), zz)
+
+
+def _donor_normals(m, pairs):
+    """donorNormals: give a donor put back the normals its copies were drawn with."""
+    if len(m.normals) < len(m.verts):
+        return
+    ms = []
+    best, best_area = -1, 0.0
+    for d, c in pairs:
+        if len(c[2].normals) < len(c[2].verts):
+            continue
+        r = _copy_corners(d, c)
+        if r is None:
+            continue
+        dp = [tuple(d[2].verts[d[3][j]]) for j in range(3)]
+        cp = [tuple(c[2].verts[c[3][(j + r) % 3]]) for j in range(3)]
+        e1 = (dp[1][0] - dp[0][0], dp[1][1] - dp[0][1], dp[1][2] - dp[0][2])
+        e2 = (dp[2][0] - dp[0][0], dp[2][1] - dp[0][1], dp[2][2] - dp[0][2])
+        z = _cross3(e1, e2)
+        a = math.sqrt(_dot3(z, z))
+        if a > best_area:
+            best, best_area = len(ms), a
+        ms.append((d, c, r, dp, cp))
+    if best < 0:
+        return
+    fd = _tri_frame(ms[best][3])
+    fc = _tri_frame(ms[best][4])
+    if fd is None or fc is None:
+        return
+
+    def to_donor(v):
+        n0 = n1 = n2 = 0.0
+        for a in range(3):
+            k = fc[a][0] * v[0] + fc[a][1] * v[1] + fc[a][2] * v[2]
+            n0 += k * fd[a][0]
+            n1 += k * fd[a][1]
+            n2 += k * fd[a][2]
+        return (n0, n1, n2)
+
+    cands = [None] * len(m.verts)  # [n, conflict]
+    for d, c, r, dp, cp in ms:
+        fits = True
+        for j in range(3):
+            k = (j + 1) % 3
+            ed = (dp[k][0] - dp[j][0], dp[k][1] - dp[j][1], dp[k][2] - dp[j][2])
+            ec = to_donor((cp[k][0] - cp[j][0], cp[k][1] - cp[j][1], cp[k][2] - cp[j][2]))
+            fits = _dist3(ed, ec) <= MERGE_TOLERANCE
+            if not fits:
+                break
+        if not fits:
+            continue
+        for j in range(3):
+            n = to_donor(c[2].normals[c[3][(j + r) % 3]])
+            v = d[3][j]
+            if cands[v] is None:
+                cands[v] = [n, False]
+            elif _dist3(cands[v][0], n) > MERGE_NORMAL_TOLERANCE:
+                cands[v][1] = True
+    for v, cd in enumerate(cands):
+        if cd is not None and not cd[1] and _dist3(m.normals[v], cd[0]) > MERGE_NORMAL_TOLERANCE:
+            m.normals[v] = (f32(cd[0][0]), f32(cd[0][1]), f32(cd[0][2]))
 
 
 def unmerge_render_lists(d):
@@ -1467,18 +1592,21 @@ def unmerge_render_lists(d):
                 continue
             trial = extra.copy()
             ok = True
+            pairs = []  # each donor face and the copy it matched
             for f in m.faces:
                 t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2])
                 i = trial.find(t) if t is not None else -1
                 if i < 0:
                     ok = False
                     break
+                pairs.append((t, trial.get(t, i)))
                 trial.take(t, i)
             if not ok:
                 continue
             extra = trial
             used.add(id(n))
             m.render = 1
+            _donor_normals(m, pairs)
             donors.append(n.name)
         lost = extra.n + unreadable
         d.model.render_merges.append((r.name, donors, lost))
