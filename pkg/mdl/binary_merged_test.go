@@ -1,6 +1,7 @@
 package mdl
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -100,5 +101,35 @@ func TestUnmergeRenderListsNotesAnimatedDonor(t *testing.T) {
 	d.unmergeRenderLists()
 	if len(d.model.Notes) != 2 || !strings.Contains(d.model.Notes[1].Message, "animations move lower") {
 		t.Errorf("notes: %+v", d.model.Notes)
+	}
+}
+
+// A donor put back takes the normals its copy was drawn with, turned from the
+// receiver's frame into its own: here the copy is turned 90 degrees about z,
+// the donor's stored normals are (0, 0, 0) (back-to-back faces sharing
+// vertices) and the copy's are (0, 1, 0) in the receiver's frame, which is
+// (1, 0, 0) in the donor's.
+func TestUnmergeRenderListsDonorNormalsFromCopy(t *testing.T) {
+	recv := &Node{Name: "wall", Mesh: mergeQuad("tex", 1, 0)}
+	donor := &Node{Name: "lower", Mesh: mergeQuad("tex", 0, 5)}
+	// Donor (5,0) (6,0) (6,1) (5,1) turned by 90 degrees about z and moved:
+	// (2,0) (2,1) (1,1) (1,0).
+	recv.Mesh.Verts = append(recv.Mesh.Verts, Vec3{2, 0, 0}, Vec3{2, 1, 0}, Vec3{1, 1, 0}, Vec3{1, 0, 0})
+	recv.Mesh.TVerts = append(recv.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	recv.Mesh.Normals = make([]Vec3, 8)
+	for i := 4; i < 8; i++ {
+		recv.Mesh.Normals[i] = Vec3{0, 1, 0}
+	}
+	donor.Mesh.Normals = make([]Vec3, 4) // all (0, 0, 0)
+	d := &decompiler{model: &Model{Nodes: []*Node{recv, donor}}}
+	d.renderLists = map[*Node][]uint16{recv: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}}
+	d.unmergeRenderLists()
+	if donor.Mesh.Render != 1 {
+		t.Fatal("donor not put back")
+	}
+	for i, n := range donor.Mesh.Normals {
+		if math.Abs(float64(n.X)-1) > 1e-6 || math.Abs(float64(n.Y)) > 1e-6 || math.Abs(float64(n.Z)) > 1e-6 {
+			t.Errorf("normal %d = %v, want (1, 0, 0)", i, n)
+		}
 	}
 }
