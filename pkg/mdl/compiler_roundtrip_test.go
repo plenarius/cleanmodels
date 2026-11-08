@@ -655,3 +655,18 @@ func TestRoundtripEmitterChunkNamePresentSurvives(t *testing.T) {
 		t.Errorf("ChunkName = %q after roundtrip, want %q", got, "mychunk")
 	}
 }
+
+// A chunk name is a resref, and 16 characters is legal: the field must hold
+// all 16, with no NUL, as the game's compiler stores them. Cutting it to 15
+// pointed the emitter at a model that does not exist (Layonara plc_b01's
+// mshfx_pc2_chunk1, the ia_vfx_chunk* explosions).
+func TestRoundtripEmitterChunkName16Chars(t *testing.T) {
+	const name = "mshfx_pc2_chunk1"
+	bin := mustCompile(t, mustParseASCII(t, emitterChunkSrc(name)))
+	if got := string(chunkNameField(t, bin, "fxpa_flare")); got != name {
+		t.Errorf("chunkName field = %q, want %q", got, name)
+	}
+	if got := mustDecompile(t, bin).FindNode("myemitter").Emitter.ChunkName; got != name {
+		t.Errorf("ChunkName = %q after roundtrip, want %q", got, name)
+	}
+}

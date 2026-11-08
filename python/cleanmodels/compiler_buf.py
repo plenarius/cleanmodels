@@ -67,6 +67,15 @@ class PatchBuf:
         self.b += d
         self.b += bytes(width - len(d))
 
+    def fixed_resref(self, s, width):
+        """fixedResRef: s in a zero-padded field of width bytes, every byte used
+        (a name of exactly width characters has no NUL)."""
+        d = encode_str(s)
+        if len(d) > width:
+            d = d[:width]
+        self.b += d
+        self.b += bytes(width - len(d))
+
     def placeholder(self):
         off = len(self.b)
         self.b += b"\0\0\0\0"

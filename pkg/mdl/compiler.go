@@ -66,6 +66,19 @@ func (p *patchBuf) fixedStr(s string, width int) {
 	p.zeros(width - len(s))
 }
 
+// fixedResRef writes s in a zero-padded field of width bytes, using every byte:
+// a name of exactly width characters has no NUL. For resref fields (16
+// bytes), where a 16-character name is legal. The game's compiler copies these
+// with an unbounded sscanf("%s") (Parse(char const*, char*), 0x446740), so it
+// stores all 16 characters (nwn-mdl-spec MDL-BIN-006).
+func (p *patchBuf) fixedResRef(s string, width int) {
+	if len(s) > width {
+		s = s[:width]
+	}
+	p.b = append(p.b, []byte(s)...)
+	p.zeros(width - len(s))
+}
+
 // placeholder writes 4 zero bytes and returns the byte offset for later patching.
 func (p *patchBuf) placeholder() int {
 	off := len(p.b)

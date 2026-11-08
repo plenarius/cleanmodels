@@ -339,7 +339,7 @@ class NodeMixin:
         core.fixed_str(em.render, 32)
         core.fixed_str(em.blend, 32)
         core.fixed_str(em.texture, 64)
-        core.fixed_str(em.chunk_name, 16)
+        core.fixed_resref(em.chunk_name, 16)
         core.u32(em.two_sided_tex)
         core.u32(em.loop)
         core.u16(em.render_order)

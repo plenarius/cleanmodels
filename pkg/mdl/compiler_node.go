@@ -237,7 +237,7 @@ func (c *compiler) writeEmitterHeader(n *Node) {
 	// Zero-fill when unset: Bioware's binaries store zeros here, and a
 	// placeholder makes the engine treat the emitter as chunk-spawning, so it
 	// renders no particles.
-	c.core.fixedStr(em.ChunkName, 16)
+	c.core.fixedResRef(em.ChunkName, 16) // a 16-character chunk name keeps its last character
 	c.core.u32le(uint32(em.TwoSidedTex))
 	c.core.u32le(uint32(em.Loop))
 	c.core.u16le(uint16(em.RenderOrder))
