@@ -172,3 +172,66 @@ func ResolveAnimNodeParents(nodes []AnimNode) map[*AnimNode]*AnimNode {
 	parentOf, _ := resolveAnimTree(nodes)
 	return parentOf
 }
+
+// animNodeNumbers gives each node of an animation the part number the in-game
+// compiler writes for it (nwn-mdl-spec MDL-NODE-040, probe zspec_animnum).
+// The animation's tree is walked against the model's own geometry tree, by
+// path: the roots match, and a node matches the child of the same name (in any
+// letter case) of the geometry node its parent matched. A matched node takes
+// that geometry node's number. A node the walk does not find gets -1 when its
+// parent matched, and otherwise its declaration index in the animation. A name
+// the geometry has under another parent does not match.
+//
+// The engine binds animation nodes to model nodes by number (MDL-NODE-043), so
+// a node the geometry lacks must not take the root's 0, or its keys would move
+// the whole model.
+func (c *compiler) animNodeNumbers(nodes []AnimNode, root *AnimNode) map[*AnimNode]int32 {
+	parentOf, _ := resolveAnimTree(nodes)
+	geomRoot := c.model.RootNode()
+	out := make(map[*AnimNode]int32, len(nodes))
+	match := make(map[*AnimNode]*Node, len(nodes))
+	done := make(map[*AnimNode]bool, len(nodes))
+	decl := make(map[*AnimNode]int32, len(nodes))
+	for i := range nodes {
+		decl[&nodes[i]] = int32(i)
+	}
+	var number func(an *AnimNode) int32
+	number = func(an *AnimNode) int32 {
+		if done[an] {
+			return out[an]
+		}
+		done[an] = true // set first: a parent cycle ends here as unmatched
+		out[an] = decl[an]
+		var g *Node
+		parentMatched := false
+		if an == root {
+			g = geomRoot
+		} else if p := parentOf[an]; p != nil {
+			number(p)
+			if pg := match[p]; pg != nil {
+				parentMatched = true
+				for _, ch := range c.childrenOf(pg) {
+					if strings.EqualFold(ch.Name, an.Name) {
+						g = ch
+						break
+					}
+				}
+			}
+		}
+		if g != nil {
+			if id, ok := c.nodeIDs[g]; ok {
+				match[an] = g
+				out[an] = id
+				return id
+			}
+		}
+		if parentMatched {
+			out[an] = -1
+		}
+		return out[an]
+	}
+	for i := range nodes {
+		number(&nodes[i])
+	}
+	return out
+}

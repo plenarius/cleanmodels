@@ -1,0 +1,59 @@
+# nwn-mdl-spec conformance probe zspec_animnum (CC0-1.0)
+# Part numbers of animation nodes the geometry has no node for, in a model
+# with no supermodel. The animation leaves out c and d, declares its nodes out
+# of tree order (x_kid and b after a, though their parent x comes before a),
+# and has a b under x, where the geometry's b is under a. Their numbers show
+# whether a node is found by name or by path, and whether an unmatched node
+# under an unmatched parent gets its declaration index, its position in the
+# tree, or the node count + 1 + an index.
+newmodel zspec_animnum
+setsupermodel zspec_animnum NULL
+classification character
+beginmodelgeom zspec_animnum
+node dummy zspec_animnum
+  parent NULL
+endnode
+node dummy a
+  parent zspec_animnum
+endnode
+node dummy b
+  parent a
+endnode
+node dummy c
+  parent zspec_animnum
+endnode
+node dummy d
+  parent zspec_animnum
+endnode
+endmodelgeom zspec_animnum
+newanim one zspec_animnum
+  length 1
+  transtime 0
+  animroot zspec_animnum
+  node dummy zspec_animnum
+    parent NULL
+  endnode
+  node dummy x
+    parent zspec_animnum
+    positionkey 2
+      0 0 0 0
+      1 0 0 1
+    endlist
+  endnode
+  node dummy a
+    parent zspec_animnum
+  endnode
+  node dummy x_kid
+    parent x
+  endnode
+  node dummy b
+    parent x
+  endnode
+  node dummy y
+    parent a
+  endnode
+  node dummy y_kid
+    parent y
+  endnode
+doneanim one zspec_animnum
+donemodel zspec_animnum
