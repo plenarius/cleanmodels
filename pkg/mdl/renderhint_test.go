@@ -87,8 +87,10 @@ func TestRenderHintRoundTrip(t *testing.T) {
 }
 
 // The tangent pointer of a 1.69 model holds water's bump-map stream. Without
-// a normal-mapped render hint the stream is kept only if it is unit vectors,
-// as the engine's compiler writes for meshes whose hint is in their material.
+// a normal-mapped render hint the stream is kept only if it holds a unit
+// vector and every finite, non-zero one is unit length, as the engine's
+// compiler writes for meshes whose hint is in their material
+// (TestDecompileTangentStreamGateMixed has the mixed streams).
 func TestDecompileTangentStreamGate(t *testing.T) {
 	cases := []struct {
 		name, hint, row string
@@ -97,7 +99,8 @@ func TestDecompileTangentStreamGate(t *testing.T) {
 		{"no hint, bump-map junk", "", "3.080194e-36 3.080194e-36 0 1", false},
 		{"no hint, unit tangents", "", "1 0 0 1", true},
 		{"None, bump-map junk", "    renderhint None", "0 0 0 1", false},
-		{"normal-mapped hint keeps whatever is there", "    renderhint NormalTangents", "3.080194e-36 3.080194e-36 0 1", true},
+		{"normal-mapped hint keeps the stream (its bad vectors are filled)", "    renderhint NormalTangents", "3.080194e-36 3.080194e-36 0 1", true},
+		{"no hint, all zero (1.69 tcn01 water01)", "", "0 0 0 1", false},
 	}
 	for _, c := range cases {
 		m := mustDecompile(t, mustCompile(t, mustParseASCII(t, hintTangentModel(c.hint, c.row))))

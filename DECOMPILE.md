@@ -136,12 +136,54 @@ no UV mirroring is involved.
 
 The same pointer is water's bump-map animation stream in 1.69 models, which
 is not tangents (582 of the game's binary meshes, e.g. stock `tcn01_a15_01`
-node `plane452`: `3.080194e-36 ...`). So the stream is read as tangents when
-the mesh's render hint is normal-mapped (2 `NormalAndSpecMapped`, 3
-`NormalTangents`), and otherwise only if every vector is unit length. The
-engine's compiler writes hint 0 and real tangents for meshes whose hint comes
-from their material (all 393 tangent meshes in
-`tests/fixtures/oracle/tangent_pairs`), so the field alone can't decide.
+node `plane452`: `3.080194e-36 ...`); those meshes also set texture animation
+slots 0, 1, 2 and 4, which EE's compiler never writes. So the stream is read
+as tangents (nwn-mdl-spec MDL-BIN-048) when:
+
+- the mesh's render hint is normal-mapped (2 `NormalAndSpecMapped`, 3
+  `NormalTangents`); or
+- every vector is unit length (squared length within 0.02 of 1). The engine's
+  compiler writes hint 0 and real tangents for meshes whose hint comes from
+  their material (all 393 tangent meshes in
+  `tests/fixtures/oracle/tangent_pairs`), so the field alone can't decide; or
+- slots 0, 1, 2 and 4 are unset, at least one vector is unit length, and
+  every finite, non-zero vector is. This keeps the streams other tools wrote
+  with some NaN or zero vectors among real tangents (251 meshes in 169 of
+  Layonara's models, 96.6% unit vectors), while the 1.69 streams stay refused:
+  all zeros (Layonara's `tcn01` `water01`), tiny values (`plane452`), or one
+  vector of length 1 by chance among zeros (stock `tcn01_l03_01` `plane211`,
+  `tts01_c02_01` `plane95`, `6.1e-33 3.1e-36 1.00106`, with slots 0-2 and 4
+  set).
+
+A stream is read as raw bits, so a NaN is told from a zero. In a stream that
+is not read as tangents, a NaN or infinite float is reported as in any other
+list ("NaN/Inf floats in tangents replaced with 0").
+
+**Bad tangents are filled** (`binary_tangents.go`). In a stream that is read
+as tangents, a vector that is NaN or infinite, zero, or (with a normal-mapped
+hint) not unit length is replaced with the tangent the game would generate
+for that vertex: `generateTangents` (MDL-MESH-043) run on the binary's own
+vertex list and index list (MDL-BIN-049), with its handedness. A vertex the
+game would clone for triangles of the other handedness keeps the tangent of
+the first handedness to reach it, as the game's vertex does. The good vectors
+stay exactly as stored. A vertex the generation gives no tangent (no UVs or
+normals in the mesh, or no triangle reaches it) gets the one the game gives a
+triangle without UV area: its normal with the components rotated to
+`(y, z, x)`, made perpendicular to the normal and normalised, or the X axis,
+then the Y axis, where that is parallel to the normal; handedness +1. One
+warning per mesh says how many were filled and what they were:
+
+```
+mesh "trunk017": 98 of 1860 stored tangents are unusable (98 NaN or infinite); filled with the tangents the game generates for those vertices, the others kept as stored
+```
+
+Measured on Layonara's haks: 527 meshes in 189 models keep their stream
+now, with 10,367 vectors filled. On 238 of the 251 meshes an earlier audit
+listed (the other 13 lose a degenerate triangle on compile, so their corners
+can't be compared in order), the round trip keeps the stored tangent at all
+524,060 drawn corners whose tangent is unit length (165,654 of them changed
+before) and fills the 17,035 NaN or zero ones. On all 25,597 binary models of
+the base game the decompiled ASCII, warnings and notes are unchanged.
 
 The render hint field holds what the engine's
 `SharedMaterial::ExtractRenderHint` gives: 0 no hint, 1 `None`, 2

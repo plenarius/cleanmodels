@@ -16,7 +16,9 @@ import struct
 from . import controllers
 from .share_positions import share_positions
 from .controllers import controller_id
-from .compiler_tangents import hint_wants_tangents
+from .compiler_normals import game_normalize
+from .compiler_mesh import ExpandedMesh
+from .compiler_tangents import generate_tangents, hint_wants_tangents
 from .f32 import f32
 from .gostr import equal_fold, go_lower, quote
 from .types import (
@@ -90,6 +92,7 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False):
             d.warn(WARN_TRUNCATED_DATA, ptr, "", "animation read error: %s" % err)
     for ps in d.pending_skins:
         d.resolve_skin_weights(ps)
+    fill_tangents(d)
     apply_tangent_clones(d)
     unmerge_render_lists(d)
     if not keep_vertex_splits:
@@ -141,6 +144,7 @@ class _Decompiler:
         self.where = ("", "", "")
         self.nan_warns = {}
         self.render_lists = {}  # node -> render index list (binary_merged.go)
+        self.tangent_fills = []  # meshes whose tangent stream holds bad vectors
 
     # --- low-level reads (bytes.Reader + encoding/binary semantics) ---
 
@@ -569,10 +573,14 @@ class _Decompiler:
         p_tex3 = self.read_i32()
         p_normals = self.read_i32()
         p_colors = self.read_i32()
-        self.skip(12)
+        # anim0-2 and anim4 only tell a 1.69 bump-map stream from tangents (binary.go)
+        p_anim0 = self.read_i32()
+        p_anim1 = self.read_i32()
+        p_anim2 = self.read_i32()
         p_tangent = self.read_i32()
-        self.skip(4)
+        p_anim4 = self.read_i32()
         p_handedness = self.read_i32()
+        other_tex_anim = p_anim0 != -1 or p_anim1 != -1 or p_anim2 != -1 or p_anim4 != -1
         self.skip(1)  # lightmapped: uninitialised in the game's output, ignored (binary.go)
         mesh.rotate_texture = self.read_byte()[0]
         self.skip(2 + 4 + 4)
@@ -602,7 +610,7 @@ class _Decompiler:
                 self.at("colors")
                 self.read_mdx_colors(mesh, p_colors, n)
             if n > 0 and p_tangent >= 0:
-                self.read_mdx_tangents(mesh, p_tangent, p_handedness, n)
+                self.read_mdx_tangents(node, p_tangent, p_handedness, n, other_tex_anim)
             if faces_def[1] > 0 and faces_def[0] != 0:
                 self.read_faces(mesh, faces_def)
             rl = self.read_render_list(idx_count_def, idx_offset_def)
@@ -814,7 +822,8 @@ class _Decompiler:
             out.append((f32(r / _F32_255), f32(g / _F32_255), f32(b / _F32_255)))
         mesh.colors = out
 
-    def read_mdx_tangents(self, mesh, tangent_ptr, handedness_ptr, count):
+    def read_mdx_tangents(self, node, tangent_ptr, handedness_ptr, count, other_tex_anim):
+        mesh = node.mesh
         tangent_abs = self.go_to_mdx_pointer(tangent_ptr)
         if tangent_abs < 0 or tangent_abs + count * 12 > self.size:
             return
@@ -829,19 +838,52 @@ class _Decompiler:
                     handedness = [self.read_f32()[0] for _ in range(count)]
         if not self.seek(tangent_abs):
             return
-        self.at("tangents")
+        # Raw floats, so a NaN is told from a zero; bad vectors are filled by
+        # fill_tangents. A NaN in a stream not read as tangents is warned about
+        # as read_f32 would (binary.go).
         out = []
-        unit = True
+        fill = _TangentFill(node)
+        nans = []
+        unit = 0
         for i in range(count):
-            t = self.read_vec3()
+            c = []
+            finite = True
+            for _ in range(3):
+                off = self.p
+                bits = self._read(_U32, 4)[0]
+                x = _F32.unpack(_U32.pack(bits))[0]
+                if not math.isfinite(x):
+                    finite = False
+                    nans.append((off, bits))
+                c.append(x)
+            t = (c[0], c[1], c[2])
             w = -1.0 if i < len(handedness) and handedness[i] < 0 else 1.0
+            if not finite:
+                fill.non_finite += 1
+                t = (0.0, 0.0, 0.0)
+            elif t == (0.0, 0.0, 0.0):
+                fill.zero += 1
+            elif _is_unit_tangent(t):
+                unit += 1
+            else:
+                fill.other += 1
+            if not finite or not _is_unit_tangent(t):
+                fill.bad.append(i)
             out.append((t[0], t[1], t[2], w))
-            unit = unit and _is_unit_tangent(t)
-        # 1.69 water's bump-map stream shares the pointer; without a normal-mapped
-        # hint it is kept only if every vector is unit length (binary.go).
-        if not hint_wants_tangents(mesh.render_hint) and not unit:
+        # 1.69 water's bump-map stream shares the pointer (and sets texanim slots
+        # 0-2 and 4); without a normal-mapped hint the stream is kept when every
+        # vector is unit length, or, with no other slot set, when it holds a unit
+        # vector and every finite, non-zero one is unit length (binary.go, MDL-BIN-048).
+        all_unit = unit == count
+        mixed = unit > 0 and fill.other == 0 and not other_tex_anim
+        if not hint_wants_tangents(mesh.render_hint) and not all_unit and not mixed:
+            self.at("tangents")
+            for off, bits in nans:
+                self.warn_nan(off, bits)
             return
         mesh.tangents = out
+        if fill.bad:
+            self.tangent_fills.append(fill)
 
     def read_float_array_at(self, a, current):
         abs_ptr = self.go_to_pointer(a[0])
@@ -1371,6 +1413,97 @@ def _is_unit_tangent(t):
     """binary.go isUnitTangent: squared length within 0.02 of 1, in float64."""
     l2 = t[0] * t[0] + t[1] * t[1] + t[2] * t[2]
     return 0.98 < l2 < 1.02
+
+
+# --- bad tangents (binary_tangents.go) ---
+
+
+class _TangentFill:
+    """tangentFill: a mesh whose tangent stream holds bad vectors."""
+    __slots__ = ("node", "bad", "non_finite", "zero", "other")
+
+    def __init__(self, node):
+        self.node = node
+        self.bad = []
+        self.non_finite = 0
+        self.zero = 0
+        self.other = 0
+
+
+_FALLBACK_MIN = 2.0 ** -20
+
+
+def fill_tangents(d):
+    """fillTangents: replace each bad tangent with the one the game generates
+    for that vertex (MDL-MESH-043 on the binary's own lists), one warning per mesh."""
+    for f in d.tangent_fills:
+        n = f.node
+        m = n.mesh
+        gen, hand = _binary_mesh_tangents(m, _drawn_triangles(d, n), n.anim_mesh is not None)
+        fallback = 0
+        for i in f.bad:
+            if hand is not None and i < len(hand) and hand[i] != 0 and _is_unit_tangent(gen[i]):
+                g = gen[i]
+                m.tangents[i] = (g[0], g[1], g[2], hand[i])
+                continue
+            nv = m.normals[i] if i < len(m.normals) else (0.0, 0.0, 0.0)
+            m.tangents[i] = _fallback_tangent(nv)
+            fallback += 1
+        what = []
+        if f.non_finite:
+            what.append("%d NaN or infinite" % f.non_finite)
+        if f.zero:
+            what.append("%d zero" % f.zero)
+        if f.other:
+            what.append("%d not unit length" % f.other)
+        msg = ("mesh %s: %d of %d stored tangents are unusable (%s); filled with the tangents the game "
+               "generates for those vertices, the others kept as stored"
+               % (_go_quote(n.name), len(f.bad), len(m.tangents), ", ".join(what)))
+        if fallback:
+            msg += (". %d of them get none (no triangle with UVs and normals reaches them), so they get a "
+                    "tangent perpendicular to their normal" % fallback)
+        d.warn(WARN_GENERAL, 0, n.name, msg)
+
+
+def _drawn_triangles(d, n):
+    """drawnTriangles: the render index list's triangles, else the face records'."""
+    rl = d.render_lists.get(n)
+    if rl:
+        return [[rl[k], rl[k + 1], rl[k + 2]] for k in range(0, len(rl) - 2, 3)]
+    return [list(f.verts) for f in n.mesh.faces if all(0 <= v <= 0xFFFF for v in f.verts)]
+
+
+def _binary_mesh_tangents(m, tris, anim_mesh):
+    """binaryMeshTangents: generate_tangents on the mesh's own vertices; per
+    vertex (tangent, handedness), clones left out. (None, None) without UVs or normals."""
+    n = len(m.verts)
+    if n == 0 or len(m.tverts) < n or len(m.normals) < n:
+        return None, None
+    exp = ExpandedMesh()
+    exp.positions = list(m.verts[:n])
+    exp.uvs = list(m.tverts[:n])
+    exp.normals = list(m.normals[:n])
+    exp.face_verts = [list(t) for t in tris]
+    exp.orig_vert = list(range(n))
+    tan, hand = generate_tangents(exp, anim_mesh)
+    if tan is None or len(tan) < n:
+        return None, None
+    return tan[:n], hand[:n]
+
+
+def _fallback_tangent(nv):
+    """fallbackTangent: the normal rotated to (y, z, x), else the X then Y axis,
+    made perpendicular to the normal; handedness +1."""
+    x, y, z = nv
+    if f32(f32(f32(x * x) + f32(y * y)) + f32(z * z)) != 0:
+        x, y, z = game_normalize(nv)
+    for t in ((y, z, x), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)):
+        d = f32(f32(f32(x * t[0]) + f32(y * t[1])) + f32(z * t[2]))
+        p = (f32(t[0] - f32(x * d)), f32(t[1] - f32(y * d)), f32(t[2] - f32(z * d)))
+        if f32(f32(f32(p[0] * p[0]) + f32(p[1] * p[1])) + f32(p[2] * p[2])) > _FALLBACK_MIN:
+            p = game_normalize(p)
+            return (p[0], p[1], p[2], 1.0)
+    return (1.0, 0.0, 0.0, 1.0)
 
 
 # --- merged meshes (binary_merged.go) ---
