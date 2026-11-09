@@ -40,7 +40,7 @@ for file:
 | `writer.py` | `writer.go` (ASCII writer, `write_walkmesh` for the .wok) |
 | `parser.py` | `parser.go`, `declared.go` (ASCII parser) |
 | `nearmatch.py` | `nearmatch.go` |
-| `compiler.py` | `compiler.go`, `compiler_dropped.go` (compiler) |
+| `compiler.py` | `compiler.go`, `compiler_dropped.go`, `compiler_names.go` (compiler) |
 | `compiler_node.py`, `compiler_mesh.py` | `compiler_node.go`, `compiler_mesh.go` |
 | `compiler_normals.py`, `compiler_tangents.py` | `compiler_normals.go`, `compiler_tangents.go` |
 | `compiler_controllers.py`, `compiler_tree.py`, `compiler_order.py`, `compiler_skinbind.py` | `compiler_controllers.go`, `compiler_tree.go`, `compiler_order.go`, `compiler_skinbind.go` |

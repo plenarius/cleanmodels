@@ -13,7 +13,7 @@ Layout:
 
 import struct
 
-from .compiler_buf import PatchBuf
+from .compiler_buf import PatchBuf, encode_str
 from .compiler_controllers import ControllersMixin
 from .compiler_mesh import CompileError, MeshMixin, anim_sets, anim_vertex_major
 from .compiler_node import NodeMixin
@@ -28,6 +28,7 @@ from .vec import model_bounds
 
 MESH_HEADER_SIZE = 512
 MAX_DROPPED_NAMED = 5
+MAX_NODE_NAME = 31  # compiler_names.go maxNodeName
 
 __all__ = ["CompileError", "compile", "compile_file"]
 
@@ -58,6 +59,7 @@ def compile(model, supermodel_dirs=(), resource_dirs=(), warn=None):  # noqa: A0
         else:
             c.assign_node_ids(root)
         c.warn_dropped_geometry()
+        c.warn_cut_names()
         c.resolve_part_skeleton(supermodel_dirs, warn)
 
     c.write_model()
@@ -70,6 +72,34 @@ def compile_file(model, path, supermodel_dirs=(), resource_dirs=(), warn=None):
     data = compile(model, supermodel_dirs, resource_dirs, warn)
     with open(path, "wb") as f:
         f.write(data)
+
+
+def _name_len(name):
+    return len(encode_str(name))
+
+
+def _cut_node_name(name):
+    """cutNodeName: name as the binary stores it (fixed_str keeps 31 bytes)."""
+    d = encode_str(name)
+    if len(d) > MAX_NODE_NAME:
+        return d[:MAX_NODE_NAME].decode("latin-1")
+    return name
+
+
+def _cut_name_warning(anim, name, others):
+    """cutNameWarning (compiler_names.go)."""
+    cut = _cut_node_name(name)
+    msg = "node %s: its name has %d characters and is cut to %d, as the game's compiler does: %s" % (
+        go_quote(name), _name_len(name), MAX_NODE_NAME, go_quote(cut))
+    if anim != "":
+        msg = "animation %s: %s" % (go_quote(anim), msg)
+    for o in others:
+        if equal_fold(o, name) or not equal_fold(_cut_node_name(o), cut):
+            continue
+        if _name_len(o) <= MAX_NODE_NAME:
+            return msg + ", which is the name of node %s, so the game cannot tell the two apart" % go_quote(o)
+        return msg + ", which node %s is also cut to, so the game cannot tell the two apart" % go_quote(o)
+    return msg
 
 
 def _summarise_dropped(kind, names):
@@ -287,6 +317,24 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             names.append("%s (%s)" % (n.name, reason))
         if names:
             self.warn(_summarise_dropped("geometry", names))
+
+    def warn_cut_names(self):
+        """warnCutNames: every node name compile cuts to 31 characters (compiler_names.go)."""
+        if self.warn is None:
+            return
+        geom = [n.name for n in self.model.nodes if n is not None and n in self.node_ids]
+        for name in geom:
+            if _name_len(name) > MAX_NODE_NAME:
+                self.warn(_cut_name_warning("", name, geom))
+        for a in self.model.animations:
+            names = [an.name for an in a.nodes]
+            others = geom + names
+            warned = set()
+            for name in names:
+                if _name_len(name) <= MAX_NODE_NAME or name in warned or any(equal_fold(g, name) for g in geom):
+                    continue
+                warned.add(name)
+                self.warn(_cut_name_warning(a.name, name, others))
 
     def warn_dropped_anim(self, anim, visited):
         if self.warn is None:
