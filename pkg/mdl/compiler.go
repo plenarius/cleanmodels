@@ -278,6 +278,7 @@ func CompileWithOptions(model *Model, w io.Writer, opts CompileOptions) error {
 			c.assignNodeIDs(root)
 		}
 		c.warnDroppedGeometry()
+		c.warnCutNames()
 		c.resolvePartSkeleton(opts)
 	}
 
