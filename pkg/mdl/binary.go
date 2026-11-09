@@ -1970,7 +1970,110 @@ func quaternionToAngleAxis(q []float32) []float32 {
 		return []float32{0, 0, 1, 0}
 	}
 	angle := float32(2.0 * math.Atan2(float64(sinHalf), float64(w)))
-	return []float32{x / sinHalf, y / sinHalf, z / sinHalf, angle}
+	return exactAxisAngle([]float32{x / sinHalf, y / sinHalf, z / sinHalf, angle}, q)
+}
+
+// exactAxisAngleSteps is how many float32 steps either way exactAxisAngle
+// tries for the angle and for each axis component.
+const exactAxisAngleSteps = 4
+
+// exactAxisAngle returns an axis-angle within a few float32 steps of aa that
+// axisAngleToQuat, the compiler's conversion, turns back into exactly q, or
+// aa when it already does or none is found. quaternionToAngleAxis is not an
+// exact inverse of axisAngleToQuat in float32 (the axis is xyz divided by a
+// float32 square root, not by the sine the compile takes), so without this a
+// decompile and compile can move a quaternion by an ULP or two, and the next
+// round trip again: the bytes never settle.
+//
+// aa is searched first. A quaternion compiled from an angle between 2pi and
+// 4pi (or -4pi and -2pi) often has no float32 preimage with an angle in
+// [0, 2pi], since cos(angle/2) is rounded on a different grid there; for it the
+// same rotation written the other way, the negated axis with 4pi minus the
+// angle, is searched next.
+func exactAxisAngle(aa, q []float32) []float32 {
+	want := Vec4{X: q[0], Y: q[1], Z: q[2], W: q[3]}
+	if sameQuatBits(axisAngleToQuat(Vec4{X: aa[0], Y: aa[1], Z: aa[2], W: aa[3]}), want) {
+		return aa
+	}
+	for _, v := range q {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return aa
+		}
+	}
+	if r, ok := searchAxisAngle(aa, want); ok {
+		return r
+	}
+	alt := []float32{-aa[0], -aa[1], -aa[2], float32(4*math.Pi - float64(aa[3]))}
+	if r, ok := searchAxisAngle(alt, want); ok {
+		return r
+	}
+	return aa
+}
+
+// searchAxisAngle looks for an axis-angle a few float32 steps from aa that
+// compiles to exactly want. The components separate, so the search is small:
+// the angle alone decides w, so the angle is stepped first (0, +1, -1, ...
+// ULPs) until w matches; for that angle, each axis component alone decides its
+// quaternion component while the axis is within engineNormalize's tolerance,
+// so each is stepped the same way. A candidate is kept only if the whole
+// quaternion matches bit for bit.
+func searchAxisAngle(aa []float32, want Vec4) ([]float32, bool) {
+	q := [4]float32{want.X, want.Y, want.Z, want.W}
+	for i := 0; i <= 2*exactAxisAngleSteps; i++ {
+		angle := f32Step(aa[3], searchStep(i))
+		if math.Float32bits(axisAngleToQuat(Vec4{X: aa[0], Y: aa[1], Z: aa[2], W: angle}).W) != math.Float32bits(q[3]) {
+			continue
+		}
+		axis := [3]float32{aa[0], aa[1], aa[2]}
+		for c := 0; c < 3; c++ {
+			for j := 0; j <= 2*exactAxisAngleSteps; j++ {
+				try := axis
+				try[c] = f32Step(aa[c], searchStep(j))
+				got := axisAngleToQuat(Vec4{X: try[0], Y: try[1], Z: try[2], W: angle})
+				if math.Float32bits([3]float32{got.X, got.Y, got.Z}[c]) == math.Float32bits(q[c]) {
+					axis = try
+					break
+				}
+			}
+		}
+		if sameQuatBits(axisAngleToQuat(Vec4{X: axis[0], Y: axis[1], Z: axis[2], W: angle}), want) {
+			return []float32{axis[0], axis[1], axis[2], angle}, true
+		}
+	}
+	return nil, false
+}
+
+// searchStep is the i-th offset of the search order 0, +1, -1, +2, -2, ...
+func searchStep(i int) int {
+	if i%2 == 1 {
+		return (i + 1) / 2
+	}
+	return -i / 2
+}
+
+// f32Step moves v by k float32 steps along the number line, with both zeros
+// as the point between the smallest negative and positive values. k == 0
+// returns v unchanged (a -0 stays -0); a step that lands on zero gives +0.
+func f32Step(v float32, k int) float32 {
+	if k == 0 {
+		return v
+	}
+	b := int64(int32(math.Float32bits(v)))
+	if b < 0 {
+		b = math.MinInt32 - b
+	}
+	b += int64(k)
+	if b < 0 {
+		b = math.MinInt32 - b
+	}
+	return math.Float32frombits(uint32(int32(b)))
+}
+
+func sameQuatBits(a, b Vec4) bool {
+	return math.Float32bits(a.X) == math.Float32bits(b.X) &&
+		math.Float32bits(a.Y) == math.Float32bits(b.Y) &&
+		math.Float32bits(a.Z) == math.Float32bits(b.Z) &&
+		math.Float32bits(a.W) == math.Float32bits(b.W)
 }
 
 func (d *decompiler) setStaticController(node *Node, name string, vals []float32) {
