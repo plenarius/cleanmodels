@@ -297,6 +297,39 @@ and colour kind on a mesh, light and emitter, plus orientation), both written by
 the game's own compiler (`nwmain-linux compilemodel`); see NWMAIN_FINDINGS.md
 33–36.
 
+## Orientations
+
+The binary stores an orientation (a geometry node's, or an animation's
+`orientationkey`) as a quaternion; ASCII writes it as axis-angle.
+`quaternionToAngleAxis` (`binary.go`) takes the angle as `2·atan2(|xyz|, w)`
+and the axis as `xyz / |xyz|`, all in float32. That is not an exact inverse of
+the compile's conversion (`axisAngleToQuat`, `vec.go`: the axis through
+engineNormalize, times `sinf(angle/2)` in float32, with `cosf(angle/2)` as w):
+`|xyz|` is a float32 square root, not the sine the compile takes, so about one
+quaternion in five came back 1 or 2 float32 steps off (about 1e-7 rad). Nothing
+drawn changed, but each decompile and compile could move it again, so the bytes
+of some models never settled (`tde01_p15_01`).
+
+So `exactAxisAngle` checks the result with the compiler's own conversion, and
+when it does not give back the stored quaternion bit for bit, looks for one
+that does a few float32 steps away. The components separate: the angle alone
+decides w, so the angle is stepped first (0, +1, −1, … up to ±4 steps) until w
+matches; for that angle each axis component alone decides its quaternion
+component (while the axis is within engineNormalize's tolerance), so each is
+stepped the same way. A candidate is written only if the whole quaternion
+matches. A quaternion compiled from an angle past ±2π often has no such
+preimage with an angle in [0, 2π] (w is rounded on another grid there), so the
+same rotation with the axis negated and 4π minus the angle is searched next.
+If neither search finds one (a quaternion no float32 axis-angle reaches, such
+as one written by another compiler or not of unit length), the plain
+conversion is written, as before.
+
+Every quaternion `axisAngleToQuat` gives for an angle in (−4π, 4π) is found
+(`exact_axis_angle_test.go`, 50,000 random cases), so a decompiled model
+compiles to the same orientation bytes every time: compile → decompile →
+compile is byte-stable (`tests/fixtures/quat/zcm_quat.mdl`). Bezier
+orientation controllers are dropped (see above), so this is the only path.
+
 ## Safety / defensive reads
 
 Decompilation runs on untrusted input — model files arrive from haks of

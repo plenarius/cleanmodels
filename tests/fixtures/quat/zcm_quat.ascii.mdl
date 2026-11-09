@@ -1,0 +1,45 @@
+# Orientations whose quaternion the plain decompile conversion does not give
+# back exactly (exactAxisAngle, DECOMPILE.md). d1 is chain_p15_01_02 of
+# tde01_p15_01, which never settled; d2 is an angle near pi (chain_a03_01_04 of
+# tde01_a03_01); the animation keys are from plc_a09 (lid, hinge1).
+newmodel zcm_quat
+setsupermodel zcm_quat NULL
+classification Character
+setanimationscale 1
+beginmodelgeom zcm_quat
+node dummy zcm_quat
+  parent NULL
+endnode
+node dummy d1
+  parent zcm_quat
+  position 0 0 0
+  orientation -0.70644635 0.70644635 0.04320978 0.17272002
+endnode
+node dummy d2
+  parent zcm_quat
+  position 0 0 0
+  orientation 0 -0.79863966 -0.6018097 3.14159
+endnode
+endmodelgeom zcm_quat
+newanim open zcm_quat
+  length 1
+  transtime 0.25
+  animroot zcm_quat
+  node dummy zcm_quat
+    parent NULL
+  endnode
+  node dummy d1
+    parent zcm_quat
+    orientationkey 3
+      0 -0.70644635 0.70644635 0.04320978 0.17272002
+      0.5 1 0 0 -0.012599919
+      1 0 1 0 0.16981527
+  endnode
+  node dummy d2
+    parent zcm_quat
+    orientationkey 2
+      0 0 -0.79863966 -0.6018097 3.14159
+      1 0.70710677 0.70710677 0 3.1415901
+  endnode
+doneanim open zcm_quat
+donemodel zcm_quat

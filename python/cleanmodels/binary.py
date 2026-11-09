@@ -19,8 +19,9 @@ from .controllers import controller_id
 from .compiler_normals import game_normalize
 from .compiler_mesh import ExpandedMesh
 from .compiler_tangents import generate_tangents, hint_wants_tangents
-from .f32 import f32
+from .f32 import f32, f32_bits
 from .gostr import equal_fold, go_lower, quote
+from .vec import axis_angle_to_quat
 from .types import (
     AabbData, AabbEntry, AnimMeshData, AnimNode, Animation, DanglyData, DecompileWarning,
     EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData, SkinData, VertexWeight,
@@ -1309,7 +1310,72 @@ def quaternion_to_angle_axis(q):
     if sin_half < _F32_1E6:
         return [0.0, 0.0, 1.0, 0.0]
     angle = f32(2.0 * math.atan2(sin_half, w))
-    return [f32(x / sin_half), f32(y / sin_half), f32(z / sin_half), angle]
+    return exact_axis_angle([f32(x / sin_half), f32(y / sin_half), f32(z / sin_half), angle], q)
+
+
+EXACT_AXIS_ANGLE_STEPS = 4
+
+
+def exact_axis_angle(aa, q):
+    """binary.go exactAxisAngle: an axis-angle within a few float32 steps of aa (or of
+    the negated axis with 4pi minus the angle) that axis_angle_to_quat turns back into
+    exactly q; aa when it already does or none is found."""
+    want = [f32_bits(v) for v in q]
+    if [f32_bits(v) for v in axis_angle_to_quat(aa)] == want:
+        return aa
+    if any(math.isnan(v) or math.isinf(v) for v in q):
+        return aa
+    r = _search_axis_angle(aa, q, want)
+    if r is not None:
+        return r
+    alt = [-aa[0], -aa[1], -aa[2], f32(4 * math.pi - aa[3])]
+    r = _search_axis_angle(alt, q, want)
+    if r is not None:
+        return r
+    return aa
+
+
+def _search_axis_angle(aa, q, want):
+    """binary.go searchAxisAngle: the angle first, then each axis component."""
+    for i in range(2 * EXACT_AXIS_ANGLE_STEPS + 1):
+        angle = f32_step(aa[3], _search_step(i))
+        if f32_bits(axis_angle_to_quat((aa[0], aa[1], aa[2], angle))[3]) != want[3]:
+            continue
+        axis = [aa[0], aa[1], aa[2]]
+        for c in range(3):
+            for j in range(2 * EXACT_AXIS_ANGLE_STEPS + 1):
+                trial = list(axis)
+                trial[c] = f32_step(aa[c], _search_step(j))
+                if f32_bits(axis_angle_to_quat((trial[0], trial[1], trial[2], angle))[c]) == want[c]:
+                    axis = trial
+                    break
+        cand = [axis[0], axis[1], axis[2], angle]
+        if [f32_bits(v) for v in axis_angle_to_quat(cand)] == want:
+            return cand
+    return None
+
+
+def _search_step(i):
+    """binary.go searchStep: the i-th offset of 0, +1, -1, +2, -2, ..."""
+    if i % 2 == 1:
+        return (i + 1) // 2
+    return -(i // 2)
+
+
+def f32_step(v, k):
+    """binary.go f32Step: v moved k float32 steps, both zeros between the smallest
+    negative and positive values; k == 0 returns v, a step onto zero gives +0."""
+    if k == 0:
+        return v
+    b = f32_bits(v)
+    if b >= 0x80000000:
+        b -= 0x100000000
+    if b < 0:
+        b = -0x80000000 - b
+    b += k
+    if b < 0:
+        b = -0x80000000 - b
+    return struct.unpack("<f", struct.pack("<I", b & 0xFFFFFFFF))[0]
 
 
 def runtime_width(def_cols, vals):
