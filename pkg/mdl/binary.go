@@ -109,6 +109,7 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 	for _, ps := range d.pendingSkins {
 		d.resolveSkinWeights(ps)
 	}
+	d.fillTangents()
 	d.applyTangentClones()
 	d.unmergeRenderLists()
 	if !opts.KeepVertexSplits {
@@ -145,6 +146,10 @@ type decompiler struct {
 	// renderLists holds each geometry mesh's render index list
 	// (MDL-BIN-049), for unmergeRenderLists (binary_merged.go).
 	renderLists map[*Node][]uint16
+
+	// tangentFills are the meshes whose tangent stream holds bad vectors,
+	// in the order read, for fillTangents (binary_tangents.go).
+	tangentFills []tangentFill
 
 	// where is the part of the model being read, so a NaN float can say
 	// whose it is; nanWarns holds one warning per part (warnNaN).
@@ -965,10 +970,16 @@ func (d *decompiler) readMeshHeader(node *Node) {
 	// int32 p_mdx_tex_anim0..5 (6 * 4 = 24)
 	// EE repurposes the deprecated tangent-basis/half-angle tokens:
 	// tex_anim3 -> m_hTangentToken, tex_anim5 -> m_hHandednessToken.
-	d.skip(12) // anim0, anim1, anim2 (deprecated tangent basis rows)
+	// anim0, anim1, anim2 (deprecated tangent basis rows) and anim4
+	// (deprecated half-angle) are only read to tell a 1.69 bump-map stream,
+	// which uses them, from tangents.
+	pMdxAnim0, _ := d.readI32()
+	pMdxAnim1, _ := d.readI32()
+	pMdxAnim2, _ := d.readI32()
 	pMdxTangent, _ := d.readI32()
-	d.skip(4) // anim4 (deprecated half-angle)
+	pMdxAnim4, _ := d.readI32()
 	pMdxHandedness, _ := d.readI32()
+	otherTexAnim := pMdxAnim0 != -1 || pMdxAnim1 != -1 || pMdxAnim2 != -1 || pMdxAnim4 != -1
 
 	// byte light_mapped, rotate_texture, uint16 padding. The lightmapped
 	// byte is uninitialised in the game's output and no ASCII keyword sets
@@ -1030,7 +1041,7 @@ func (d *decompiler) readMeshHeader(node *Node) {
 
 	// Tangents / Bitangents (EE, MDX pointers)
 	if nVerts > 0 && pMdxTangent >= 0 {
-		d.readMDXTangents(mesh, pMdxTangent, pMdxHandedness, nVerts)
+		d.readMDXTangents(node, pMdxTangent, pMdxHandedness, nVerts, otherTexAnim)
 	}
 
 	// Faces (model pointer, not MDX)
@@ -1442,7 +1453,8 @@ func (d *decompiler) readMDXColors(out *[]Vec3, mdxPtr int32, count int) {
 	}
 }
 
-func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr int32, count int) {
+func (d *decompiler) readMDXTangents(node *Node, tangentPtr, handednessPtr int32, count int, otherTexAnim bool) {
+	mesh := node.Mesh
 	tangentAbs := d.goToMDXPointer(tangentPtr)
 	if tangentAbs < 0 || tangentAbs+int64(count)*12 > d.fileSize {
 		return
@@ -1472,29 +1484,79 @@ func (d *decompiler) readMDXTangents(mesh *MeshData, tangentPtr, handednessPtr i
 	if d.seek(tangentAbs) != nil {
 		return
 	}
-	d.at("tangents")
+	// The tangents are read as raw bits, so a NaN is told from a zero: both
+	// are bad tangents, filled by fillTangents. A NaN in a stream that is not
+	// read as tangents is warned about as readF32 would.
 	tangents := make([]Vec4, count)
-	unit := true
+	fill := tangentFill{node: node}
+	var nans []rawFloat
+	unit := 0
 	for i := 0; i < count; i++ {
-		t := d.readVec3()
+		var f [3]float32
+		finite := true
+		for k := range f {
+			off := d.pos()
+			bits, _ := d.readU32()
+			f[k] = math.Float32frombits(bits)
+			if math.IsNaN(float64(f[k])) || math.IsInf(float64(f[k]), 0) {
+				finite = false
+				nans = append(nans, rawFloat{offset: off, bits: bits})
+			}
+		}
+		t := Vec3{X: f[0], Y: f[1], Z: f[2]}
 		// Default to +1 when the model carries no handedness stream, which
 		// matches the un-mirrored basis cross(normal, tangent).
 		w := float32(1.0)
 		if i < len(handedness) && handedness[i] < 0 {
 			w = -1.0
 		}
+		switch {
+		case !finite:
+			fill.nonFinite++
+			t = Vec3{}
+		case t == Vec3{}:
+			fill.zero++
+		case isUnitTangent(t):
+			unit++
+		default:
+			fill.other++
+		}
+		if !finite || !isUnitTangent(t) {
+			fill.bad = append(fill.bad, i)
+		}
 		tangents[i] = Vec4{X: t.X, Y: t.Y, Z: t.Z, W: w}
-		unit = unit && isUnitTangent(t)
 	}
 	// 1.69 models use the same pointer for water's bump-map animation stream,
-	// which is not tangents (stock tcn01_a15_01: 3.080194e-36 ...). With a
-	// normal-mapped render hint the stream is tangents; without one it is kept
-	// only if every vector is unit length, as the tangents the engine's compiler
-	// writes for meshes whose hint comes from their material are.
-	if !hintWantsTangents(mesh.RenderHint) && !unit {
+	// which is not tangents (stock tcn01_a15_01: 3.080194e-36 ..., Layonara's
+	// tcn01 water01: all zeros), with texture animation slots 0, 1, 2 and 4
+	// also set. With a normal-mapped render hint the stream is tangents.
+	// Without one (nwn-mdl-spec MDL-BIN-048) it is kept when every vector is
+	// unit length, as the engine's compiler writes for meshes whose hint
+	// comes from their material; or when none of the other slots is set, it
+	// holds a unit vector and every finite, non-zero vector is unit length,
+	// as streams from other tools with some NaN or zero vectors among real
+	// tangents are. The slots tell those from 1.69 streams that hold one
+	// vector of length 1 by chance (stock tcn01_l03_01 plane211:
+	// 6.1e-33 3.1e-36 1.00106, then zeros).
+	allUnit := unit == count
+	mixed := unit > 0 && fill.other == 0 && !otherTexAnim
+	if !hintWantsTangents(mesh.RenderHint) && !allUnit && !mixed {
+		d.at("tangents")
+		for _, n := range nans {
+			d.warnNaN(n.offset, n.bits)
+		}
 		return
 	}
 	mesh.Tangents = tangents
+	if len(fill.bad) > 0 {
+		d.tangentFills = append(d.tangentFills, fill)
+	}
+}
+
+// rawFloat is a float read as bits: where it is, and its bits.
+type rawFloat struct {
+	offset int64
+	bits   uint32
 }
 
 // isUnitTangent reports whether t has length 1 (squared length within 0.02),
