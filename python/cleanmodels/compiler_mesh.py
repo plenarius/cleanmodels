@@ -39,6 +39,7 @@ class ExpandedMesh:
         self.tex_stages = 0
         self.face_verts = []   # [a, b, c] GPU indices per kept face
         self.face_src = []     # face_verts[k] came from mesh.faces[face_src[k]]
+        self.record_verts = None  # face_verts before tangent clones, for the face records
         self.orig_vert = []    # GPU vertex -> source vertex index
         self.orig_tvert = []   # GPU vertex -> source UV0 index, -1 without one
         self.faces_ptr_pos = 0
@@ -538,7 +539,7 @@ class MeshMixin:
                     nx, ny, nz = f32(cx / length), f32(cy / length), f32(cz / length)
                 dist = -f32(f32(f32(nx * p1[0]) + f32(ny * p1[1])) + f32(nz * p1[2]))
             adj = adjacency[k]
-            fv = exp.face_verts[k]
+            fv = exp.face_verts[k] if exp.record_verts is None else exp.record_verts[k]
             out += pack(nx, ny, nz, dist, face.material & 0xFFFFFFFF, adj[0], adj[1], adj[2], fv[0], fv[1], fv[2])
         core.raw(out)
         if exp.index_count_list_ptr_pos >= 0 and exp.index_buf_off >= 0:

@@ -84,6 +84,9 @@ def generate_tangents(exp, anim_mesh):
                     arr.append(arr[src])
             tan.append(t)
             hand.append(w)
+        # Only the index list draws the clones: the face records keep the
+        # vertex the face named (nwn-mdl-spec MDL-MESH-043, E53).
+        exp.record_verts = [list(fv) for fv in exp.face_verts]
         for f, c, to in rewrites:
             exp.face_verts[f][c] = to
 

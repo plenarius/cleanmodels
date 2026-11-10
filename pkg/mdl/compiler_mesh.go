@@ -443,9 +443,13 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 		c.core.u16le(adjacency[k][0])
 		c.core.u16le(adjacency[k][1])
 		c.core.u16le(adjacency[k][2])
-		c.core.u16le(exp.faceVerts[k][0])
-		c.core.u16le(exp.faceVerts[k][1])
-		c.core.u16le(exp.faceVerts[k][2])
+		fv := exp.faceVerts[k]
+		if exp.recordVerts != nil {
+			fv = exp.recordVerts[k]
+		}
+		c.core.u16le(fv[0])
+		c.core.u16le(fv[1])
+		c.core.u16le(fv[2])
 	}
 
 	// Point vertexindicescount/vertextokenindices at the GPU index buffer.
@@ -491,8 +495,12 @@ type expandedMesh struct {
 	texStages int
 	faceVerts [][3]uint16 // per-kept-face GPU vertex indices (into the arrays above)
 	faceSrc   []int       // faceVerts[k] came from mesh.Faces[faceSrc[k]]
-	origVert  []int32     // GPU vertex → original mesh vertex index
-	origTVert []int32     // GPU vertex → original UV0 (tverts) index, -1 without one
+	// recordVerts, when tangent generation cloned vertices, is faceVerts
+	// as it was before: the face records keep those indices and only the
+	// index list (faceVerts) uses the clones (nwn-mdl-spec MDL-MESH-043).
+	recordVerts [][3]uint16
+	origVert    []int32 // GPU vertex → original mesh vertex index
+	origTVert   []int32 // GPU vertex → original UV0 (tverts) index, -1 without one
 
 	facesPtrPos int // core buffer position of faces array pointer (for deferred patching)
 
