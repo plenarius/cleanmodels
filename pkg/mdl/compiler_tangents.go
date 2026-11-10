@@ -27,7 +27,9 @@ import (
 //     handedness differs gets a clone of that vertex (one clone per
 //     original vertex and handedness), so mirrored UV charts keep their own
 //     basis. Clones are appended to exp (positions, UVs, normals, colors,
-//     origVert) and the face indices are rewritten to point at them.
+//     origVert) and the corners of exp.faceVerts, the index list, are
+//     rewritten to point at them; exp.recordVerts keeps the indices from
+//     before, for the face records, as the game's do.
 //   - animMesh nodes skip the accumulation: every triangle overwrites.
 //   - Finally each tangent is made perpendicular to its normal
 //     (Gram-Schmidt) and normalised.
@@ -153,6 +155,9 @@ func generateTangents(exp *expandedMesh, animMesh bool) ([]Vec3, []float32) {
 			tan = append(tan, cl.t)
 			hand = append(hand, cl.w)
 		}
+		// Only the index list draws the clones: the face records keep the
+		// vertex the face named (nwn-mdl-spec MDL-MESH-043, E53).
+		exp.recordVerts = append([][3]uint16(nil), exp.faceVerts...)
 		for _, r := range rewrites {
 			exp.faceVerts[r.face][r.corner] = r.to
 		}

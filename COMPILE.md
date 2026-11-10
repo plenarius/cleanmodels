@@ -151,7 +151,9 @@ the heavy lifting:
 - **Faces** are written by `writeMeshFaceData` after all sub-headers are
 emitted. Each face record carries the recomputed face normal and plane
 distance, the material index, the three adjacency slots, and the three GPU
-vertex indices. Face normals and plane distances match the game's
+vertex indices. When tangent generation cloned a vertex, only the index list
+uses the clone; the face record keeps the vertex from before, as the game's
+do (nwn-mdl-spec MDL-MESH-043, probe zspec_tanmirror). Face normals and plane distances match the game's
 `BuildNeighborLists` on every fixture node we compare.
 - **Face adjacency** (`buildFaceAdjacency`) is a port of
 `MdlNodeTriMesh::BuildNeighborLists`. Slot `k` holds the lowest-numbered
