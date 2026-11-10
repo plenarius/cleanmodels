@@ -50,7 +50,7 @@ func compileOne(path, game string) (res result, out []byte) {
 	}
 	var model *mdl.Model
 	if len(data) >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 0 {
-		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: dirs})
+		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: dirs, MaterialDirs: dirs})
 	} else {
 		var pr *mdl.ParseResult
 		pr, err = mdl.ParseFile(path)

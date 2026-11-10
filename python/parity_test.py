@@ -68,7 +68,7 @@ def python_decompile(path, data=None):
         with open(path, "rb") as f:
             data = f.read()
     try:
-        return writer.write(binary.decompile(data, resources.lookup_dirs(path))).encode("latin-1")
+        return writer.write(binary.decompile(data, resources.lookup_dirs(path), material_dirs=resources.lookup_dirs(path))).encode("latin-1")
     except binary.DecompileError:
         return None
 

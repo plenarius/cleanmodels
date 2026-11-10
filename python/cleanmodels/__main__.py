@@ -30,11 +30,11 @@ def _dirs(a):
     return sup, res
 
 
-def _read(a, data, sup):
+def _read(a, data, sup, res):
     """The model and its warnings as text lines; raises ValueError."""
     if binary.is_binary_mdl(data):
         try:
-            model = binary.decompile(data, sup)
+            model = binary.decompile(data, sup, material_dirs=res)
         except binary.DecompileError as e:
             raise ValueError(str(e))
         return model, ["%s%s" % ((w.node + ": ") if w.node else "", w.message) for w in model.warnings]
@@ -63,7 +63,7 @@ def main(argv=None):
         data = f.read()
     sup, res = _dirs(a)
     try:
-        model, warns = _read(a, data, sup)
+        model, warns = _read(a, data, sup, res)
     except ValueError as e:
         print("cleanmodels: %s: %s" % (a.input, e), file=sys.stderr)
         return 1

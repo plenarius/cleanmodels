@@ -209,6 +209,39 @@ A list triangle that is some other triangle leaves the face as read.
 `TestDecompileDrawsTangentClones` checks this against the game's compile of
 `zspec_tanmirror`.
 
+**Generated tangents are left out when a compile makes them again**
+(`binary_gentangents.go`). The clones sit at the end of the vertex list, but
+tangents written in the ASCII are part of the compile's merge key
+(MDL-MESH-010, MDL-MESH-044), and a compile numbers each vertex where a face
+first uses it. A clone used before the last original vertex's first use
+therefore moves, and every vertex after it with it: no ASCII with tangents
+compiles back to the binary's vertex order. On Layonara's haks this made 713
+models (cleanmodels v4.17.5) differ in vertex order between a compile and the
+compile of its own decompile. So, when the index list does not use the
+vertices in order and the mesh is normal-mapped (its own render hint, or its
+material found in `DecompileOptions.MaterialDirs`, which the CLI fills with
+the same locations as compile's resource dirs), the decompiler folds each
+clone back into the vertex it was cloned from, drops the tangents, and runs
+the compile's merge and tangent generation on the result. Only if that gives
+the binary's vertices back exactly (count, order, positions, UVs, normals,
+colours, skin weights, constraints, tangents and handedness bit for bit, and
+the index list) is the mesh written that way, with a note:
+
+```
+mesh "box1199": tangents left out: a compile generates the same ones (the mesh is normal-mapped), and only a generating compile keeps their 22 cloned vertices at the end of the vertex list
+```
+
+Anything else keeps its stored tangents, as do meshes whose stream had bad
+vectors filled, and `KeepVertexSplits` (which writes one vertex per binary
+vertex). The game's own `zspec_tanmirror` decompiles this way too, and
+compiles back to the game's vertices and index list
+(`TestGeneratedTangentsGameGolden`).
+
+A binary vertex no face uses (the game, and cleanmodels, keep the vertices a
+degenerate face added before dropping the face) still can't be written: the
+ASCII has no faces that would make it, so a compile of the decompile loses
+it, and every vertex after it moves up.
+
 ## Skin meshes
 
 Skin nodes carry a per-vertex bone weight table and a per-mesh

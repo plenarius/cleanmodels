@@ -67,7 +67,7 @@ def python_compile(path):
     dirs = [os.path.dirname(path)] + ([GAME] if GAME else [])
     try:
         if data[:4] == b"\0\0\0\0":
-            model = binary.decompile(data, dirs)
+            model = binary.decompile(data, dirs, material_dirs=dirs)
         else:
             model = parser.parse(data).model
             model.file_type = "ascii"

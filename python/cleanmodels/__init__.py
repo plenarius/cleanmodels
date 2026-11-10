@@ -7,7 +7,8 @@ parity_parse.py and parity_compile.py); PORTED_FROM is the cleanmodels release
 the port matches. Standard library only, so it can be bundled with Neverblender.
 
     from cleanmodels import compile, decompile_file, lookup_dirs, parse, write
-    model = decompile_file("c_wolf.mdl", skeleton_dirs=lookup_dirs("c_wolf.mdl"))
+    model = decompile_file("c_wolf.mdl", skeleton_dirs=lookup_dirs("c_wolf.mdl"),
+                           material_dirs=lookup_dirs("c_wolf.mdl"))
     text = write(model)                      # ASCII
     model = parse(text.encode("latin-1")).model
     data = compile(model, lookup_dirs("c_wolf.mdl"), lookup_dirs("c_wolf.mdl"))  # binary
