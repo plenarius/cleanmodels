@@ -39,6 +39,7 @@ for file:
 | `binary.py` | `binary.go` (decompiler), `binary_merged.go` (merged render lists), `binary_tangents.go` (bad tangents filled) |
 | `share_positions.py` | `share_positions.go` (positions shared again along stored neighbour links) |
 | `gen_tangents.py` | `binary_gentangents.go` (generated tangents and their clones left out when a compile makes them again) |
+| `binary_order.py` | `binary_order.go` (the order the decompiled nodes are declared in) |
 | `writer.py` | `writer.go` (ASCII writer, `write_walkmesh` for the .wok) |
 | `parser.py` | `parser.go`, `declared.go` (ASCII parser) |
 | `nearmatch.py` | `nearmatch.go` |

@@ -81,6 +81,17 @@ func Decompile(r io.ReadSeeker, fileSize int64) (*Model, error) {
 
 // DecompileWithOptions is Decompile with options.
 func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, error) {
+	m, err := decompileStored(r, fileSize, opts)
+	if err != nil {
+		return nil, err
+	}
+	declarationOrder(m)
+	return m, nil
+}
+
+// decompileStored is DecompileWithOptions with the geometry nodes listed in
+// the binary's stored (depth-first) order.
+func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, error) {
 	d := &decompiler{
 		r:           r,
 		fileSize:    fileSize,
