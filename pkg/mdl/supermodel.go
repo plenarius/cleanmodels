@@ -172,13 +172,15 @@ func readSupermodel(ref *resourceRef, dirs []string, seen map[string]bool) (*sup
 // compiler does for a model that has a supermodel. Derived from the engine's own
 // compiles of the oracle models (c_marilith2 against c_marilithe), of the
 // taur_pheno centaurs (pmh9 against taur_ba) and of probes (nwn-mdl-spec zspec_kid,
-// zspec_kid2, zspec_kid3; zcm_kidx in tests/fixtures/engine):
+// zspec_kid2, zspec_kid3, zspec_kid5; zcm_kidx in tests/fixtures/engine):
 //
 //   - The roots match. A node matches the supermodel node at the same path:
 //     the child, of the same name in any letter case, of the supermodel node
 //     its parent matched. A name the supermodel uses twice is told apart by
 //     its path. A matched node takes the supermodel's number, so the
-//     supermodel's animations address the right node.
+//     supermodel's animations address the right node. A supermodel node
+//     numbered -1 still matches: the node takes -1 and the walk goes on to its
+//     children (nwn-mdl-spec MDL-NODE-020, probe zspec_kid5; a_ba's Cloak_g).
 //   - Any other node whose parent matched gets -1.
 //   - Any other node gets base + its declaration index, where base is the
 //     supermodel's count_nodes + 1.
@@ -199,8 +201,8 @@ func (c *compiler) assignNodeIDsFromSupermodel(root *Node, sm *supermodelInfo) {
 				sn = p.child(n.Name)
 			}
 			switch {
-			case sn != nil && sn.number >= 0:
-				c.nodeIDs[n] = sn.number
+			case sn != nil:
+				c.nodeIDs[n] = sn.number // -1 where the supermodel has -1
 				match[n] = sn
 			case match[parent] != nil:
 				c.nodeIDs[n] = -1
