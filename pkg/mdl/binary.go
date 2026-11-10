@@ -53,8 +53,16 @@ type DecompileOptions struct {
 	SkeletonDirs []string
 	// KeepVertexSplits writes one position per binary vertex, as before
 	// sharePositions: a compile of the result then links no faces across a
-	// split corner (nwn-mdl-spec MDL-MESH-025).
+	// split corner (nwn-mdl-spec MDL-MESH-025). It also keeps generated
+	// tangents and their clone vertices (omitGeneratedTangents).
 	KeepVertexSplits bool
+	// MaterialDirs are searched for the materials (.mtr) that make a mesh
+	// normal-mapped, as CompileOptions.ResourceDirs are. A normal-mapped mesh
+	// whose tangents the game generated with clone vertices is written
+	// without them when a compile generates the same again
+	// (omitGeneratedTangents); without its material, only a mesh whose own
+	// render hint is normal-mapped can be. Not with KeepVertexSplits.
+	MaterialDirs []string
 }
 
 // DecompileFileWithOptions is DecompileFile with options.
@@ -113,6 +121,7 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 	d.applyTangentClones()
 	d.unmergeRenderLists()
 	if !opts.KeepVertexSplits {
+		d.omitGeneratedTangents()
 		for _, n := range d.model.Nodes {
 			sharePositions(n)
 		}

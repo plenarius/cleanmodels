@@ -272,7 +272,7 @@ cleanmodels decompile -f mystery_file.bin output.mdl
 | Flag | Short | Description |
 |---|---|---|
 | `--force` | `-f` | Treat input as binary even if auto-detection fails |
-| `--keep-vertex-splits` | | Write one position per binary vertex. By default vertices the source shared are given one position again, found from the binary's stored face neighbours, so a compile of the ASCII links the same faces and casts the same shadows (nwn-mdl-spec MDL-MESH-025) |
+| `--keep-vertex-splits` | | Write one position per binary vertex. By default vertices the source shared are given one position again, found from the binary's stored face neighbours, so a compile of the ASCII links the same faces and casts the same shadows (nwn-mdl-spec MDL-MESH-025); and tangents the game generated with cloned vertices are left out when a compile generates the same again, so it keeps the vertex order (see DECOMPILE.md) |
 
 A binary splits a vertex wherever its UVs differ. The decompiler joins those copies back into one position (faces keep their own UV indices) only along edges the binary's stored neighbours link, and only when the copies agree in everything the ASCII writes per position (normal, tangent, colour, skin weights, dangly constraint). Walkmeshes, animmeshes and meshes with UV sets 1-3 are left split. Not recovered: a link across a hard edge (normals differ), and faces the binary merged by value that its source never linked (a round trip links them, as before).
 

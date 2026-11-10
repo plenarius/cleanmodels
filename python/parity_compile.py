@@ -67,7 +67,7 @@ def python_compile(path):
     dirs = [os.path.dirname(path)] + ([GAME] if GAME else [])
     try:
         if data[:4] == b"\0\0\0\0":
-            model = binary.decompile(data, dirs)
+            model = binary.decompile(data, dirs, material_dirs=dirs)
         else:
             model = parser.parse(data).model
             model.file_type = "ascii"
@@ -170,7 +170,7 @@ def mutate(data, rng):
             lines.insert(i, lines[i])
         else:
             w = lines[i].split()
-            if len(w) >= 2 and w[0].lower() in (b"node", b"parent", b"bitmap", b"setsupermodel"):
+            if len(w) >= 2 and w[0].lower() in (b"node", b"parent", b"bitmap", b"materialname", b"setsupermodel"):
                 lines[i] = lines[i].replace(w[-1], rng.choice([b"rootdummy", b"NULL", w[-1].upper(), b"x"]))
     return b"\n".join(lines), kind
 

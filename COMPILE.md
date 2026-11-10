@@ -418,6 +418,14 @@ was used and one note is printed when none is found. Without any, only an
 explicit `renderhint` counts, and the engine regenerates tangents at load. An
 install in an unusual place still needs `--game-dir` or `NWN_ROOT`, and the same
 model can compile differently on a machine with NWN installed and one without.
+- **A missing material is warned about.** A mesh whose `materialname` names a
+material that no resource location has gets a warning (`mesh "x": material
+y.mtr not found in ...`), saying what the mesh gets instead: tangents from its
+own `renderhint`, the hint of its bitmap's `.mtr`, or no tangents. Without it, a
+missing `.mtr` silently meant no tangents. A `bitmap` with no `.mtr` is not
+warned about: most textures have none, and a missing one cannot be told from
+that. Nothing is warned about when there are no resource locations at all
+(library calls without `ResourceDirs`).
 - **No open-ended fuzzing.** Parsing untrusted ASCII is bounded by alloc
 tracking and a max-depth guard. The Python parity tests run the parser and
 compiler on thousands of deterministic mutations of the fixtures (and, before a

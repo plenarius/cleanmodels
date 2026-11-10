@@ -724,8 +724,8 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	}
 
 	if o.forceBin || binMode {
-		superDirs, _ := lookupDirs(path, o)
-		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs, KeepVertexSplits: o.keepVertexSplits})
+		superDirs, resDirs := lookupDirs(path, o)
+		model, err = mdl.DecompileFileWithOptions(path, mdl.DecompileOptions{SkeletonDirs: superDirs, MaterialDirs: resDirs, KeepVertexSplits: o.keepVertexSplits})
 		if err != nil {
 			res.Error = wrapWithSuggestion(err, path).Error()
 			return res, nil, nil, err

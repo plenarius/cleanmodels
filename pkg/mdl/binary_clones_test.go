@@ -70,7 +70,13 @@ func TestDecompileDrawsTangentClones(t *testing.T) {
 		t.Fatal("the golden's index list equals its faces: the fixture no longer tests the clones")
 	}
 
-	m := mustDecompile(t, golden).FindNode("strip").Mesh
+	// KeepVertexSplits: the default decompile writes these generated
+	// tangents not at all (TestGeneratedTangentsRoundTrip).
+	dm, err := DecompileWithOptions(bytes.NewReader(golden), int64(len(golden)), DecompileOptions{KeepVertexSplits: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := dm.FindNode("strip").Mesh
 	used := make([]bool, len(m.Verts))
 	for i, f := range m.Faces {
 		for k := 0; k < 3; k++ {

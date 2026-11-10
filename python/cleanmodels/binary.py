@@ -15,6 +15,7 @@ import struct
 
 from . import controllers
 from .share_positions import share_positions
+from .gen_tangents import omit_generated_tangents
 from .controllers import controller_id
 from .compiler_normals import game_normalize
 from .compiler_mesh import ExpandedMesh
@@ -61,14 +62,16 @@ def is_binary_mdl(data):
     return len(data) >= 12 and _U32.unpack_from(data, 0)[0] == 0
 
 
-def decompile_file(path, skeleton_dirs=(), keep_vertex_splits=False):
+def decompile_file(path, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()):
     with open(path, "rb") as f:
         data = f.read()
-    return decompile(data, skeleton_dirs, keep_vertex_splits)
+    return decompile(data, skeleton_dirs, keep_vertex_splits, material_dirs)
 
 
-def decompile(data, skeleton_dirs=(), keep_vertex_splits=False):
-    """Decompile binary MDL bytes into a Model (binary.go DecompileWithOptions)."""
+def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()):
+    """Decompile binary MDL bytes into a Model (binary.go DecompileWithOptions).
+    material_dirs is DecompileOptions.MaterialDirs: where the materials that
+    make a mesh normal-mapped are looked up (omit_generated_tangents)."""
     d = _Decompiler(data, skeleton_dirs)
     try:
         d.read_file_header()
@@ -97,6 +100,7 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False):
     apply_tangent_clones(d)
     unmerge_render_lists(d)
     if not keep_vertex_splits:
+        omit_generated_tangents(d, list(material_dirs))
         for n in d.model.nodes:
             share_positions(n)
     return d.model
