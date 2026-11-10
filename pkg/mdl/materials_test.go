@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,70 @@ func TestTangentsFollowTheMaterial(t *testing.T) {
 		if got := hasTangents(t, compileQuad(t, c.bitmap, c.extra, c.dirs)); got != c.want {
 			t.Errorf("%s: tangents = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestMissingMaterialWarns: a materialname that none of the resource
+// locations has is warned about, since it silently decides tangents. A bitmap
+// with no .mtr is the usual case for a texture and is not, nor is anything
+// when there are no resource locations to look in.
+func TestMissingMaterialWarns(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, map[string]string{
+		"walltex.mtr": "renderhint NormalAndSpecMapped\n",
+		"matfile.mtr": "renderhint NormalAndSpecMapped\n",
+	})
+	dirs := []string{dir}
+	prefix := fmt.Sprintf(`mesh "quad": material nosuch.mtr not found in %s; `, dir)
+	cases := []struct {
+		name, bitmap, extra string
+		dirs                []string
+		want                string // "" for no warning
+	}{
+		{"missing, nothing else", "bare", "    materialname nosuch\n", dirs,
+			prefix + "it gets no tangents, which the game generates when that material is normal-mapped"},
+		{"missing, the bitmap's material used", "walltex", "    materialname nosuch\n", dirs,
+			prefix + "its render hint is taken from walltex.mtr, named by its bitmap, instead"},
+		{"missing, own renderhint", "bare", "    materialname nosuch\n    renderhint NormalAndSpecMapped\n", dirs,
+			prefix + "its own renderhint still gives it tangents"},
+		{"found", "bare", "    materialname MATFILE\n", dirs, ""},
+		{"found, own renderhint", "bare", "    materialname matfile\n    renderhint NormalAndSpecMapped\n", dirs, ""},
+		{"NULL", "bare", "    materialname NULL\n", dirs, ""},
+		{"bitmap with no material", "bare", "", dirs, ""},
+		{"no resource locations", "bare", "    materialname nosuch\n", nil, ""},
+	}
+	for _, c := range cases {
+		var warns []string
+		m := mustParseASCII(t, fmt.Sprintf(materialQuad, c.bitmap, c.extra))
+		var buf bytes.Buffer
+		opts := CompileOptions{ResourceDirs: c.dirs, Warn: func(s string) { warns = append(warns, s) }}
+		if err := CompileWithOptions(m, &buf, opts); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, w := range warns {
+			if strings.Contains(w, ".mtr") {
+				got = append(got, w)
+			}
+		}
+		switch {
+		case c.want == "" && len(got) != 0:
+			t.Errorf("%s: warned %q, want no warning", c.name, got)
+		case c.want != "" && (len(got) != 1 || got[0] != c.want):
+			t.Errorf("%s: warned %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestMissingMaterialIsADependency: with the mesh's own renderhint, the
+// material does not decide tangents, but its warning depends on it, so the
+// lookup is recorded.
+func TestMissingMaterialIsADependency(t *testing.T) {
+	dir := t.TempDir()
+	m := mustParseASCII(t, fmt.Sprintf(materialQuad, "bare", "    materialname nosuch\n    renderhint NormalAndSpecMapped\n"))
+	opts := CompileOptions{ResourceDirs: []string{dir}}
+	deps := compileDeps(t, m, opts)
+	if d, ok := findDep(deps, "mtr", "nosuch"); !ok || d.Found {
+		t.Errorf("nosuch: %+v (present %v), want recorded as not found", d, ok)
 	}
 }

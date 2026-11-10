@@ -1,6 +1,7 @@
 package mdl
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -118,4 +119,59 @@ func isNormalMapped(mesh *MeshData, dirs []string, found func(name string, ref *
 		}
 	}
 	return false
+}
+
+// meshNormalMapped is isNormalMapped for a mesh being compiled: it records each
+// material looked up, and warns when the mesh's materialname names a material
+// that none of the resource locations has. A missing .mtr is otherwise silent,
+// and it decides tangents: with it, a normal-mapped material gets them; without
+// it, the mesh gets none. A bitmap with no .mtr is not warned about: most
+// textures have none, and that cannot be told from a missing one. With no
+// resource locations at all nothing is looked up, so nothing is warned about
+// (as for a supermodel).
+func (c *compiler) meshNormalMapped(mesh *MeshData, n *Node) bool {
+	if mesh == nil {
+		return false
+	}
+	named := materialLookedUp(mesh.MaterialName)
+	var mat, bitmapMat *resourceRef
+	calls := 0
+	normalMapped := isNormalMapped(mesh, c.resourceDirs, func(name string, ref *resourceRef) {
+		c.recordMaterial(name, ref)
+		calls++
+		if named && calls == 1 {
+			mat = ref
+		} else {
+			bitmapMat = ref
+		}
+	})
+	if !named || len(c.resourceDirs) == 0 {
+		return normalMapped
+	}
+	if calls == 0 {
+		// The mesh's own render hint settled it, so isNormalMapped did not
+		// look the material up; the warning still needs to know.
+		mat = findMaterial(mesh.MaterialName, c.resourceDirs)
+		c.recordMaterial(mesh.MaterialName, mat)
+	}
+	if mat == nil && c.warn != nil && n != nil {
+		c.warn(missingMaterialWarning(n.Name, mesh, bitmapMat != nil, c.resourceDirs))
+	}
+	return normalMapped
+}
+
+// missingMaterialWarning is the warning for a mesh whose materialname is in
+// none of dirs. viaBitmap is whether its bitmap's .mtr was found instead.
+func missingMaterialWarning(node string, mesh *MeshData, viaBitmap bool, dirs []string) string {
+	var consequence string
+	switch {
+	case hintWantsTangents(mesh.RenderHint):
+		consequence = "its own renderhint still gives it tangents"
+	case viaBitmap:
+		consequence = fmt.Sprintf("its render hint is taken from %s.mtr, named by its bitmap, instead", strings.TrimSpace(mesh.Bitmap))
+	default:
+		consequence = "it gets no tangents, which the game generates when that material is normal-mapped"
+	}
+	return fmt.Sprintf("mesh %q: material %s.mtr not found in %s; %s",
+		node, strings.TrimSpace(mesh.MaterialName), strings.Join(dirs, ", "), consequence)
 }

@@ -1,0 +1,121 @@
+# Meshes naming materials that are and are not beside the model: compile
+# warns for each materialname it cannot find (parity_compile.py compares the
+# warnings with Python's).
+newmodel zcm_nomtr
+setsupermodel zcm_nomtr NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom zcm_nomtr
+  node dummy zcm_nomtr
+    parent NULL
+  endnode
+  node trimesh missing
+    parent zcm_nomtr
+    bitmap zcm_plain
+    materialname zcm_nosuchmat
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+  node trimesh viabitmap
+    parent zcm_nomtr
+    bitmap zcm_nmwall
+    materialname zcm_nosuchmat
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+  node trimesh ownhint
+    parent zcm_nomtr
+    bitmap zcm_plain
+    materialname zcm_nosuchmat
+    renderhint NormalAndSpecMapped
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+  node trimesh found
+    parent zcm_nomtr
+    bitmap zcm_plain
+    materialname zcm_nmwall
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+  node trimesh nullmat
+    parent zcm_nomtr
+    bitmap zcm_plain
+    materialname NULL
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+  node trimesh bitmaponly
+    parent zcm_nomtr
+    bitmap zcm_plain
+    verts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 1 0 2 3 0
+  endnode
+endmodelgeom zcm_nomtr
+donemodel zcm_nomtr

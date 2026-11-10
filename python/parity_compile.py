@@ -170,7 +170,7 @@ def mutate(data, rng):
             lines.insert(i, lines[i])
         else:
             w = lines[i].split()
-            if len(w) >= 2 and w[0].lower() in (b"node", b"parent", b"bitmap", b"setsupermodel"):
+            if len(w) >= 2 and w[0].lower() in (b"node", b"parent", b"bitmap", b"materialname", b"setsupermodel"):
                 lines[i] = lines[i].replace(w[-1], rng.choice([b"rootdummy", b"NULL", w[-1].upper(), b"x"]))
     return b"\n".join(lines), kind
 

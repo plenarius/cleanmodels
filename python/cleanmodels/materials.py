@@ -11,7 +11,7 @@ import threading
 
 from . import resources
 from .compiler_tangents import hint_wants_tangents
-from .gomath import go_lower
+from .gomath import go_lower, go_quote
 
 # Go's (?im)^\s*renderhint\s+(\S+); RE2's \s is [\t\n\f\r ].
 _HINT_RE = re.compile(rb"^[\t\n\f\r ]*renderhint[\t\n\f\r ]+([^\t\n\f\r ]+)", re.I | re.M)
@@ -87,7 +87,14 @@ def material_render_hint(ref):
     return h
 
 
-def is_normal_mapped(mesh, dirs):
+def material_looked_up(name):
+    """Whether find_material searches for name at all: empty or NULL is no material."""
+    name = go_lower(name.strip())
+    return name != "" and name != "null"
+
+
+def is_normal_mapped(mesh, dirs, found=None):
+    """found, if given, is called with each material looked up and its ref."""
     if mesh is None:
         return False
     if hint_wants_tangents(mesh.render_hint):
@@ -96,6 +103,42 @@ def is_normal_mapped(mesh, dirs):
         return False
     for name in (mesh.material_name, mesh.bitmap):
         ref = find_material(name, dirs)
+        if found is not None and material_looked_up(name):
+            found(name, ref)
         if ref is not None:
             return hint_wants_tangents(material_render_hint(ref))
     return False
+
+
+def mesh_normal_mapped(mesh, dirs, node_name, warn):
+    """compiler.meshNormalMapped: is_normal_mapped, warning (through warn, when
+    node_name is not None) when the mesh's materialname names a material none
+    of dirs has. A bitmap with no .mtr is not warned about, and nothing is with
+    no dirs."""
+    if mesh is None:
+        return False
+    named = material_looked_up(mesh.material_name)
+    seen = []  # refs in lookup order
+    normal_mapped = is_normal_mapped(mesh, dirs, lambda name, ref: seen.append(ref))
+    if not named or not dirs:
+        return normal_mapped
+    if seen:
+        mat = seen[0]
+        via_bitmap = len(seen) > 1 and seen[1] is not None
+    else:
+        mat = find_material(mesh.material_name, dirs)
+        via_bitmap = False
+    if mat is None and warn is not None and node_name is not None:
+        warn(missing_material_warning(node_name, mesh, via_bitmap, dirs))
+    return normal_mapped
+
+
+def missing_material_warning(node, mesh, via_bitmap, dirs):
+    if hint_wants_tangents(mesh.render_hint):
+        consequence = "its own renderhint still gives it tangents"
+    elif via_bitmap:
+        consequence = "its render hint is taken from %s.mtr, named by its bitmap, instead" % mesh.bitmap.strip()
+    else:
+        consequence = "it gets no tangents, which the game generates when that material is normal-mapped"
+    return "mesh %s: material %s.mtr not found in %s; %s" % (
+        go_quote(node), mesh.material_name.strip(), ", ".join(dirs), consequence)
