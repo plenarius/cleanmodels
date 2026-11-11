@@ -21,9 +21,10 @@ from .controllers import controller_id
 from .compiler_normals import game_normalize
 from .compiler_mesh import ExpandedMesh
 from .compiler_tangents import generate_tangents, hint_wants_tangents
-from .f32 import f32, f32_bits
+from .f32 import f32, f32_bits, fmt_float
 from .gostr import equal_fold, go_lower, quote
-from .vec import axis_angle_to_quat
+from .vec import axis_angle_to_quat, parent_chain, rotate_vector_axis_angle, world_vertices
+from .compiler_tree import resolve_geom_tree
 from .types import (
     AabbData, AabbEntry, AnimMeshData, AnimNode, Animation, DanglyData, DecompileWarning,
     EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData, SkinData, VertexWeight,
@@ -1583,8 +1584,9 @@ def _fallback_tangent(nv):
 MERGE_TOLERANCE = 1e-3  # m
 
 
-def _mesh_tri(mesh, a, b, c):
-    """meshTri: (uv key, sorted side lengths, mesh, vertex indices), or None when an index is out of range."""
+def _mesh_tri(mesh, a, b, c, k=-1):
+    """meshTri: (uv key, sorted side lengths, mesh, vertex indices, k), or None when an index is out of
+    range. k is the triangle's index in the receiver's render list, or a donor triangle's face index."""
     idx = (a, b, c)
     for i in idx:
         if i < 0 or i >= len(mesh.verts):
@@ -1602,7 +1604,7 @@ def _mesh_tri(mesh, a, b, c):
         dx, dy, dz = p[0] - q[0], p[1] - q[1], p[2] - q[2]
         side.append(math.sqrt(dx * dx + dy * dy + dz * dz))
     side.sort()
-    return tuple(uv), side, mesh, idx
+    return tuple(uv), side, mesh, idx, k
 
 
 class _TriPool:
@@ -1617,12 +1619,17 @@ class _TriPool:
         self.by_uv.setdefault(t[0], []).append(t)
         self.n += 1
 
-    def find(self, t):
+    def find(self, t, pref=None):
+        """find / findPreferring: the first of t's shape for which pref holds, else the first, else -1."""
+        first = -1
         for i, c in enumerate(self.by_uv.get(t[0], ())):
             if (abs(c[1][0] - t[1][0]) <= MERGE_TOLERANCE and abs(c[1][1] - t[1][1]) <= MERGE_TOLERANCE
                     and abs(c[1][2] - t[1][2]) <= MERGE_TOLERANCE):
-                return i
-        return -1
+                if pref is None or pref(c):
+                    return i
+                if first < 0:
+                    first = i
+        return first
 
     def get(self, t, i):
         return self.by_uv[t[0]][i]
@@ -1699,67 +1706,6 @@ def _tri_frame(p):
     return (x, _cross3(zz, x), zz)
 
 
-def _donor_normals(m, pairs):
-    """donorNormals: give a donor put back the normals its copies were drawn with."""
-    if len(m.normals) < len(m.verts):
-        return
-    ms = []
-    best, best_area = -1, 0.0
-    for d, c in pairs:
-        if len(c[2].normals) < len(c[2].verts):
-            continue
-        r = _copy_corners(d, c)
-        if r is None:
-            continue
-        dp = [tuple(d[2].verts[d[3][j]]) for j in range(3)]
-        cp = [tuple(c[2].verts[c[3][(j + r) % 3]]) for j in range(3)]
-        e1 = (dp[1][0] - dp[0][0], dp[1][1] - dp[0][1], dp[1][2] - dp[0][2])
-        e2 = (dp[2][0] - dp[0][0], dp[2][1] - dp[0][1], dp[2][2] - dp[0][2])
-        z = _cross3(e1, e2)
-        a = math.sqrt(_dot3(z, z))
-        if a > best_area:
-            best, best_area = len(ms), a
-        ms.append((d, c, r, dp, cp))
-    if best < 0:
-        return
-    fd = _tri_frame(ms[best][3])
-    fc = _tri_frame(ms[best][4])
-    if fd is None or fc is None:
-        return
-
-    def to_donor(v):
-        n0 = n1 = n2 = 0.0
-        for a in range(3):
-            k = fc[a][0] * v[0] + fc[a][1] * v[1] + fc[a][2] * v[2]
-            n0 += k * fd[a][0]
-            n1 += k * fd[a][1]
-            n2 += k * fd[a][2]
-        return (n0, n1, n2)
-
-    cands = [None] * len(m.verts)  # [n, conflict]
-    for d, c, r, dp, cp in ms:
-        fits = True
-        for j in range(3):
-            k = (j + 1) % 3
-            ed = (dp[k][0] - dp[j][0], dp[k][1] - dp[j][1], dp[k][2] - dp[j][2])
-            ec = to_donor((cp[k][0] - cp[j][0], cp[k][1] - cp[j][1], cp[k][2] - cp[j][2]))
-            fits = _dist3(ed, ec) <= MERGE_TOLERANCE
-            if not fits:
-                break
-        if not fits:
-            continue
-        for j in range(3):
-            n = to_donor(c[2].normals[c[3][(j + r) % 3]])
-            v = d[3][j]
-            if cands[v] is None:
-                cands[v] = [n, False]
-            elif _dist3(cands[v][0], n) > MERGE_NORMAL_TOLERANCE:
-                cands[v][1] = True
-    for v, cd in enumerate(cands):
-        if cd is not None and not cd[1] and _dist3(m.normals[v], cd[0]) > MERGE_NORMAL_TOLERANCE:
-            m.normals[v] = (f32(cd[0][0]), f32(cd[0][1]), f32(cd[0][2]))
-
-
 def _same_corner(m, a, b):
     """sameCorner: one vertex, or a tangent clone of it (same position and UV)."""
     if a == b:
@@ -1793,15 +1739,21 @@ def apply_tangent_clones(d):
 
 
 def unmerge_render_lists(d):
-    """unmergeRenderLists: put merged donors back (render 1), note or warn per receiver."""
+    """unmergeRenderLists: restore or fold merged donors, note or warn per receiver. Donors are matched in
+    two passes over the receivers: first only one whose every triangle has a copy where it lies in world
+    space, then any by shape alone."""
     if not d.render_lists:
         return
-    moves = set()  # nodes an animation moves: a donor among them was drawn still
-    for a in d.model.animations:
-        for an in a.nodes:
-            if len(an.position_keys) > 1 or len(an.orientation_keys) > 1:
-                moves.add(go_lower(an.name))
-    used = set()
+    parent_of = None
+    world = {}
+
+    def world_of(n):
+        w = world.get(n)
+        if w is None:
+            w = world[n] = world_vertices(parent_of, n)
+        return w
+
+    recs = []  # [r, rl, extra, unreadable, wr, donors: [(n, at, pairs)]]
     for r in d.model.nodes:
         rl = d.render_lists.get(r)
         if r.mesh is None or rl is None or len(rl) <= 3 * len(r.mesh.faces):
@@ -1809,7 +1761,7 @@ def unmerge_render_lists(d):
         extra = _TriPool()
         unreadable = 0
         for k in range(0, len(rl) - 2, 3):
-            t = _mesh_tri(r.mesh, rl[k], rl[k + 1], rl[k + 2])
+            t = _mesh_tri(r.mesh, rl[k], rl[k + 1], rl[k + 2], k // 3)
             if t is not None:
                 extra.add(t)
             else:
@@ -1822,44 +1774,479 @@ def unmerge_render_lists(d):
                     extra.take(t, i)
         if extra.n == 0 and unreadable == 0:
             continue
-        donors = []
-        for n in d.model.nodes:
+        if parent_of is None:
+            parent_of = resolve_geom_tree(d.model.nodes)[0]
+        recs.append([r, rl, extra, unreadable, world_of(r), []])
+    if not recs:
+        return
+    used = set()
+    for in_place in (True, False):
+        for rec in recs:
+            r, wr = rec[0], rec[4]
+            for at, n in enumerate(d.model.nodes):
+                m = n.mesh
+                if (n is r or m is None or id(n) in used or m.render != 0 or d.render_lists.get(n) or not m.faces
+                        or not equal_fold(m.bitmap, r.mesh.bitmap)):
+                    continue
+                wd = world_of(n)
+                trial = rec[2].copy()
+                ok = True
+                pairs = []  # each donor face and the copy it matched
+                for fi, f in enumerate(m.faces):
+                    t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2], fi)
+                    i = -1
+                    if t is not None:
+                        i = trial.find(t, lambda c, t=t: _world_fits(wd, t[3], wr, c[3]))
+                    if i < 0 or (in_place and not _world_fits(wd, t[3], wr, trial.get(t, i)[3])):
+                        ok = False
+                        break
+                    pairs.append((t, trial.get(t, i)))
+                    trial.take(t, i)
+                if not ok:
+                    continue
+                rec[2] = trial
+                used.add(id(n))
+                rec[5].append((n, at, pairs))
+    motion = _merge_motion(d.model)
+    for r, rl, extra, unreadable, wr, matched in recs:
+        matched.sort(key=lambda x: x[1])
+        donors, folded_names = [], []
+        folded = []  # donor faces folded into r, and their copies
+        fold_why, shadow_off, restyled = [], [], []
+        for n, _at, pairs in matched:
             m = n.mesh
-            if (n is r or m is None or id(n) in used or m.render != 0 or d.render_lists.get(n) or not m.faces
-                    or not equal_fold(m.bitmap, r.mesh.bitmap)):
+            why = _fold_reason(parent_of, motion, r, n, wr, world_of(n), pairs)
+            if why:
+                folded.extend(pairs)
+                folded_names.append(n.name)
+                fold_why.append("%s (%s)" % (n.name, why))
+                if m.shadow != 0 and r.mesh.shadow != 0:
+                    m.shadow = 0
+                    shadow_off.append(n.name)
                 continue
-            trial = extra.copy()
-            ok = True
-            pairs = []  # each donor face and the copy it matched
-            for f in m.faces:
-                t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2])
-                i = trial.find(t) if t is not None else -1
-                if i < 0:
-                    ok = False
-                    break
-                pairs.append((t, trial.get(t, i)))
-                trial.take(t, i)
-            if not ok:
-                continue
-            extra = trial
-            used.add(id(n))
             m.render = 1
-            _donor_normals(m, pairs)
+            diff = _copy_drawing_state(r, n)
+            if diff:
+                restyled.append("%s (%s)" % (n.name, ", ".join(diff)))
+            _donor_corners(n, pairs)
             donors.append(n.name)
         lost = extra.n + unreadable
-        d.model.render_merges.append((r.name, donors, lost))
+        d.model.render_merges.append((r.name, donors, lost, folded_names))
+        _fold_copies(r, folded)
+        _drop_copy_vertices(r, rl)
         if donors:
             d.note(WARN_GENERAL, 0, r.name,
                    "its render list also draws %s, merged into it by the tool that compiled the model (render 0 and no "
                    "render list of their own): written with render 1, which draws the same as separate meshes"
                    % ", ".join(donors))
-        moving = [n for n in donors if go_lower(n) in moves]
-        if moving:
+        if restyled:
             d.note(WARN_GENERAL, 0, r.name,
-                   "this model's animations move %s, which the game drew still, as part of this mesh's render list: with "
-                   "render 1, the animations move it" % ", ".join(moving))
+                   "the game drew the triangles of %s with this mesh's drawing settings, which differ from their own: "
+                   "given this mesh's, so they draw as before" % "; ".join(restyled))
+        if fold_why:
+            msg = ("its render list also draws %s, merged into it by the tool that compiled the model, which as "
+                   "separate meshes would draw differently from the original: their copies are written as this mesh's "
+                   "faces, as the game drew them, and they keep render 0" % "; ".join(fold_why))
+            if shadow_off:
+                msg += ". %s get shadow 0, as the copies in this mesh now cast their shadow" % ", ".join(shadow_off)
+            d.note(WARN_GENERAL, 0, r.name, msg)
         if lost > 0:
             d.warn(WARN_GENERAL, 0, r.name,
                    "%d of the triangles its render list draws are in no mesh's faces: ASCII has no place for them, so a "
                    "decompile, repair or recompile loses them" % lost)
 
+
+MERGE_WORLD_TOLERANCE = 2e-3  # m
+MERGE_KEY_TOLERANCE = 1e-4
+
+
+def _world_fits(wa, a, wb, b):
+    """worldFits: the triangle at a of wa lies on the one at b of wb, corners in the same turn."""
+    for r in range(3):
+        if all(_dist3(wa[a[j]], wb[b[(j + r) % 3]]) <= MERGE_WORLD_TOLERANCE for j in range(3)):
+            return True
+    return False
+
+
+def _merge_motion(model):
+    """newMergeMotion: (moves, alpha, self_illum) by lower-case node name."""
+    geom = {}
+    for n in model.nodes:
+        geom.setdefault(go_lower(n.name), n)
+    moves, alpha, self_illum = set(), {}, {}
+    for a in model.animations:
+        for an in a.nodes:
+            k = go_lower(an.name)
+            g = geom.get(k)
+            if g is not None and _anim_moves(g, an):
+                moves.add(k)
+            for key in an.float_keys.get("alpha", ()):
+                alpha.setdefault(k, []).append(key[1])
+            for key in an.color_keys.get("selfillumcolor", ()):
+                self_illum.setdefault(k, []).append(key[1])
+    return moves, alpha, self_illum
+
+
+def _anim_moves(g, an):
+    """animMoves: an's keys put g anywhere but its rest pose."""
+    for k in an.position_keys:
+        if not _near_vec3(k[1], g.position):
+            return True
+    for k in an.orientation_keys:
+        if not _same_rotation(k[1], g.orientation):
+            return True
+    s = 1.0 if g.scale == 0 else g.scale
+    for k in an.float_keys.get("scale", ()):
+        if not _near_f(k[1], s):
+            return True
+    return False
+
+
+def _near_f(a, b):
+    return abs(a - b) <= MERGE_KEY_TOLERANCE
+
+
+def _near_vec3(a, b):
+    return _near_f(a[0], b[0]) and _near_f(a[1], b[1]) and _near_f(a[2], b[2])
+
+
+def _same_rotation(a, b):
+    for v in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)):
+        if not _near_vec3(rotate_vector_axis_angle(v, a), rotate_vector_axis_angle(v, b)):
+            return False
+    return True
+
+
+def _fold_reason(parent_of, motion, r, n, wr, wd, pairs):
+    """foldReason: why donor n, restored, would draw other than its copies in r, or ""."""
+    moves, alpha, self_illum = motion
+    rc, dc = parent_chain(parent_of, r), parent_chain(parent_of, n)
+    in_r, in_d = set(rc), set(dc)
+    for x in dc:
+        if x not in in_r and go_lower(x.name) in moves:
+            return "an animation moves %s, but the game drew it as part of %s" % (x.name, r.name)
+    for x in rc:
+        if x not in in_d and go_lower(x.name) in moves:
+            return "an animation moves %s, with the copies" % x.name
+    for x in (r, n):
+        for v in alpha.get(go_lower(x.name), ()):
+            if not _near_f(v, r.mesh.alpha):
+                return "an animation changes the alpha of %s" % x.name
+        for v in self_illum.get(go_lower(x.name), ()):
+            if not _near_vec3(v, r.mesh.self_illum_color):
+                return "an animation changes the self-illumination of %s" % x.name
+    for d, c in pairs:
+        if _world_fits(wd, d[3], wr, c[3]):
+            continue
+        for x in dc:
+            if x not in in_r and x.scale != 0 and x.scale != 1:
+                return "the game drew it without the scale %s of %s" % (fmt_float(x.scale), x.name)
+        return "the game drew it elsewhere than the mesh itself is"
+    return ""
+
+
+def _same_f(a, b):
+    return a == b or (a != a and b != b)
+
+
+def _is_null_name(s):
+    return s == "" or equal_fold(s, "NULL")
+
+
+def _copy_drawing_state(r, n):
+    """copyDrawingState: give donor n receiver r's drawing settings; the names of those that differed."""
+    rm, m = r.mesh, n.mesh
+    diff = []
+    for name, attr in (("diffuse", "diffuse"), ("ambient", "ambient"), ("specular", "specular")):
+        a, b = getattr(m, attr), getattr(rm, attr)
+        if not all(_same_f(a[i], b[i]) for i in range(3)):
+            setattr(m, attr, b)
+            diff.append(name)
+    if not _same_f(m.shininess, rm.shininess):
+        m.shininess = rm.shininess
+        diff.append("shininess")
+    for name, attr in (("texture1", "texture1"), ("texture2", "texture2"), ("materialname", "material_name"),
+                       ("renderhint", "render_hint")):
+        a, b = getattr(m, attr), getattr(rm, attr)
+        if not equal_fold(a, b) and not (_is_null_name(a) and _is_null_name(b)):
+            setattr(m, attr, b)
+            diff.append(name)
+    for name, attr in (("transparencyhint", "transparency_hint"), ("tilefade", "tile_fade"),
+                       ("rotatetexture", "rotate_texture")):
+        if getattr(m, attr) != getattr(rm, attr):
+            setattr(m, attr, getattr(rm, attr))
+            diff.append(name)
+    if not _same_f(m.alpha, rm.alpha):
+        m.alpha = rm.alpha
+        diff.append("alpha")
+        if "alpha" in r.declared:
+            n.declared.add("alpha")
+    a, b = m.self_illum_color, rm.self_illum_color
+    if not all(_same_f(a[i], b[i]) for i in range(3)):
+        m.self_illum_color = b
+        diff.append("selfillumcolor")
+        if "selfillumcolor" in r.declared:
+            n.declared.add("selfillumcolor")
+    return diff
+
+
+def _fold_copies(r, folded):
+    """foldCopies: write the copies of folded donor faces as faces of r, in r's render list order."""
+    if not folded:
+        return
+    folded = sorted(folded, key=lambda p: p[1][4])
+    m = r.mesh
+    base = len(m.faces)
+    at = {}  # id(donor mesh) -> {donor face: r's new face}
+    for i, (dt, _c) in enumerate(folded):
+        at.setdefault(id(dt[2]), {})[dt[4]] = base + i
+    adj = len(m.stored_adjacency) == len(m.faces)
+    for dt, c in folded:
+        dm = dt[2]
+        df = dm.faces[dt[4]]
+        v = (c[3][0], c[3][1], c[3][2])
+        m.faces.append(Face(v, df.smooth_group, v, df.material))
+        if not adj:
+            continue
+        a = [-1, -1, -1]
+        rot = _copy_corners(dt, c)
+        if rot is not None and len(dm.stored_adjacency) == len(dm.faces):
+            for e in range(3):
+                j = dm.stored_adjacency[dt[4]][e]
+                nf = at[id(dm)].get(j)
+                if nf is not None and j >= 0 and nf <= 32767:
+                    a[(e + rot) % 3] = nf
+        m.stored_adjacency.append(a)
+
+
+def _drop_copy_vertices(r, rl):
+    """dropCopyVertices: remove the vertices r's render list used and none of its faces uses."""
+    m = r.mesh
+    nv = len(m.verts)
+    used = [False] * nv
+    for f in m.faces:
+        for k in range(3):
+            if f.verts[k] != f.uvs[k]:
+                return 0
+            v = f.verts[k]
+            if 0 <= v < nv:
+                used[v] = True
+    drop = [False] * nv
+    anyd = False
+    for v in rl:
+        if v < nv and not used[v]:
+            drop[v] = True
+            anyd = True
+    if not anyd:
+        return 0
+    keep = [i for i in range(nv) if not drop[i]]
+    if not _keep_vertices(r, keep):
+        return 0
+    return nv - len(keep)
+
+
+def _vertex_lists_ok(n):
+    """vertexListsOK: every per-vertex list full (or empty), faces index vertices and UVs alike."""
+    m = n.mesh
+    if (n.aabb is not None or n.anim_mesh is not None or m.corner_normals or m.mirror_list
+            or len(m.tex_indices0) + len(m.tex_indices1) + len(m.tex_indices2) + len(m.tex_indices3) > 0):
+        return False
+    nv = len(m.verts)
+
+    def full(lst):
+        return len(lst) == 0 or len(lst) == nv
+
+    if not all(full(x) for x in (m.normals, m.tangents, m.colors, m.tverts, m.tverts1, m.tverts2, m.tverts3)):
+        return False
+    if n.skin is not None and not full(n.skin.weights):
+        return False
+    if n.dangly is not None and not full(n.dangly.constraints):
+        return False
+    for f in m.faces:
+        if list(f.verts) != list(f.uvs):
+            return False
+    return True
+
+
+def _keep_vertices(n, keep):
+    """keepVertices: keep only the vertices keep (ascending) of n's mesh and renumber its faces."""
+    if not _vertex_lists_ok(n):
+        return False
+    m = n.mesh
+    nv = len(m.verts)
+    new_idx = [-1] * nv
+    for ni, oi in enumerate(keep):
+        new_idx[oi] = ni
+    for f in m.faces:
+        for k in range(3):
+            v = f.verts[k]
+            if 0 <= v < nv and new_idx[v] < 0:
+                return False
+
+    def pick(lst):
+        if not lst:
+            return lst
+        return [lst[oi] for oi in keep]
+
+    m.verts, m.normals, m.colors = pick(m.verts), pick(m.normals), pick(m.colors)
+    m.tverts, m.tverts1, m.tverts2, m.tverts3 = pick(m.tverts), pick(m.tverts1), pick(m.tverts2), pick(m.tverts3)
+    m.tangents = pick(m.tangents)
+    if n.skin is not None and n.skin.weights:
+        n.skin.weights = pick(n.skin.weights)
+    if n.dangly is not None and n.dangly.constraints:
+        n.dangly.constraints = pick(n.dangly.constraints)
+    for f in m.faces:
+        for k in range(3):
+            v = f.verts[k]
+            if 0 <= v < nv:
+                f.verts[k] = new_idx[v]
+                f.uvs[k] = new_idx[v]
+    return True
+
+
+def _copy_vertex(n, v):
+    """copyVertex: append a copy of vertex v, with everything listed per vertex; its index."""
+    m = n.mesh
+    nv = len(m.verts)
+    for attr in ("normals", "colors", "tverts", "tverts1", "tverts2", "tverts3", "tangents"):
+        lst = getattr(m, attr)
+        if len(lst) == nv:
+            lst.append(lst[v])
+    m.verts.append(m.verts[v])
+    if n.skin is not None and len(n.skin.weights) == nv:
+        n.skin.weights.append(n.skin.weights[v])
+    if n.dangly is not None and len(n.dangly.constraints) == nv:
+        n.dangly.constraints.append(n.dangly.constraints[v])
+    return nv
+
+
+def _donor_corners(n, pairs):
+    """donorCorners: give a donor put back the normals, tangents and handedness its copies were drawn with."""
+    m = n.mesh
+    nv = len(m.verts)
+    if nv == 0 or not pairs:
+        return
+    cm = pairs[0][1][2]
+    use_n = len(m.normals) >= nv and len(cm.normals) >= len(cm.verts)
+    use_t = len(m.tangents) >= nv and len(cm.tangents) >= len(cm.verts)
+    if not use_n and not use_t:
+        return
+    ms = []
+    best, best_area = -1, 0.0
+    for d, c in pairs:
+        r = _copy_corners(d, c)
+        if r is None:
+            continue
+        dp = [tuple(d[2].verts[d[3][j]]) for j in range(3)]
+        cp = [tuple(c[2].verts[c[3][(j + r) % 3]]) for j in range(3)]
+        e1 = (dp[1][0] - dp[0][0], dp[1][1] - dp[0][1], dp[1][2] - dp[0][2])
+        e2 = (dp[2][0] - dp[0][0], dp[2][1] - dp[0][1], dp[2][2] - dp[0][2])
+        z = _cross3(e1, e2)
+        a = math.sqrt(_dot3(z, z))
+        if a > best_area:
+            best, best_area = len(ms), a
+        ms.append((d, c, r, dp, cp))
+    if best < 0:
+        return
+    fd = _tri_frame(ms[best][3])
+    fc = _tri_frame(ms[best][4])
+    if fd is None or fc is None:
+        return
+
+    def to_donor(v):
+        n0 = n1 = n2 = 0.0
+        for a in range(3):
+            k = fc[a][0] * v[0] + fc[a][1] * v[1] + fc[a][2] * v[2]
+            n0 += k * fd[a][0]
+            n1 += k * fd[a][1]
+            n2 += k * fd[a][2]
+        return (n0, n1, n2)
+
+    zero = (0.0, 0.0, 0.0)
+
+    def same(a, b):  # values: (normal, tangent, handedness)
+        if use_n and _dist3(a[0], b[0]) > MERGE_NORMAL_TOLERANCE:
+            return False
+        return not use_t or (_dist3(a[1], b[1]) <= MERGE_NORMAL_TOLERANCE and (a[2] < 0) == (b[2] < 0))
+
+    def own(v):
+        nn = m.normals[v] if use_n else zero
+        if use_t:
+            t = m.tangents[v]
+            return (nn, (t[0], t[1], t[2]), t[3])
+        return (nn, zero, 0.0)
+
+    groups = [None] * nv  # per vertex: [[values, [(face, corner)]]]
+    for d, c, r, dp, cp in ms:
+        fits = True
+        for j in range(3):
+            k = (j + 1) % 3
+            ed = (dp[k][0] - dp[j][0], dp[k][1] - dp[j][1], dp[k][2] - dp[j][2])
+            ec = to_donor((cp[k][0] - cp[j][0], cp[k][1] - cp[j][1], cp[k][2] - cp[j][2]))
+            fits = _dist3(ed, ec) <= MERGE_TOLERANCE
+            if not fits:
+                break
+        if not fits:
+            continue
+        for j in range(3):
+            cv = c[3][(j + r) % 3]
+            wn = to_donor(cm.normals[cv]) if use_n else zero
+            if use_t:
+                t = cm.tangents[cv]
+                want = (wn, to_donor((t[0], t[1], t[2])), t[3])
+            else:
+                want = (wn, zero, 0.0)
+            v = d[3][j]
+            gs = groups[v]
+            if gs is None:
+                gs = groups[v] = []
+            for g in gs:
+                if same(g[0], want):
+                    g[1].append((d[4], j))
+                    break
+            else:
+                gs.append([want, [(d[4], j)]])
+
+    def set_values(v, want):
+        if use_n and _dist3(m.normals[v], want[0]) > MERGE_NORMAL_TOLERANCE:
+            m.normals[v] = (f32(want[0][0]), f32(want[0][1]), f32(want[0][2]))
+        if use_t:
+            t = m.tangents[v]
+            if _dist3((t[0], t[1], t[2]), want[1]) > MERGE_NORMAL_TOLERANCE or (t[3] < 0) != (want[2] < 0):
+                m.tangents[v] = (f32(want[1][0]), f32(want[1][1]), f32(want[1][2]), want[2])
+
+    used_by_face = [False] * nv
+    for f in m.faces:
+        for k in range(3):
+            v = f.verts[k]
+            if 0 <= v < nv:
+                used_by_face[v] = True
+    split = _vertex_lists_ok(n)
+    for v in range(nv):
+        gs = groups[v]
+        if not gs:
+            continue
+        home = 0
+        if len(gs) > 1:
+            o = own(v)
+            for gi, g in enumerate(gs):
+                if same(g[0], o):
+                    home = gi
+                    break
+        set_values(v, gs[home][0])
+        if not split:
+            continue
+        for gi, g in enumerate(gs):
+            if gi == home:
+                continue
+            u = -1
+            for x in range(nv):
+                if x != v and not used_by_face[x] and _same_corner(m, v, x) and same(own(x), g[0]):
+                    u = x
+                    break
+            if u < 0:
+                u = _copy_vertex(n, v)
+                set_values(u, g[0])
+            for fi, j in g[1]:
+                m.faces[fi].verts[j] = u
+                m.faces[fi].uvs[j] = u
