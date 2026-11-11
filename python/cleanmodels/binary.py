@@ -110,14 +110,40 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
     return d.model
 
 
-def written_anim_root(stored, matched, nodes):
-    """writtenAnimRoot: the animroot to write, matching case for case the node
-    the stored one matched (MDL-NODE-045), or none when it matched none."""
+def stored_anim_root_match(root, names, parents):
+    """storedAnimRootMatch: (whether the stored animroot names a stored node case
+    for case, whether the stored tree is wider than the game's cut leaves it)."""
+    if not root or equal_fold(root, "NULL"):
+        return False, False
+    if root not in names:
+        return False, False
+    m = names.index(root)
+    kept = [False] * len(names)
+    i = m
+    while i >= 0:
+        kept[i] = True
+        i = parents[i]
+    for i in range(len(names)):
+        j = i
+        while j >= 0 and not kept[i]:
+            if j == m:
+                kept[i] = True
+            j = parents[j]
+        if not kept[i]:
+            return True, True
+    return True, False
+
+
+def written_anim_root(stored, matched, wide, nodes):
+    """writtenAnimRoot: the animroot to write, so that a compile of the ASCII
+    cuts the tree (MDL-NODE-045) to what the binary holds: one matching the
+    node the stored one matched, or none when it matched none or the stored
+    tree is wider than that cut leaves it."""
     lower = stored.lower()
     if not stored or equal_fold(stored, "NULL"):
         return lower
     names = set(n.name for n in nodes)
-    if matched:
+    if matched and not wide:
         if lower not in names:
             for n in nodes:
                 if equal_fold(n.name, stored):
@@ -161,7 +187,9 @@ class _Decompiler:
         self.mdx_size = 0
         self.root_node_ptr = 0
         self.anim_ptrs = []
-        self.anim_stored_names = []  # Go: animStoredNames (writtenAnimRoot)
+        self.anim_stored_names = []  # Go: animStoredNames, animStoredParent, animStoredCur
+        self.anim_stored_parent = []
+        self.anim_stored_cur = -1
         self.node_order = []   # (name, part number)
         self.pending_skins = []
         self.visited_ptrs = set()
@@ -1208,10 +1236,11 @@ class _Decompiler:
                         t = self.read_f32()[0]
                         ename, _ = self.read_fixed_string(32)
                         anim.events.append((t, ename))
-        self.anim_stored_names = []
+        self.anim_stored_names, self.anim_stored_parent, self.anim_stored_cur = [], [], -1
         if root_node_ptr != 0:
             self.read_anim_node(anim, root_node_ptr, "NULL", 0)
-        anim.root = written_anim_root(root, root in self.anim_stored_names, anim.nodes)
+        matched, wide = stored_anim_root_match(root, self.anim_stored_names, self.anim_stored_parent)
+        anim.root = written_anim_root(root, matched, wide, anim.nodes)
         self.model.animations.append(anim)
         return None
 
@@ -1231,7 +1260,9 @@ class _Decompiler:
 
         self.skip(24 + 4 + 4)
         stored_name, _ = self.read_fixed_string_case(32)
+        stored_index = len(self.anim_stored_names)
         self.anim_stored_names.append(stored_name)
+        self.anim_stored_parent.append(self.anim_stored_cur)
         node_name = stored_name.lower()
         self.where = (anim.name, node_name, "the node header")
         self.skip(8)
@@ -1334,9 +1365,12 @@ class _Decompiler:
         anim.nodes.append(an)
 
         child_ptrs, _ = self.read_pointer_array(children_def)
+        prev_cur = self.anim_stored_cur
+        self.anim_stored_cur = stored_index
         for cp in child_ptrs:
             if cp != 0:
                 self.read_anim_node(anim, cp, node_name, depth + 1)
+        self.anim_stored_cur = prev_cur
 
     def read_anim_controllers(self, an, node_flag, keys_def, data_def):
         keys = self.read_controller_keys(keys_def)

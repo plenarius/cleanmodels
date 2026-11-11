@@ -201,9 +201,20 @@ class RoundTripFixes(unittest.TestCase):
         self.assertEqual(_anim_nodes(decompile(compile(m))), _anim_nodes(m))
         nodes = [Node(), Node()]
         nodes[0].name, nodes[1].name = "root", "arm"
-        for stored, matched, want in (("Arm", True, "arm"), ("arm", False, "ARM"), ("nosuchnode", False, "nosuchnode"),
-                                      ("NULL", False, "null"), ("", False, "")):
-            self.assertEqual(_binary.written_anim_root(stored, matched, nodes), want, stored)
+        for stored, matched, wide, want in (("Arm", True, False, "arm"), ("arm", False, False, "ARM"),
+                                            ("arm", True, True, "ARM"), ("nosuchnode", False, False, "nosuchnode"),
+                                            ("NULL", False, False, "null"), ("", False, False, "")):
+            self.assertEqual(_binary.written_anim_root(stored, matched, wide, nodes), want, stored)
+
+    def test_stored_anim_root_match(self):
+        """As TestStoredAnimRootMatch: a_ogre's animroot rootdummy beside headconjure, handconjure."""
+        names = ["a_ogre", "rootdummy", "pelvis_g", "headconjure", "handconjure"]
+        parents = [-1, 0, 1, 0, 0]
+        match = _binary.stored_anim_root_match
+        self.assertEqual(match("rootdummy", names, parents), (True, True))
+        self.assertEqual(match("rootdummy", names[:3], parents[:3]), (True, False))
+        self.assertEqual(match("ROOTDUMMY", names, parents), (False, False))
+        self.assertEqual(match("a_ogre", names, parents), (True, False))
 
     def test_duplicate_animations_kept_in_order(self):
         """zspec_animdup (MDL-ASCII-062), as TestCompileKeepsDuplicateAnimationsInOrder."""

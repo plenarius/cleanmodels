@@ -430,6 +430,16 @@ that matched nothing is written in lower case unless that would now match a
 node: `zspec_animroot`'s `ARM` over a node `arm` stays `ARM` (it was written
 `arm` up to 4.17.5, and a recompile then dropped `leg`).
 
+A binary not compiled by the game can hold a tree wider than its animroot's
+cut: Layonara's `a_ogre`, `a_skeleton`, `c_bugbeara`, `c_goblina` and
+`c_nasher` name `rootdummy` or `torso_g` and also keep `headconjure`,
+`handconjure` or a leg chain beside it (`storedAnimRootMatch`). The game plays
+a binary's tree as stored, so their animroot is written to match no node (in
+upper case, `ROOTDUMMY`), and a compile keeps the whole tree. Nothing at run
+time reads the animroot string (E71). nwn-mdl-spec#31's runner, which wants
+the written animroot to match a node exactly when the stored one does, fails
+these models on that alone.
+
 An animation node takes its geometry node's type. A node the geometry has no
 node of that name for is written with the type word its stored flags give
 (`AnimNode.Type`): `trimesh` for 0x21, `light` for 0x3, `emitter` for 0x5,
