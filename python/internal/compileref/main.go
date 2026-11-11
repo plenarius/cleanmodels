@@ -81,6 +81,18 @@ func compileOne(path, game string) (res result, out []byte) {
 	return res, buf.Bytes()
 }
 
+// latin1 spells s's bytes one character each (Latin-1), as the Python port
+// holds text, so the JSON carries them exactly: encoding/json would turn a
+// byte that is not UTF-8, such as the 0xF1 of a node name pestañas
+// (nwn-mdl-spec MDL-BIN-007), into U+FFFD.
+func latin1(s string) string {
+	r := make([]rune, len(s))
+	for i := 0; i < len(s); i++ {
+		r[i] = rune(s[i])
+	}
+	return string(r)
+}
+
 func main() {
 	game := flag.String("game", "", "game install directory")
 	outDir := flag.String("o", "", "also write each compiled model to DIR/<n>.mdl")
@@ -97,6 +109,10 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
+		}
+		res.Error = latin1(res.Error)
+		for i, w := range res.Warnings {
+			res.Warnings[i] = latin1(w)
 		}
 		if err := enc.Encode(res); err != nil {
 			fmt.Fprintln(os.Stderr, err)
