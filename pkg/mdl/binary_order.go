@@ -59,34 +59,51 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	if !walksAs(stored, children, stored) {
 		return
 	}
-	plan := func(hint func(*Node) int32) []*Node {
-		if !dupParent {
-			if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true, hint) {
-				return order
-			}
+	stale := func(n *Node) int32 {
+		if h, ok := storedHints[n]; ok {
+			return h
 		}
-		if order, unsorted := inverseSortOrder(stored, children, hint); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false, hint) {
-			return order
-		}
-		return nil
+		return n.Mesh.TransparencyHint
 	}
-	// First with the hints the ASCII carries, which the compile sorts by: an
-	// order found there rebuilds the stored tree as compiled. Only when none
-	// is found, and the stored order does not rebuild it either, the stored
-	// hints a restored donor had are tried: the stored tree was sorted by
-	// them, so an order planned with them can still give the stored numbers,
-	// and the compile then moves only what the donors' new hints sort
-	// elsewhere. Planning with them first would let std::sort, past 16
-	// children, reshuffle every tie of a donor's siblings where an order
-	// with the new hints keeps them.
-	order := plan(meshHint)
-	if order == nil && len(storedHints) > 0 && !compilesTo(stored, stored, parentOf, children, nil, false, meshHint) {
-		order = plan(func(n *Node) int32 {
-			if h, ok := storedHints[n]; ok {
-				return h
+	// Candidates are checked with the hints the ASCII carries, which the
+	// compile sorts by, so one taken rebuilds the stored tree as compiled.
+	// A restored donor's stored hint (storedHints) is what the stored tree
+	// was sorted by: an order planned with it can give the stored numbers
+	// where none planned with the new hints does, but the compile sorts the
+	// donor by its new hint. Before an order with the new hints, such an order
+	// is taken only when that compile leaves every other node where it is
+	// stored (keepsOthers, plc_tn2_13): past 16 children std::sort can
+	// otherwise reshuffle the donor's equal-hint siblings where an order with
+	// the new hints keeps them, a draw order change (trlk1_o08_01,
+	// tcn01_s05_01).
+	order := []*Node(nil)
+	if !dupParent {
+		if part := partNumberOrder(m); part != nil {
+			switch {
+			case compilesTo(part, stored, parentOf, children, nil, true, meshHint):
+				order = part
+			case len(storedHints) > 0 && compilesTo(part, stored, parentOf, children, nil, true, stale) &&
+				keepsOthers(part, stored, parentOf, storedHints):
+				order = part
 			}
-			return n.Mesh.TransparencyHint
-		})
+		}
+	}
+	if order == nil {
+		if inv, unsorted := inverseSortOrder(stored, children, meshHint); inv != nil && compilesTo(inv, stored, parentOf, children, unsorted, false, meshHint) {
+			order = inv
+		}
+	}
+	// When no order rebuilds the stored tree with the new hints, and the
+	// stored order does not either, the compile moves the donor's siblings
+	// whatever is declared: an order planned with the stored hints at least
+	// gives the stored tree up to the donors' new places (plc_tn1_44,
+	// ttu01_o14_01).
+	if order == nil && len(storedHints) > 0 && !compilesTo(stored, stored, parentOf, children, nil, false, meshHint) {
+		if part := partNumberOrder(m); !dupParent && part != nil && compilesTo(part, stored, parentOf, children, nil, true, stale) {
+			order = part
+		} else if inv, unsorted := inverseSortOrder(stored, children, stale); inv != nil && compilesTo(inv, stored, parentOf, children, unsorted, false, stale) {
+			order = inv
+		}
 	}
 	if order != nil {
 		m.Nodes = order
@@ -270,4 +287,36 @@ func depthFirst(root *Node, children map[*Node][]*Node) []*Node {
 		}
 	}
 	return out
+}
+
+// keepsOthers reports whether compiling the nodes declared in order, sorted
+// by the hints they carry, puts every node but the restored donors (the keys
+// of moved) under its stored parent and in its stored order: only the donors
+// move, sorted by their new hints.
+func keepsOthers(order, stored []*Node, storedParent map[*Node]*Node, moved map[*Node]int32) bool {
+	parentOf, children := resolveGeomTree(order)
+	for _, n := range order {
+		if parentOf[n] != storedParent[n] {
+			return false
+		}
+	}
+	reorderChildren(order[0], children)
+	got := depthFirst(order[0], children)
+	i := 0
+	for _, n := range got {
+		if _, ok := moved[n]; ok {
+			continue
+		}
+		for i < len(stored) {
+			if _, ok := moved[stored[i]]; !ok {
+				break
+			}
+			i++
+		}
+		if i >= len(stored) || stored[i] != n {
+			return false
+		}
+		i++
+	}
+	return true
 }

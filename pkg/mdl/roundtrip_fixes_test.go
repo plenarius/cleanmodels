@@ -829,3 +829,31 @@ func TestDecompileOrderDonorSortedByNewHint(t *testing.T) {
 		t.Errorf("a compile of %s does not rebuild the stored tree", nodeNames(d.model.Nodes))
 	}
 }
+
+// A restored donor whose stored place also sorts right with its new hint, in
+// a model declared out of tree order (plc_tn2_13): with the new hints the
+// stored order rebuilds the tree but not the numbers, and part-number order
+// gives neither. Part-number order planned with the stored hint gives the
+// numbers, and its compile moves only the donor: it is taken.
+func TestDecompileOrderPartNumbersWithStoredDonorHint(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	b := &Node{Name: "b", Parent: "root", PartNumber: 3}
+	lower := &Node{Name: "lower", Parent: "root", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: -3}, PartNumber: 2}
+	trim := &Node{Name: "trim", Parent: "root", Mesh: mergeQuad("othertex", 1, 9), PartNumber: 1}
+	trim.Mesh.TransparencyHint = 1
+	wall := &Node{Name: "wall", Parent: "root", Mesh: mergeQuad("tex", 1, 0), PartNumber: 4}
+	wall.Mesh.TransparencyHint = 1
+	wall.Mesh.Verts = append(wall.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	wall.Mesh.TVerts = append(wall.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	stored := []*Node{root, b, lower, trim, wall}
+	d := &decompiler{model: &Model{Nodes: append([]*Node(nil), stored...), SuperModel: "NULL"}}
+	d.renderLists = map[*Node][]uint16{wall: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}, trim: nil}
+	d.unmergeRenderLists()
+	if lower.Mesh.TransparencyHint != 1 || d.storedHints[lower] != 0 {
+		t.Fatalf("lower: hint %d, stored %v; want restored with wall's hint 1, stored 0", lower.Mesh.TransparencyHint, d.storedHints)
+	}
+	declarationOrder(d.model, d.storedHints)
+	if want := []*Node{root, trim, lower, b, wall}; !slices.Equal(d.model.Nodes, want) {
+		t.Errorf("order %s, want part-number order", nodeNames(d.model.Nodes))
+	}
+}

@@ -29,24 +29,35 @@ def declaration_order(m, stored_hints=None):
     if not _walks_as(stored, children, stored):
         return
 
-    def plan(hint):
-        if not dup_parent:
-            order = _part_number_order(m)
-            if order is not None and _compiles_to(order, stored, parent_of, children, None, True, hint):
-                return order
-        order, unsorted = _inverse_sort_order(stored, children, hint)
-        if order is not None and _compiles_to(order, stored, parent_of, children, unsorted, False, hint):
-            return order
-        return None
+    def stale(n):
+        h = stored_hints.get(n)
+        return n.mesh.transparency_hint if h is None else h
 
-    # first with the hints the ASCII carries; the stored hints of restored
-    # donors only when no order rebuilds the stored tree with them
-    order = plan(mesh_hint)
+    # checked with the hints the ASCII carries; an order planned with a restored
+    # donor's stored hint only when its compile moves no other node (keepsOthers)
+    order = None
+    if not dup_parent:
+        part = _part_number_order(m)
+        if part is not None:
+            if _compiles_to(part, stored, parent_of, children, None, True, mesh_hint):
+                order = part
+            elif stored_hints and _compiles_to(part, stored, parent_of, children, None, True, stale) and \
+                    _keeps_others(part, stored, parent_of, stored_hints):
+                order = part
+    if order is None:
+        inv, unsorted = _inverse_sort_order(stored, children, mesh_hint)
+        if inv is not None and _compiles_to(inv, stored, parent_of, children, unsorted, False, mesh_hint):
+            order = inv
+    # no order rebuilds the stored tree with the new hints, nor the stored order:
+    # an order planned with the stored hints, whatever else the compile moves
     if order is None and stored_hints and not _compiles_to(stored, stored, parent_of, children, None, False, mesh_hint):
-        def stored_hint(n):
-            h = stored_hints.get(n)
-            return n.mesh.transparency_hint if h is None else h
-        order = plan(stored_hint)
+        part = None if dup_parent else _part_number_order(m)
+        if part is not None and _compiles_to(part, stored, parent_of, children, None, True, stale):
+            order = part
+        else:
+            inv, unsorted = _inverse_sort_order(stored, children, stale)
+            if inv is not None and _compiles_to(inv, stored, parent_of, children, unsorted, False, stale):
+                order = inv
     if order is not None:
         m.nodes = order
 
@@ -166,3 +177,24 @@ def _depth_first(root, children):
             if kids[k] not in visited:
                 stack.append(kids[k])
     return out
+
+
+def _keeps_others(order, stored, stored_parent, moved):
+    """keepsOthers: compiling order (sorted by the hints the nodes carry) puts
+    every node but the donors in moved under its stored parent and in its
+    stored order."""
+    parent_of, children = resolve_geom_tree(order)
+    for n in order:
+        if parent_of.get(n) is not stored_parent.get(n):
+            return False
+    reorder_children(order[0], children)
+    i = 0
+    for n in _depth_first(order[0], children):
+        if n in moved:
+            continue
+        while i < len(stored) and stored[i] in moved:
+            i += 1
+        if i >= len(stored) or stored[i] is not n:
+            return False
+        i += 1
+    return True

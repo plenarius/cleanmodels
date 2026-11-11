@@ -365,6 +365,42 @@ class RoundTripFixes(unittest.TestCase):
         reorder_children(d.model.nodes[0], children)
         self.assertTrue(_walks_as(d.model.nodes, children, stored), [n.name for n in d.model.nodes])
 
+    def test_order_part_numbers_with_stored_donor_hint(self):
+        # plc_tn2_13: part-number order planned with the donor's stored hint gives
+        # the numbers, and its compile moves only the donor
+        def quad(bitmap, render, dx, hint=0):
+            q = MeshData()
+            q.bitmap = bitmap
+            q.render = render
+            q.transparency_hint = hint
+            q.verts = [(dx, 0.0, 0.0), (dx + 1, 0.0, 0.0), (dx + 1, 1.0, 0.0), (dx, 1.0, 0.0)]
+            q.tverts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+            q.faces = [Face((0, 1, 2), 0, (0, 1, 2)), Face((0, 2, 3), 0, (0, 2, 3))]
+            return q
+
+        def node(name, mesh, number, x=0.0):
+            n = Node(name, "root")
+            n.mesh = mesh
+            n.part_number = number
+            n.position = (x, 0.0, 0.0)
+            return n
+
+        root = Node("root", "NULL")
+        b = node("b", None, 3)
+        lower = node("lower", quad("tex", 0, 5.0), 2, -3.0)
+        trim = node("trim", quad("othertex", 1, 9.0, 1), 1)
+        wall = node("wall", quad("tex", 1, 0.0, 1), 4)
+        wall.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        wall.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        d = _Decompiler(b"", [])
+        d.model.super_model = "NULL"
+        d.model.nodes = [root, b, lower, trim, wall]
+        d.render_lists = {wall: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7], trim: []}
+        unmerge_render_lists(d)
+        self.assertEqual((lower.mesh.transparency_hint, d.stored_hints.get(lower)), (1, 0))
+        declaration_order(d.model, d.stored_hints)
+        self.assertEqual([n.name for n in d.model.nodes], ["root", "trim", "lower", "b", "wall"])
+
     def test_order_part_numbers_duplicate_leaf(self):
         first = compile_text(DUP_LEAF)
         again = compile_text(write(decompile(first)))

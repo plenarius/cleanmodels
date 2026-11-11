@@ -94,14 +94,16 @@ only when a compile of it rebuilds the stored tree.
 
 - **Sort keys.** A donor restored from a merged render list takes its
   receiver's transparencyhint (see "Merged render lists"), and the ASCII
-  carries that one, so the candidates are planned with it first: an order
-  found that way rebuilds the stored tree as a compile sorts it. Only when
-  none does, and the stored order does not either, are they planned with the
-  stored hints, which the stored tree was sorted by; the compile then sorts
-  the donor among its siblings by its new hint (`plc_tn1_28`). Planning with
-  the stored hints first moved the equal-hint siblings of a donor whose
-  stored hint was the only one above 0 (`trlk1_o08_01`): the compile, sorting
-  nothing, kept the order a sort would have turned back.
+  carries that one, so candidates are checked with it: one taken rebuilds
+  the stored tree as a compile sorts it. The stored tree was sorted by the
+  donor's stored hint, so an order planned with it can still give the stored
+  numbers where none planned with the new hints does (`plc_tn1_28`,
+  `plc_tn2_13`); the compile then sorts the donor by its new hint. Such an
+  order is taken only when that compile leaves every other node in its
+  stored place. Otherwise std::sort, past 16 children, can reshuffle the
+  donor's equal-hint siblings (`trlk1_o08_01`, whose donor's stored hint was
+  the only one above 0, came back with them reversed), which changes the
+  draw order.
 - **Duplicate names.** A parent is found by name: the nearest node of that
   name declared before it. A name used twice by nodes that are no parent
   changes nothing. Where a name used twice is some node's parent (a child
