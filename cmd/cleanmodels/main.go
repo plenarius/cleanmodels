@@ -254,6 +254,7 @@ func runLegacy(args []string) int {
 
 	opts := procOpts{
 		check:          *checkFlag,
+		checkFix:       true,
 		overwrite:      *overwriteFlag,
 		decompileOnly:  *decompileOnly,
 		forceBin:       *decompileFlag,

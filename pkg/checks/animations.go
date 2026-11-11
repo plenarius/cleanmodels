@@ -84,8 +84,8 @@ func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResu
 				Severity: mdl.SevWarning,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: animation %q had empty animroot, set to %q",
-					file, a.Name, bestRoot,
+					"%s: animation %q has empty animroot; %s %q",
+					file, a.Name, fixVerb(fix, "set to", "would be set to"), bestRoot,
 				),
 			})
 			continue
@@ -101,8 +101,8 @@ func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResu
 				Severity: mdl.SevError,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: animation %q had animroot %q which does not exist, set to %q",
-					file, a.Name, old, bestRoot,
+					"%s: animation %q has animroot %q which does not exist; %s %q",
+					file, a.Name, old, fixVerb(fix, "set to", "would be set to"), bestRoot,
 				),
 			})
 		}
@@ -117,8 +117,8 @@ func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResu
 				Severity: mdl.SevWarning,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: TILE animation %q had animroot %q, set to model name %q",
-					file, a.Name, old, model.Name,
+					"%s: TILE animation %q has animroot %q; %s model name %q",
+					file, a.Name, old, fixVerb(fix, "set to", "would be set to"), model.Name,
 				),
 			})
 		}
@@ -205,8 +205,8 @@ func checkAnimationTransTime(model *mdl.Model, file string, fix bool) []mdl.Chec
 				Severity: mdl.SevWarning,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: animation %q had negative TransTime %g, set to 0",
-					file, a.Name, old,
+					"%s: animation %q has negative TransTime %g; %s 0",
+					file, a.Name, old, fixVerb(fix, "set to", "would be set to"),
 				),
 			})
 		}

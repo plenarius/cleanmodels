@@ -64,8 +64,8 @@ func checkEmitterEnumField(checkName, fieldName string, getter func(*mdl.Emitter
 					Severity: mdl.SevWarning,
 					Fixed:    fixed,
 					Message: fmt.Sprintf(
-						"%s: emitter node %q had invalid %s %q, set to %q",
-						file, n.Name, fieldName, val, defaultVal,
+						"%s: emitter node %q has invalid %s %q; %s %q",
+						file, n.Name, fieldName, val, fixVerb(fix, "set to", "would be set to"), defaultVal,
 					),
 				})
 			}
@@ -196,7 +196,7 @@ func checkEmitterSizeConsistency(model *mdl.Model, file string, fix bool) []mdl.
 					Node:     n.Name,
 					Severity: mdl.SevWarning,
 					Fixed:    fixed,
-					Message:  fmt.Sprintf("%s: emitter node %q had negative %s %g, set to 0", file, n.Name, f.name, old),
+					Message:  fmt.Sprintf("%s: emitter node %q has negative %s %g; %s 0", file, n.Name, f.name, old, fixVerb(fix, "set to", "would be set to")),
 				})
 			}
 		}
@@ -225,8 +225,8 @@ func checkEmitterMissingTexture(model *mdl.Model, file string, fix bool) []mdl.C
 				Severity: mdl.SevWarning,
 				Fixed:    fixed,
 				Message: fmt.Sprintf(
-					"%s: emitter node %q had empty texture, set to \"fxpa_default\"",
-					file, n.Name,
+					"%s: emitter node %q has empty texture; %s \"fxpa_default\"",
+					file, n.Name, fixVerb(fix, "set to", "would be set to"),
 				),
 			})
 		}

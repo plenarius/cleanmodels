@@ -19,10 +19,19 @@ cleanmodels repair  [flags] <input>
 ```
 
 Both accept a single file or a directory (recursive with `--recursive`).
-`check` runs every check in the registry with `fix=false`. `repair` runs the
-same checks with `fix=true` and additionally applies whichever optional
-transforms are enabled by flag. Pass `--dry-run` to repair to see what would
-change without writing anything.
+`check` runs every check in the registry with `fix=false`: it reports on the
+model as written and changes nothing, so a later check sees what an earlier
+check would fix. `check --fix` and `repair --check` run the same checks with
+`fix=true`, each fix applied before the next check runs, and `repair`
+additionally applies whichever optional transforms are enabled by flag. Pass
+`--dry-run` to repair to see what would change without writing anything.
+
+In `--json` and `--json-lines` output, a finding's `"fixed"` is `true` only
+when its fix was applied to the model. Without `--fix` (and with `--dry-run`)
+it is always `false`, and the message says what the fix would do ("would be
+renamed to ...") instead of what it did. Up to 4.17.5, plain `check` applied
+the fixable checks in memory, reported them as `"fixed": true` with messages
+in the past tense, and those fixes hid later findings; nothing was written.
 
 Checks can be selected explicitly:
 
@@ -69,6 +78,18 @@ Each check returns a list of `CheckResult` values; running with `fix=true`
 asks each check to mutate the model in place when it can. Some checks are
 diagnostic-only (e.g. parameter range warnings); those are noted in the
 result message.
+
+`cleanmodels check --list` prints every check with its category, whether it
+can fix, and a one-line description. Severities to know about, after a check
+of 94,719 Layonara models showed these rules reporting valid models:
+
+| Check | Severity | What it reports |
+|---|---|---|
+| `base_dummy_wrong_type` | warning | The root node (parent `NULL`, named after the model) is not a dummy. The engine takes whichever node has parent `NULL` as the root (nwn-mdl-spec MDL-NODE-001) and the compiler handles a mesh root; parts with a mesh root (`pmh0_chest201`, `pmh0_head154`) draw correctly in game. It was fatal up to 4.17.5. `repair --wrap-root` puts a dummy above it. |
+| `base_dummy_parent_null` | error | No node has parent `NULL`, so the model has no root. The root is found by its `NULL` parent, not by the model's name, so a mesh that shares the model's name under a dummy root is not reported (`duplicate_node_names` reports the shared name). The fix makes the node named after the model the root. |
+| `renderhint_consistency` | info | A mesh with a `renderhint` and no `materialname`, or the reverse. Both are valid: the mesh's own hint is used (MDL-MESH-040), and a mesh with none takes its material's (MDL-MESH-041). It has no fix; up to 4.17.5 it was a warning whose fix cleared both and stripped normal mapping. |
+| `tangent_validation` | warning | Tangents of zero length (drawn as white streaks; the fix drops them so the compiler computes them), and, for binary input only, a normal-mapped mesh that stores no tangents. An ASCII model needs none: the compiler generates them for hints 2 and 3 (MDL-MESH-042). |
+| `null_bitmaps` | warning | A trimesh or skin drawn with no bitmap; the fix sets `render 0`. Armour parts (`p<gender><race><phenotype>_<slot><number>`, such as `pfb0_legl081`) are skipped: the game textures them from the part's PLT whatever their bitmap (E30), so `render 0` would hide them. |
 
 ## What `repair` does on top of the checks
 

@@ -19,6 +19,8 @@ def omit_generated_tangents(d, material_dirs):
             continue
         rl = d.render_lists.get(n) if d.render_lists else None
         ok, clones = _regenerable_tangents(n, rl or [], material_dirs)
+        if ok:
+            n.mesh.tangents_omitted = True
         if ok and clones == 0:
             d.note(WARN_GENERAL, 0, n.name,
                    "mesh %s: tangents left out: a compile generates the same ones (the mesh is normal-mapped)"

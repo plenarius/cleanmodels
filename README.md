@@ -185,6 +185,8 @@ cleanmodels check --exclude-checks emitter_spread,missing_bitmap models/
 | `--include-checks` | | Comma-separated check names to run exclusively |
 | `--exclude-checks` | | Comma-separated check names to skip |
 
+Without `--fix`, `check` changes nothing, not even in memory: every check sees the model as written, each finding has `"fixed": false` in `--json`/`--json-lines`, and its message says what the fix would do. With `--fix` (or `repair --check`), each fix is applied before the next check runs and its finding has `"fixed": true`. `check --list` prints every check; [CLEAN.md](CLEAN.md) explains the severities that are easy to misread.
+
 To see how a skinned model is put together, without sharing the model, run the skin checks verbosely:
 
 ```bash

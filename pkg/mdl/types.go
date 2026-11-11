@@ -96,6 +96,11 @@ type MeshData struct {
 	Normals         []Vec3
 	CornerNormals   [][3]Vec3 // per-face-corner normals from smoothing groups (compiler-generated)
 	Tangents        []Vec4
+	// TangentsOmitted is set on a mesh decompiled from a binary whose stored
+	// tangents were left out because a compile generates the same again
+	// (omitGeneratedTangents): the binary has tangents although Tangents is
+	// empty. It is not written to the ASCII.
+	TangentsOmitted bool
 	Colors          []Vec3
 	TVerts          []Vec3
 	TVerts1         []Vec3

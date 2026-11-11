@@ -117,10 +117,11 @@ func cmdRepair(args []string) int {
 	}
 
 	opts := procOpts{
-		check:   *check,
-		dryRun:  *dryRun,
-		include: parseNameSet(*includeStr),
-		exclude: parseNameSet(*excludeStr),
+		check:    *check,
+		checkFix: true,
+		dryRun:   *dryRun,
+		include:  parseNameSet(*includeStr),
+		exclude:  parseNameSet(*excludeStr),
 		repairOpts: repairOpts{
 			scale:          float32(*scaleFactor),
 			scaleX:         float32(*scaleX),

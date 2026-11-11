@@ -2,6 +2,8 @@ package checks
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/plenarius/cleanmodels/pkg/mdl"
@@ -12,9 +14,9 @@ const nwnResrefLimit = 16
 func init() {
 	Register("black_ambient", "parameters", false, "Detect zero ambient with non-zero diffuse", checkBlackAmbient)
 	Register("black_diffuse", "parameters", false, "Detect zero diffuse color on mesh nodes", checkBlackDiffuse)
-	Register("renderhint_consistency", "parameters", true, "Clear mismatched renderhint/materialname pairs", checkRenderhintConsistency)
-	Register("tangent_validation", "parameters", false, "Detect missing tangents on normal-mapped meshes, and tangents of zero length", checkTangentValidation)
-	Register("null_bitmaps", "parameters", true, "Set render=0 on meshes with missing bitmaps", checkNullBitmaps)
+	Register("renderhint_consistency", "parameters", false, "Note a mesh with a renderhint and no materialname, or the reverse (info: both are valid; the hint then comes from the mesh or from its material)", checkRenderhintConsistency)
+	Register("tangent_validation", "parameters", false, "Detect tangents of zero length, and a normal-mapped mesh of a binary model that stores no tangents", checkTangentValidation)
+	Register("null_bitmaps", "parameters", true, "Set render=0 on meshes with missing bitmaps (not armour parts, which the game textures from their PLT)", checkNullBitmaps)
 	Register("shadow_render_consistency", "parameters", false, "Detect shadow=1 with render=0 inconsistency", checkShadowRenderConsistency)
 	Register("vertex_color_count", "parameters", true, "Fix vertex color array to match vertex count", checkVertexColorCount)
 	Register("resref_length", "parameters", false, "Detect texture/material names exceeding 16-char resref limit", checkResrefLength)
@@ -75,7 +77,13 @@ func checkBlackDiffuse(model *mdl.Model, file string, _ bool) []mdl.CheckResult 
 	return out
 }
 
-func checkRenderhintConsistency(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
+// checkRenderhintConsistency notes a mesh that has a renderhint and no
+// materialname, or a materialname and no renderhint. Both are valid EE
+// material setups, so it is information only and changes nothing: a mesh's
+// own renderhint is used as given (nwn-mdl-spec MDL-MESH-040), and a mesh with
+// none takes the hint of its material (MDL-MESH-041). Clearing either would
+// strip the normal mapping from models such as the tmd18c tiles.
+func checkRenderhintConsistency(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
@@ -85,31 +93,34 @@ func checkRenderhintConsistency(model *mdl.Model, file string, fix bool) []mdl.C
 			continue
 		}
 		mh := n.Mesh
-		hasHint := mh.RenderHint != ""
-		hasMat := mh.MaterialName != ""
-		if hasHint != hasMat {
-			oldHint, oldMat := mh.RenderHint, mh.MaterialName
-			fixed := false
-			if fix {
-				mh.RenderHint = ""
-				mh.MaterialName = ""
-				fixed = true
-			}
-			out = append(out, mdl.CheckResult{
-				Check:    "renderhint_consistency",
-				Node:     n.Name,
-				Severity: mdl.SevWarning,
-				Fixed:    fixed,
-				Message: fmt.Sprintf(
-					"%s: mesh node %q had renderhint %q and materialname %q (mismatched), cleared both",
-					file, n.Name, oldHint, oldMat,
-				),
-			})
+		var msg string
+		switch {
+		case mh.RenderHint != "" && mh.MaterialName == "":
+			msg = fmt.Sprintf("%s: mesh node %q has renderhint %q and no materialname; the game uses the mesh's own hint",
+				file, n.Name, mh.RenderHint)
+		case mh.RenderHint == "" && mh.MaterialName != "":
+			msg = fmt.Sprintf("%s: mesh node %q has materialname %q and no renderhint; the game takes the hint from the material",
+				file, n.Name, mh.MaterialName)
+		default:
+			continue
 		}
+		out = append(out, mdl.CheckResult{
+			Check:    "renderhint_consistency",
+			Node:     n.Name,
+			Severity: mdl.SevInfo,
+			Message:  msg,
+		})
 	}
 	return out
 }
 
+// checkTangentValidation reports tangents of zero length, which the game draws
+// as white streaks on a normal-mapped surface; the fix drops them so the
+// compiler computes them all from the geometry. It also reports a mesh of a
+// binary model whose render hint is normal-mapped and which stores no
+// tangents: the game reads a binary's tangents as stored (E31) and draws that
+// mesh without them. An ASCII model needs none: the compiler generates them
+// for hints 2 and 3 (MDL-MESH-042), so that finding is for binary input only.
 func checkTangentValidation(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -119,9 +130,6 @@ func checkTangentValidation(model *mdl.Model, file string, fix bool) []mdl.Check
 		if n == nil || n.Mesh == nil {
 			continue
 		}
-		// The game draws tangents as given: zero-length ones show as white
-		// streaks on a normal-mapped surface. Dropping them makes the
-		// compiler compute them all from the geometry.
 		if z := mdl.ZeroLengthTangents(n.Mesh); z > 0 {
 			total := len(n.Mesh.Tangents)
 			if fix {
@@ -133,33 +141,51 @@ func checkTangentValidation(model *mdl.Model, file string, fix bool) []mdl.Check
 				Severity: mdl.SevWarning,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: mesh node %q has %d of %d tangents of zero length (drawn as white streaks); dropping them lets the compiler compute them",
+					"%s: mesh node %q has %d of %d tangents of zero length (drawn as white streaks); %s",
 					file, n.Name, z, total,
+					fixVerb(fix, "dropped them so the compiler computes them", "dropping them lets the compiler compute them"),
 				),
 			})
 			continue
 		}
-		if n.Mesh.RenderHint != "NormalAndSpecMapped" {
+		if model.FileType != "binary" || n.Mesh.TangentsOmitted || len(n.Mesh.Tangents) != 0 {
 			continue
 		}
-		if len(n.Mesh.Tangents) == 0 {
+		if hint := n.Mesh.RenderHint; strings.EqualFold(hint, "NormalAndSpecMapped") || strings.EqualFold(hint, "NormalTangents") {
 			out = append(out, mdl.CheckResult{
 				Check:    "tangent_validation",
 				Node:     n.Name,
 				Severity: mdl.SevWarning,
 				Message: fmt.Sprintf(
-					"%s: mesh node %q uses RenderHint NormalAndSpecMapped but has no tangents",
-					file, n.Name,
+					"%s: mesh node %q uses RenderHint %s but the binary stores no tangents, so the game draws it without normal mapping; compiling the decompiled model generates them",
+					file, n.Name, hint,
 				),
-				Fixed: false,
 			})
 		}
 	}
 	return out
 }
 
+// armourPartName matches the models the game builds a creature's body from:
+// p, gender, race, phenotype, then the slot and the part number
+// (pmh0_chest001, pfb2_legl080).
+var armourPartName = regexp.MustCompile(`^p[mf][a-z][0-9]+_(head|neck|chest|belt|pelvis|shol|shor|bicepl|bicepr|forel|forer|handl|handr|legl|legr|shinl|shinr|footl|footr|robe)[0-9]{3,}$`)
+
+// isArmourPart reports whether a model, by its name or its file name, is an
+// armour part, which the game textures from the part's PLT whatever bitmap its
+// meshes name (nwn-mdl-spec E30).
+func isArmourPart(model *mdl.Model, file string) bool {
+	stem := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+	return armourPartName.MatchString(strings.ToLower(model.Name)) ||
+		armourPartName.MatchString(strings.ToLower(stem))
+}
+
+// checkNullBitmaps reports meshes drawn with no bitmap; the fix stops drawing
+// them (render 0). Armour parts are left alone: the game replaces their
+// texture with the part's PLT (E30), so a part with no bitmap is drawn
+// textured, and render 0 would hide it.
 func checkNullBitmaps(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
-	if model == nil {
+	if model == nil || isArmourPart(model, file) {
 		return nil
 	}
 	var out []mdl.CheckResult
@@ -183,8 +209,8 @@ func checkNullBitmaps(model *mdl.Model, file string, fix bool) []mdl.CheckResult
 				Severity: mdl.SevWarning,
 				Fixed:    fixed,
 				Message: fmt.Sprintf(
-					"%s: %s node %q had render=1 but no bitmap, set render=0",
-					file, nt, n.Name,
+					"%s: %s node %q has render=1 but no bitmap; %s",
+					file, nt, n.Name, fixVerb(fix, "set render=0", "would set render=0"),
 				),
 			})
 		}
@@ -250,8 +276,8 @@ func checkVertexColorCount(model *mdl.Model, file string, fix bool) []mdl.CheckR
 				Severity: mdl.SevError,
 				Fixed:    fixed,
 				Message: fmt.Sprintf(
-					"%s: mesh node %q had %d vertex colors but %d vertices, adjusted",
-					file, n.Name, oldCount, nv,
+					"%s: mesh node %q has %d vertex colors but %d vertices; %s",
+					file, n.Name, oldCount, nv, fixVerb(fix, "adjusted", "would be adjusted"),
 				),
 			})
 		}

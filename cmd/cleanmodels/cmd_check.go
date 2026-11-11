@@ -68,10 +68,11 @@ func cmdCheck(args []string) int {
 	}
 
 	opts := procOpts{
-		check:   true,
-		dryRun:  *dryRun,
-		include: parseNameSet(*includeStr),
-		exclude: parseNameSet(*excludeStr),
+		check:    true,
+		checkFix: *fix,
+		dryRun:   *dryRun,
+		include:  parseNameSet(*includeStr),
+		exclude:  parseNameSet(*excludeStr),
 	}
 	cf.apply(&opts)
 	opts.force = *keepLost

@@ -12,8 +12,8 @@ import (
 func init() {
 	Register("duplicate_node_names", "structural", true, "Fix duplicate node names by appending a unique suffix", checkDuplicateNodeNames)
 	Register("missing_parents", "structural", true, "Reparent orphaned nodes to the model root", checkMissingParents)
-	Register("base_dummy_wrong_type", "structural", false, "Detect root node with non-dummy type", checkBaseDummyWrongType)
-	Register("base_dummy_parent_null", "structural", true, "Set root node parent to NULL if incorrect", checkBaseDummyParentNull)
+	Register("base_dummy_wrong_type", "structural", false, "Detect a root node that is not a dummy (a warning: the compiler and the game take a mesh root)", checkBaseDummyWrongType)
+	Register("base_dummy_parent_null", "structural", true, "Detect a model with no root node (none has parent NULL); the fix makes the node named after the model the root", checkBaseDummyParentNull)
 	Register("duplicate_animations", "structural", true, "Merge duplicate animation blocks", checkDuplicateAnimations)
 	Register("aabb_has_child_nodes", "structural", false, "Detect child nodes under AABB nodes", checkAabbHasChildNodes)
 	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
@@ -123,8 +123,8 @@ func checkDuplicateNodeNames(model *mdl.Model, file string, fix bool) []mdl.Chec
 			Severity: mdl.SevWarning,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: duplicate node %q renamed to %q",
-				file, old, newName,
+				"%s: duplicate node %q %s %q",
+				file, old, fixVerb(fix, "renamed to", "would be renamed to"), newName,
 			),
 		})
 	}
@@ -161,8 +161,8 @@ func checkMissingParents(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 				Severity: mdl.SevError,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: node %q referenced missing parent %q, reparented to %q",
-					file, n.Name, oldParent, model.Name,
+					"%s: node %q references missing parent %q; %s %q",
+					file, n.Name, oldParent, fixVerb(fix, "reparented to", "would be reparented to"), model.Name,
 				),
 			})
 		}
@@ -170,6 +170,12 @@ func checkMissingParents(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 	return out
 }
 
+// checkBaseDummyWrongType reports a root node (parent NULL, named after the
+// model) that is not a dummy. The usual export puts a dummy above the meshes,
+// but nothing requires it: the engine takes as root whichever node has parent
+// NULL (nwn-mdl-spec MDL-NODE-001), the compiler handles a mesh root, and the
+// 2002 armour parts pmh0_chest201 and pmh0_head154, whose root is their mesh,
+// draw correctly in game (checked 2026-11-11). So it is a warning, not fatal.
 func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -183,9 +189,9 @@ func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckR
 			out = append(out, mdl.CheckResult{
 				Check:    "base_dummy_wrong_type",
 				Node:     n.Name,
-				Severity: mdl.SevFatal,
+				Severity: mdl.SevWarning,
 				Message: fmt.Sprintf(
-					"%s: root node %q (parent NULL) has type %q, expected dummy (use --wrap-root to insert dummy wrapper)",
+					"%s: root node %q (parent NULL) has type %q, not dummy; the compiler and the game accept a mesh root, but --wrap-root can put a dummy above it",
 					file, n.Name, n.NodeType(),
 				),
 				Fixed: false,
@@ -195,33 +201,45 @@ func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckR
 	return out
 }
 
+// checkBaseDummyParentNull reports a model with no root: no node whose parent
+// is NULL (nwn-mdl-spec MDL-NODE-001). The fix makes the node named after the
+// model the root. The root is found by its NULL parent, not by its name: a
+// model whose root is a dummy and whose mesh shares the model's name has a
+// root, and the mesh must stay under it (duplicate_node_names reports the
+// shared name).
 func checkBaseDummyParentNull(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil || model.Name == "" {
 		return nil
 	}
-	var out []mdl.CheckResult
+	var named *mdl.Node
 	for _, n := range model.Nodes {
-		if n == nil || !strings.EqualFold(n.Name, model.Name) {
+		if n == nil {
 			continue
 		}
-		if !strings.EqualFold(n.Parent, "NULL") {
-			old := n.Parent
-			if fix {
-				n.Parent = "NULL"
-			}
-			out = append(out, mdl.CheckResult{
-				Check:    "base_dummy_parent_null",
-				Node:     n.Name,
-				Severity: mdl.SevError,
-				Fixed:    fix,
-				Message: fmt.Sprintf(
-					"%s: model root node %q had parent %q, set to NULL",
-					file, n.Name, old,
-				),
-			})
+		if strings.EqualFold(n.Parent, "NULL") {
+			return nil
+		}
+		if named == nil && strings.EqualFold(n.Name, model.Name) {
+			named = n
 		}
 	}
-	return out
+	if named == nil {
+		return nil
+	}
+	old := named.Parent
+	if fix {
+		named.Parent = "NULL"
+	}
+	return []mdl.CheckResult{{
+		Check:    "base_dummy_parent_null",
+		Node:     named.Name,
+		Severity: mdl.SevError,
+		Fixed:    fix,
+		Message: fmt.Sprintf(
+			"%s: no node has parent NULL, so the model has no root; node %q, named after the model, has parent %q, %s NULL",
+			file, named.Name, old, fixVerb(fix, "set to", "would be set to"),
+		),
+	}}
 }
 
 func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
@@ -275,8 +293,8 @@ func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.Che
 			Severity: mdl.SevError,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: duplicate animation %q merged",
-				file, name,
+				"%s: duplicate animation %q %s",
+				file, name, fixVerb(fix, "merged", "would be merged"),
 			),
 		})
 	}
@@ -462,8 +480,8 @@ func checkNodeNameLength(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 			Severity: mdl.SevError,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: node name %q was %d chars (max 31), truncated to %q",
-				file, oldName, len(oldName), newName,
+				"%s: node name %q is %d chars (max 31); %s %q",
+				file, oldName, len(oldName), fixVerb(fix, "truncated to", "would be truncated to"), newName,
 			),
 		})
 	}

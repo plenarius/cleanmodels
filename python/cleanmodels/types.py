@@ -41,6 +41,9 @@ class MeshData:
         self.normals = []
         self.corner_normals = []  # per-face-corner normals, filled in by the compiler
         self.tangents = []
+        # Decompiled binary: its stored tangents were left out because a compile
+        # generates the same (Go: TangentsOmitted). Not written to the ASCII.
+        self.tangents_omitted = False
         self.colors = []
         self.tverts = []
         self.tverts1 = []
