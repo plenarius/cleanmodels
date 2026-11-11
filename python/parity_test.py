@@ -50,7 +50,8 @@ def check_floats(tmp):
     for e in range(255):
         bits.update({e << 23, (e << 23) | 0x80000000, (e << 23) | 1, (e << 23) | 0x7FFFFF})
     bits = sorted(bits)
-    r = subprocess.run([exe], input="\n".join(map(str, bits)) + "\n", capture_output=True, text=True, check=True)
+    r = subprocess.run([exe], input="\n".join(map(str, bits)) + "\n", capture_output=True, encoding="utf-8",
+                       check=True)
     go = r.stdout.split()
     bad = 0
     for b, g in zip(bits, go):
