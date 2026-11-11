@@ -1,0 +1,32 @@
+# nwn-mdl-spec conformance probe zspec_kid5 (CC0-1.0)
+# Numbering against a supermodel node that is itself numbered -1: zspec_mid's
+# 'cape' is -1 (zspec_super lacks it), its children cape_a and cape_b have
+# numbers. Shows whether the walk goes on through the -1 node (cape_b and
+# cape_a take zspec_mid's numbers, cape_x, which zspec_mid lacks, -1 under a
+# matched parent) or stops there (fresh count + 1 + declaration index).
+# The children are declared in another order than in zspec_mid, so fresh
+# numbers could not coincide with zspec_mid's.
+newmodel zspec_kid5
+setsupermodel zspec_kid5 zspec_mid
+classification character
+beginmodelgeom zspec_kid5
+node dummy zspec_kid5
+  parent NULL
+endnode
+node dummy hips
+  parent zspec_kid5
+endnode
+node dummy cape
+  parent zspec_kid5
+endnode
+node dummy cape_x
+  parent cape
+endnode
+node dummy cape_b
+  parent cape
+endnode
+node dummy cape_a
+  parent cape
+endnode
+endmodelgeom zspec_kid5
+donemodel zspec_kid5

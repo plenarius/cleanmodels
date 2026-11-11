@@ -1,0 +1,29 @@
+# nwn-mdl-spec conformance probe zspec_mid (CC0-1.0)
+# A middle supermodel for zspec_kid5. Its own supermodel is zspec_super, which
+# lacks 'cape', so 'cape' (under the matched root) is numbered -1; its
+# children cape_a and cape_b, under that unmatched node, take
+# count + 1 + declaration index (MDL-NODE-020).
+newmodel zspec_mid
+setsupermodel zspec_mid zspec_super
+classification character
+beginmodelgeom zspec_mid
+node dummy zspec_mid
+  parent NULL
+endnode
+node dummy hips
+  parent zspec_mid
+endnode
+node dummy cape
+  parent zspec_mid
+  position 0 0.2 1
+endnode
+node dummy cape_a
+  parent cape
+  position 0 0 -0.5
+endnode
+node dummy cape_b
+  parent cape
+  position 0 0 -1
+endnode
+endmodelgeom zspec_mid
+donemodel zspec_mid

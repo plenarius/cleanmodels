@@ -184,8 +184,8 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
 
     def assign_node_ids_from_supermodel(self, root, sm):
         """assignNodeIDsFromSupermodel: a node at a path the supermodel has takes its
-        number, any other child of a matched node -1, the rest count_nodes + 1 +
-        declaration index."""
+        number (even -1: the walk goes on through it), any other child of a matched
+        node -1, the rest count_nodes + 1 + declaration index."""
         base = sm.count + 1
         decl = self.declaration_index()
         match = {}
@@ -198,7 +198,8 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             else:
                 p = match.get(parent)
                 sn = p.child(n.name) if p is not None else None
-                if sn is not None and sn.number >= 0:
+                if sn is not None:
+                    # -1 where the supermodel has -1; the walk goes on through it
                     self.node_ids[n] = sn.number
                     match[n] = sn
                 elif p is not None:
