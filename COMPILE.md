@@ -73,6 +73,13 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
    MDL-NODE-040): its path is walked down the geometry tree, and a match takes
    that geometry node's number; a node the geometry lacks gets -1 under a
    matched parent and otherwise its declaration index in the animation.
+   An animation node takes its geometry node's type (MDL-NODE-041). A node
+   the geometry lacks is a dummy, except that one declared as a mesh with
+   `alphakey` or `selfillumcolorkey` rows gets the mesh flag and an empty mesh
+   header, as a trimesh animation node with only those keys does: a mesh
+   controller is read only on a node with the mesh flag, so as a dummy its
+   keys were lost (`tvd_udoor_09`). Nothing else of the declared type is
+   written. What the game's compiler does with such a node is not probed.
 5. **File header** — `{0, core_len, mdx_len}` is written last with the final
   buffer sizes, then `core` and `vol` are appended.
 
@@ -183,7 +190,9 @@ negative when the right child is on the lower side; a tie is -z). We derive it
 the same way, and `TestOracleAabbTreeMatchesGame` checks every walkmesh tree in
 the oracle fixtures against the game's, plane included. A model with no tree,
 or a tree that is not a complete preorder tree over the mesh's faces, gets one
-built by `buildAABBTree` instead. `RebuildAABB` (in
+built by `buildAABBTree` instead, a median split whose planes follow the same
+rule (leaves 0, each inner node from its children): a compile of its decompile
+reads the tree back and derives the same planes, so the two compiles match. `RebuildAABB` (in
 `pkg/mdl/repair_walkmesh.go`) is a repair the user asks for and has no
 game equivalent. Repairs that move a walkmesh's vertices (pivots, scale,
 raise/lower, snap) move its tree's boxes with them.

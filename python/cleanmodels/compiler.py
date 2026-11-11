@@ -501,6 +501,11 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             elif gf & 0x20 and (an.float_keys.get("alpha") or an.color_keys.get("selfillumcolor")):
                 content |= 0x20
                 mesh_ctrl_only = True
+        elif _is_mesh_node_type(an.type) and (an.float_keys.get("alpha") or an.color_keys.get("selfillumcolor")):
+            # a node the geometry lacks, declared a mesh, with mesh controllers:
+            # the mesh bit and an empty mesh header keep its keys
+            content |= 0x20
+            mesh_ctrl_only = True
 
         core.zeros(24)
         core.i32(0)
@@ -698,3 +703,8 @@ def _plural_classification_warning(cls):
 def _i32(v):
     v &= 0xFFFFFFFF
     return v - 0x100000000 if v >= 0x80000000 else v
+
+
+def _is_mesh_node_type(t):
+    """compiler.go isMeshNodeType: an ASCII node type word that makes a mesh."""
+    return go_lower(t) in ("trimesh", "skin", "animmesh", "danglymesh", "aabb")

@@ -259,37 +259,67 @@ func (w *writer) writeNodeTree(m *Model) {
 	if root == nil {
 		return
 	}
-	// Parent → children (case-folded parent key) for O(1) child lookup per node.
-	children := make(map[string][]*Node)
-	for _, n := range m.Nodes {
-		if n == nil {
-			continue
-		}
-		key := strings.ToLower(n.Parent)
-		children[key] = append(children[key], n)
-	}
 	if declaredInNumberOrder(m.Nodes, root) {
 		for _, n := range m.Nodes {
 			w.writeNode(n)
 		}
 		return
 	}
+	// Parent → children (case-folded parent key) for O(1) child lookup per
+	// node. Where a name is used twice, each node's children are those the
+	// compiler gives it: a parent is the nearest node of its name declared
+	// before (resolveGeomTree), so a node named like its ancestor keeps its
+	// own children.
+	var kids func(n *Node) []*Node
+	if hasDuplicateNames(m.Nodes) {
+		_, byNode := resolveGeomTree(m.Nodes)
+		kids = func(n *Node) []*Node { return byNode[n] }
+	} else {
+		children := make(map[string][]*Node)
+		for _, n := range m.Nodes {
+			if n == nil {
+				continue
+			}
+			key := strings.ToLower(n.Parent)
+			children[key] = append(children[key], n)
+		}
+		kids = func(n *Node) []*Node { return children[strings.ToLower(n.Name)] }
+	}
 	visited := make(map[*Node]bool)
-	w.writeNodeRecursive(m, root, visited, 0, children)
+	w.writeNodeRecursive(root, visited, 0, kids)
+}
+
+// hasDuplicateNames reports whether two nodes share a name (case-folded).
+func hasDuplicateNames(nodes []*Node) bool {
+	seen := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		key := strings.ToLower(n.Name)
+		if seen[key] {
+			return true
+		}
+		seen[key] = true
+	}
+	return false
 }
 
 // declaredInNumberOrder reports whether nodes, as listed, are a declaration
 // order the writer keeps instead of walking the tree: the part numbers are
-// 0..n-1 in list order, the root comes first, the names are unique and every
-// other node's parent is listed before it. The decompiler lists a model in
-// that order when it is how the original was declared (binary_order.go); the
-// game's compiler numbers nodes in declaration order, so writing them depth
-// first would renumber them. A list in tree order writes the same either way.
+// 0..n-1 in list order, the root comes first, every other node's parent is
+// listed before it, and no name used twice is a parent (where one is, which
+// node a child goes under depends on the order). The decompiler lists a model
+// in that order when it is how the original was declared (binary_order.go);
+// the game's compiler numbers nodes in declaration order, so writing them
+// depth first would renumber them. A list in tree order writes the same
+// either way.
 func declaredInNumberOrder(nodes []*Node, root *Node) bool {
 	if len(nodes) < 2 || nodes[0] != root {
 		return false
 	}
 	seen := make(map[string]bool, len(nodes))
+	dup := false
 	for i, n := range nodes {
 		if n == nil || n.PartNumber != int32(i) {
 			return false
@@ -299,22 +329,42 @@ func declaredInNumberOrder(nodes []*Node, root *Node) bool {
 		}
 		name := strings.ToLower(n.Name)
 		if seen[name] {
-			return false
+			dup = true
 		}
 		seen[name] = true
 	}
-	return true
+	return !dup || !duplicateIsParent(nodes)
 }
 
-func (w *writer) writeNodeRecursive(m *Model, node *Node, visited map[*Node]bool, depth int, children map[string][]*Node) {
+// duplicateIsParent reports whether a name two nodes share (case-folded) is
+// some node's parent.
+func duplicateIsParent(nodes []*Node) bool {
+	seen := make(map[string]bool, len(nodes))
+	dup := make(map[string]bool)
+	for _, n := range nodes {
+		key := strings.ToLower(n.Name)
+		if seen[key] {
+			dup[key] = true
+		}
+		seen[key] = true
+	}
+	for _, n := range nodes {
+		if dup[strings.ToLower(n.Parent)] {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *writer) writeNodeRecursive(node *Node, visited map[*Node]bool, depth int, kids func(*Node) []*Node) {
 	if visited[node] || depth > maxNodeDepth {
 		return
 	}
 	visited[node] = true
 	w.writeNode(node)
-	for _, child := range children[strings.ToLower(node.Name)] {
+	for _, child := range kids(node) {
 		if child != node && strings.EqualFold(child.Parent, node.Name) {
-			w.writeNodeRecursive(m, child, visited, depth+1, children)
+			w.writeNodeRecursive(child, visited, depth+1, kids)
 		}
 	}
 }
@@ -731,10 +781,13 @@ func (w *writer) writeAnimation(m *Model, anim *Animation) {
 }
 
 func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
-	// Determine node type from the model geometry
+	// The node type is the geometry node's; a node the geometry lacks keeps
+	// its own (AnimNode.Type), so that mesh controller keys stay readable.
 	nodeType := "dummy"
 	if n := m.FindNode(an.Name); n != nil {
 		nodeType = n.NodeType()
+	} else if an.Type != "" {
+		nodeType = an.Type
 	}
 
 	w.indent(4, "node %s %s", nodeType, an.Name)

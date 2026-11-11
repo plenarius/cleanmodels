@@ -21,6 +21,13 @@ package mdl
 
 // reorderChildren applies ReorderChildren to the geometry tree under root.
 func reorderChildren(root *Node, children map[*Node][]*Node) {
+	reorderChildrenBy(root, children, meshHint)
+}
+
+// reorderChildrenBy is reorderChildren with each mesh's transparencyhint
+// given by hint.
+func reorderChildrenBy(root *Node, children map[*Node][]*Node, hint func(*Node) int32) {
+	less := hintLess(hint)
 	visited := make(map[*Node]bool)
 	stack := []*Node{root}
 	for len(stack) > 0 {
@@ -32,9 +39,9 @@ func reorderChildren(root *Node, children map[*Node][]*Node) {
 		visited[n] = true
 		kids := children[n]
 		for _, k := range kids {
-			if k.Mesh != nil && k.Mesh.TransparencyHint > 0 {
+			if k.Mesh != nil && hint(k) > 0 {
 				sorted := append([]*Node(nil), kids...)
-				engineSort(sorted, transparencyLess)
+				engineSort(sorted, less)
 				children[n] = sorted
 				kids = sorted
 				break
@@ -43,6 +50,9 @@ func reorderChildren(root *Node, children map[*Node][]*Node) {
 		stack = append(stack, kids...)
 	}
 }
+
+// meshHint is a mesh's transparencyhint.
+func meshHint(n *Node) int32 { return n.Mesh.TransparencyHint }
 
 // transparencyLess is the comparison at 0x453470. Every mesh type counts as a
 // mesh (MdlNode::AsMdlNodeTriMesh tests node flags 0x21).
@@ -54,6 +64,20 @@ func transparencyLess(a, b *Node) bool {
 		return false
 	}
 	return a.Mesh.TransparencyHint < b.Mesh.TransparencyHint
+}
+
+// hintLess is transparencyLess with each mesh's transparencyhint given by
+// hint.
+func hintLess(hint func(*Node) int32) func(a, b *Node) bool {
+	return func(a, b *Node) bool {
+		switch {
+		case a.Mesh == nil:
+			return b.Mesh != nil
+		case b.Mesh == nil:
+			return false
+		}
+		return hint(a) < hint(b)
+	}
 }
 
 // engineSort is libstdc++'s std::sort: introsort to runs of 16 or fewer

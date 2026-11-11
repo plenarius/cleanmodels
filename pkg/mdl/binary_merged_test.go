@@ -371,3 +371,21 @@ func TestUnmergeRenderListsDonorToReceiverInPlace(t *testing.T) {
 		t.Errorf("merges: %+v", rm)
 	}
 }
+
+// A donor whose copy lies 1.3 mm from it (plc_candle3's box07) folds: the
+// tolerance is the 1 mm the round-trip checker pairs triangles at, and the
+// game drew the copy, not the donor.
+func TestUnmergeRenderListsFoldsDonorOffItsCopy(t *testing.T) {
+	d := mergedModel(false)
+	wall := d.model.FindNode("wall")
+	for i := 4; i < 8; i++ {
+		wall.Mesh.Verts[i].X += 0.0013
+	}
+	d.unmergeRenderLists()
+	if d.model.FindNode("lower").Mesh.Render != 0 {
+		t.Fatal("lower restored, 1.3 mm from what the game drew")
+	}
+	if len(d.model.Notes) != 1 || !strings.Contains(d.model.Notes[0].Message, "the game drew it elsewhere than the mesh itself is") {
+		t.Errorf("notes %+v", d.model.Notes)
+	}
+}

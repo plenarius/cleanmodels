@@ -81,6 +81,31 @@ top-down:
    `pendingSkins` and resolve them to node names (from the creature
    skeleton for a skinned body part; see "Skin meshes").
 
+### Declaration order
+
+The game's compiler numbers nodes in declaration order and sorts a node's
+children where one is a mesh with transparencyhint above 0 (std::sort, not
+stable past 16 children). So the decompiler picks the order the nodes are
+declared in (`declarationOrder`, `binary_order.go`): ascending part number,
+when the model has no supermodel and that order rebuilds the stored numbers
+and tree; else, for each node whose children get sorted, the order the sort
+turns back into the stored one; else the stored order. A candidate is taken
+only when a compile of it rebuilds the stored tree.
+
+- **Sort keys.** The candidates are planned with the transparencyhints the
+  stored tree was sorted by. A donor restored from a merged render list takes
+  its receiver's hint (see "Merged render lists"), so its stored hint is kept
+  aside for this. The ASCII carries the new hint, and a compile sorts the
+  donor among its siblings by it; the rest of the tree comes back as stored.
+- **Duplicate names.** A parent is found by name: the nearest node of that
+  name declared before it. A name used twice by nodes that are no parent
+  changes nothing. Where a name used twice is some node's parent (a child
+  dummy named like the root, `eld02_p18_01`), which node a child goes under
+  depends on the order: such a model gets no part-number order, but the
+  inverse sort, checked against the stored parents, still applies. The writer
+  finds each node's children the same way when names repeat, so it writes
+  that order back.
+
 The decompiler is **non-fatal on errors**. Truncated data, out-of-bounds
 pointers, and unknown controller types are recorded as
 `DecompileWarning`s on the resulting model but never abort the read. The
@@ -281,8 +306,9 @@ neither takes the other's) and writes what the game drew, in one of two ways:
   neighbours), and the donor keeps render 0. The rule: the restored donor must
   draw where its copies were drawn in the rest pose and in every animation,
   and look as they did. So a donor folds when its vertices, placed in world
-  space, miss its copies (the merging tool baked them without the donor's
-  `scale`), when an animation moves a node on the donor's or the receiver's
+  space, miss its copies by more than 1 mm (the merging tool baked them
+  without the donor's `scale`, or `plc_candle3`'s copy, 1.3 mm off; 1 mm is
+  the distance nwn-mdl-spec's round-trip checker pairs triangles at), when an animation moves a node on the donor's or the receiver's
   parent chain below the nodes they share (cabinet and safe doors the game drew
   still, as part of the cabinet),
   or when an animation changes the alpha or self-illumination of either away
@@ -381,6 +407,18 @@ node, skin, and AABB nodes, each with their own value layout
 encounter an ID we don't have a mapping for, we emit
 `WarnUnknownController` with the ID so we can extend coverage; the
 controller itself is dropped (no guess about what its data means).
+
+A controller id given twice on one animation node (two one-key `orientation`
+controllers, `tcn01_p02_01`) is two controllers to the engine, applied in
+stored order, each overwriting the field (nwn-mdl-spec MDL-CTRL-036). ASCII
+holds one key list per controller, so the last one's keys are written; they
+were appended to the first one's before, which made one controller of both.
+
+An animation node takes its geometry node's type. A node the geometry has no
+node of that name for is written as a dummy, unless it was stored with the
+mesh flag: then it is written as a `trimesh` (`AnimNode.Type`), so that its
+`alphakey` and `selfillumcolorkey` rows, mesh controllers, are read back
+(`tvd_udoor_09`'s `09_DWK_wg_closed`).
 
 Emitter IDs 464 and 468 mean different controllers to BioWare's compiler
 (percentstart, sizemid) and to nwnmdlcomp (alphamid, colormid). The compiler is

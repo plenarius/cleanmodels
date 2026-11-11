@@ -34,45 +34,47 @@ import (
 // A candidate is only taken when compiling it rebuilds the stored tree, node
 // for node (apart from the children of such an unsorted node, which come back
 // as a compile of the stored order sorts them), so a model the compiler cannot
-// rebuild keeps its stored order. Duplicate names are allowed unless one is
-// some node's parent; part-number order needs unique names. The
-// writer keeps a part-number order as listed (declaredInNumberOrder) and
-// writes any other depth first, which is how the inverse sort lists it.
-func declarationOrder(m *Model) {
+// rebuild keeps its stored order. The writer keeps a part-number order as
+// listed (declaredInNumberOrder) and writes any other depth first, which is
+// how the inverse sort lists it.
+//
+// The candidates are planned and checked with the transparencyhints the
+// stored tree was sorted by: storedHints holds the stored hint of each mesh
+// the decompile gave another (a restored donor takes its receiver's,
+// unmergeRenderLists). The ASCII carries the new hints, so a compile sorts
+// such a node's siblings by them; the rest of the tree comes back as stored.
+func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	stored := m.Nodes
 	if len(stored) < 2 || slices.Contains(stored, nil) {
 		return
 	}
-	// The writer and the compiler find a parent by name, so a model where a
-	// duplicate name is some node's parent keeps the stored order. Other
-	// duplicates are only ever children, found by pointer here.
-	names := make(map[string]bool, len(stored))
-	dup := make(map[string]bool)
-	for _, n := range stored {
-		key := strings.ToLower(n.Name)
-		if names[key] {
-			dup[key] = true
-		}
-		names[key] = true
-	}
-	for _, n := range stored {
-		if dup[strings.ToLower(n.Parent)] {
-			return
+	hint := meshHint
+	if len(storedHints) > 0 {
+		hint = func(n *Node) int32 {
+			if h, ok := storedHints[n]; ok {
+				return h
+			}
+			return n.Mesh.TransparencyHint
 		}
 	}
+	// The writer and the compiler find a parent by name: the nearest node of
+	// that name declared before it (resolveGeomTree). Where a duplicate name
+	// is some node's parent, which one that is depends on the declaration
+	// order, and the writer keeps a part-number order only when no duplicate
+	// is a parent (declaredInNumberOrder): such a model gets no part-number
+	// order, and the inverse sort is checked against the stored parents.
+	dupParent := duplicateIsParent(stored)
 	parentOf, children := resolveGeomTree(stored)
 	if !walksAs(stored, children, stored) {
 		return
 	}
-	// The writer keeps a part-number order only with unique names
-	// (declaredInNumberOrder).
-	if len(dup) == 0 {
-		if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true) {
+	if !dupParent {
+		if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true, hint) {
 			m.Nodes = order
 			return
 		}
 	}
-	if order, unsorted := inverseSortOrder(stored, children); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false) {
+	if order, unsorted := inverseSortOrder(stored, children, hint); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false, hint) {
 		m.Nodes = order
 	}
 }
@@ -101,17 +103,18 @@ func partNumberOrder(m *Model) []*Node {
 // A sorted node whose stored children are not in the comparison's order (no
 // declaration order reaches them) keeps them declared as stored, and is
 // returned in unsorted: the compile sorts them as it sorts the stored order.
-func inverseSortOrder(stored []*Node, children map[*Node][]*Node) (order []*Node, unsorted map[*Node]bool) {
+func inverseSortOrder(stored []*Node, children map[*Node][]*Node, hint func(*Node) int32) (order []*Node, unsorted map[*Node]bool) {
+	less := hintLess(hint)
 	decl := make(map[*Node][]*Node)
 	changed := false
 	for _, p := range stored {
 		kids := children[p]
-		if !slices.ContainsFunc(kids, func(k *Node) bool { return k.Mesh != nil && k.Mesh.TransparencyHint > 0 }) {
+		if !slices.ContainsFunc(kids, func(k *Node) bool { return k.Mesh != nil && hint(k) > 0 }) {
 			continue
 		}
 		sorted := true
 		for j := 1; j < len(kids); j++ {
-			if transparencyLess(kids[j], kids[j-1]) {
+			if less(kids[j], kids[j-1]) {
 				sorted = false
 				break
 			}
@@ -127,11 +130,11 @@ func inverseSortOrder(stored []*Node, children map[*Node][]*Node) (order []*Node
 		// stored child i. Their order afterwards is out[j] = i.
 		pos := make([]*Node, len(kids))
 		index := make(map[*Node]int, len(kids))
-		for i, k := range kids {
-			pos[i] = &Node{Mesh: k.Mesh}
+		for i := range kids {
+			pos[i] = &Node{}
 			index[pos[i]] = i
 		}
-		engineSort(pos, transparencyLess)
+		engineSort(pos, func(a, b *Node) bool { return less(kids[index[a]], kids[index[b]]) })
 		d := make([]*Node, len(kids))
 		for j, s := range pos {
 			d[index[s]] = kids[j]
@@ -166,10 +169,11 @@ func inverseSortOrder(stored []*Node, children map[*Node][]*Node) (order []*Node
 
 // compilesTo reports whether compiling the nodes declared in order writes the
 // stored tree: the same nodes depth-first, each under its stored parent, and
-// with numbers set, each numbered with its stored part number. The children
+// with numbers set, each numbered with its stored part number, with the
+// meshes sorted by hint. The children
 // of a node in unsorted may come back in the order the compile sorts them
 // into (no declaration order gives their stored order back).
-func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, storedChildren map[*Node][]*Node, unsorted map[*Node]bool, numbers bool) bool {
+func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, storedChildren map[*Node][]*Node, unsorted map[*Node]bool, numbers bool, hint func(*Node) int32) bool {
 	if !strings.EqualFold(order[0].Parent, "NULL") {
 		return false
 	}
@@ -179,7 +183,7 @@ func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, storedChild
 			return false
 		}
 	}
-	reorderChildren(order[0], children)
+	reorderChildrenBy(order[0], children, hint)
 	want := stored
 	if len(unsorted) > 0 {
 		kids := make(map[*Node][]*Node, len(storedChildren))

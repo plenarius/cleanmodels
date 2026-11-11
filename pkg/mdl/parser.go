@@ -539,6 +539,10 @@ func (p *parser) parseNodeStart(tokens []string) {
 		animNode := &AnimNode{
 			Name: nodeName,
 		}
+		switch nodeType {
+		case "trimesh", "skin", "animmesh", "danglymesh", "aabb", "emitter", "light", "reference", "camera":
+			animNode.Type = nodeType
+		}
 		p.currentAnimNode = animNode
 	} else {
 		p.currentNode = node

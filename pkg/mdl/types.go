@@ -438,6 +438,13 @@ type ColorKey struct {
 type AnimNode struct {
 	Name   string
 	Parent string
+	// Type is the node type the animation gives the node, for a node the
+	// geometry has none of that name for (otherwise the geometry node's type
+	// is used): the type an ASCII declares (empty for dummy), or "trimesh"
+	// for a binary node stored with the mesh flag. The compiler keeps a
+	// mesh type's alpha and selfillumcolor keys (a mesh controller needs the
+	// mesh flag) and writes no geometry for it; the writer writes it.
+	Type string
 
 	// Base node controllers
 	PositionKeys   []PositionKey

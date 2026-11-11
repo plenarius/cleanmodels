@@ -220,6 +220,18 @@ class MergedRenderLists(unittest.TestCase):
                 self.assertEqual(len(d.model.notes), 1, name)
                 self.assertIn(why, d.model.notes[0].message, name)
 
+    def test_folds_donor_off_its_copy(self):
+        # plc_candle3: a copy 1.3 mm from its donor folds (tolerance 1 mm)
+        d = merged_model()
+        wall = d.model.find_node("wall")
+        for i in range(4, 8):
+            x, y, z = wall.mesh.verts[i]
+            wall.mesh.verts[i] = (f32(x + 0.0013), y, z)
+        unmerge_render_lists(d)
+        self.assertEqual(d.model.find_node("lower").mesh.render, 0)
+        self.assertEqual(len(d.model.notes), 1)
+        self.assertIn("the game drew it elsewhere than the mesh itself is", d.model.notes[0].message)
+
     def test_prefers_copy_in_place(self):
         recv = node("wall", merge_quad("tex", 1, 0.0))
         a = node("a", merge_quad("tex", 0, 5.0), (-3.0, 0.0, 0.0))

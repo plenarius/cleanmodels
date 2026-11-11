@@ -106,7 +106,7 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
         omit_generated_tangents(d, list(material_dirs))
         for n in d.model.nodes:
             share_positions(n)
-    declaration_order(d.model)
+    declaration_order(d.model, d.stored_hints)
     return d.model
 
 
@@ -153,6 +153,9 @@ class _Decompiler:
         self.where = ("", "", "")
         self.nan_warns = {}
         self.render_lists = {}  # node -> render index list (binary_merged.go)
+        # node -> stored transparencyhint of a mesh unmerge_render_lists gave
+        # another (declaration_order plans with it)
+        self.stored_hints = {}
         self.tangent_fills = []  # meshes whose tangent stream holds bad vectors
 
     # --- low-level reads (bytes.Reader + encoding/binary semantics) ---
@@ -1266,6 +1269,9 @@ class _Decompiler:
             self.skip(4)
 
         an = AnimNode(node_name, parent_name)
+        # the mesh flag, for a node the geometry lacks (AnimNode.type)
+        if node_flag & 0x20:
+            an.type = "trimesh"
 
         if has_mesh and has_anim and anim_mesh_verts > 0:
             header_end = self.p
@@ -1303,8 +1309,14 @@ class _Decompiler:
         keys = self.read_controller_keys(keys_def)
         if not keys:
             return
+        # a controller id given twice (MDL-CTRL-036): the last one's keys are kept
+        seen = set()
         for name, num_cols, k, bezier, def_cols in self.resolve_controller_defs(keys, node_flag, an.name):
             rows = self.read_controller_rows(name, data_def[0], k[2], k[3], k[1], num_cols)
+            if rows:
+                if name in seen:
+                    clear_anim_controller(an, name)
+                seen.add(name)
             if bezier and name != "position":
                 add_anim_bezier_keys(an, name, rows)
                 continue
@@ -1478,6 +1490,20 @@ def add_anim_bezier_keys(an, name, rows):
         if not keys:
             del an.color_keys[name]
         an.bezier.add(name)
+
+
+def clear_anim_controller(an, name):
+    """AnimNode.clearController: drop the named controller's keys and bezier mark."""
+    if name == "position":
+        an.position_keys = []
+        an.position_bezier = False
+        return
+    if name == "orientation":
+        an.orientation_keys = []
+        return
+    an.float_keys.pop(name, None)
+    an.color_keys.pop(name, None)
+    an.bezier.discard(name)
 
 
 def add_anim_key(an, name, t, vals):
@@ -1845,6 +1871,9 @@ def unmerge_render_lists(d):
                     shadow_off.append(n.name)
                 continue
             m.render = 1
+            if m.transparency_hint != r.mesh.transparency_hint:
+                # the stored tree was sorted by the stored hint
+                d.stored_hints[n] = m.transparency_hint
             diff = _copy_drawing_state(r, n)
             if diff:
                 restyled.append("%s (%s)" % (n.name, ", ".join(diff)))
@@ -1876,7 +1905,7 @@ def unmerge_render_lists(d):
                    "decompile, repair or recompile loses them" % lost)
 
 
-MERGE_WORLD_TOLERANCE = 2e-3  # m
+MERGE_WORLD_TOLERANCE = 1e-3  # m: the round-trip checker's triangle pairing distance
 MERGE_KEY_TOLERANCE = 1e-4
 
 

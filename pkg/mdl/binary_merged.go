@@ -286,6 +286,14 @@ func (d *decompiler) unmergeRenderLists() {
 				continue
 			}
 			m.Render = 1
+			if hint := m.TransparencyHint; hint != r.Mesh.TransparencyHint {
+				// The stored tree was sorted by the stored hint
+				// (declarationOrder plans with it).
+				if d.storedHints == nil {
+					d.storedHints = map[*Node]int32{}
+				}
+				d.storedHints[n] = hint
+			}
 			if diff := copyDrawingState(r, n); len(diff) > 0 {
 				restyled = append(restyled, fmt.Sprintf("%s (%s)", n.Name, strings.Join(diff, ", ")))
 			}
@@ -324,8 +332,11 @@ func (d *decompiler) unmergeRenderLists() {
 
 const (
 	// mergeWorldTolerance is how far apart (m) a donor's corner and its
-	// copy's may be in world space and still draw the same.
-	mergeWorldTolerance = 2e-3
+	// copy's may be in world space and still draw the same: 1 mm, the
+	// distance at which nwn-mdl-spec's round-trip checker pairs triangles
+	// (plc_candle3's donor box07 lies 1.3 mm from its copy, which the game
+	// drew: restored, it would draw elsewhere).
+	mergeWorldTolerance = 1e-3
 	// mergeKeyTolerance compares animation keys with the rest pose, and
 	// alpha and colour values.
 	mergeKeyTolerance = 1e-4

@@ -565,6 +565,15 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 			contentBits |= 0x20
 			meshCtrlOnly = true
 		}
+	} else if isMeshNodeType(an.Type) && (len(an.AlphaKeys) > 0 || len(an.SelfIllumColorKeys) > 0) {
+		// A node the geometry lacks, declared a mesh, with mesh controllers:
+		// the same mesh bit and empty mesh header, so its keys are kept
+		// (a dummy would drop them). Nothing else of the declared type is
+		// written: what the game's compiler does with such a node is not
+		// known (nwn-mdl-spec MDL-NODE-041 covers only nodes the geometry
+		// has).
+		contentBits |= 0x20
+		meshCtrlOnly = true
 	}
 
 	nodeOff := int32(c.core.len())
@@ -888,4 +897,14 @@ func (c *compiler) writeAnimMeshData(mesh *MeshData, am *AnimMeshData, exp *expa
 			c.core.f32le(v.Y)
 		}
 	}
+}
+
+// isMeshNodeType reports whether an ASCII node type word makes a mesh (node
+// flags with 0x20).
+func isMeshNodeType(t string) bool {
+	switch strings.ToLower(t) {
+	case "trimesh", "skin", "animmesh", "danglymesh", "aabb":
+		return true
+	}
+	return false
 }

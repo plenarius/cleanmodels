@@ -726,14 +726,16 @@ func buildAABBNode(mesh *MeshData, faces []int, out *[]aabbTreeEntry) int {
 	idx := len(*out)
 	*out = append(*out, aabbTreeEntry{BoundMin: bmin, BoundMax: bmax, LeafFace: -1, Left: -1, Right: -1})
 
+	// A leaf has no plane, and an inner node takes the engine's (aabbSplitPlane,
+	// from its children's boxes; nwn-mdl-spec MDL-MESH-052), as
+	// authoredAABBTree sets them: a tree built here and one read back from
+	// its decompile are then written alike.
 	if len(faces) == 1 {
 		(*out)[idx].LeafFace = faces[0]
-		(*out)[idx].Plane = axisPlane(bmin, bmax)
 		return idx
 	}
 
 	axis := longestAABBAxis(bmin, bmax)
-	(*out)[idx].Plane = uint32(1 << uint(axis))
 
 	// Median split along chosen axis.
 	mid := len(faces) / 2
@@ -743,6 +745,7 @@ func buildAABBNode(mesh *MeshData, faces []int, out *[]aabbTreeEntry) int {
 	right := buildAABBNode(mesh, faces[mid:], out)
 	(*out)[idx].Left = left
 	(*out)[idx].Right = right
+	(*out)[idx].Plane = aabbSplitPlane((*out)[left], (*out)[right])
 	return idx
 }
 
@@ -790,10 +793,6 @@ func longestAABBAxis(bmin, bmax Vec3) int {
 		return 1
 	}
 	return 2
-}
-
-func axisPlane(bmin, bmax Vec3) uint32 {
-	return uint32(1 << uint(longestAABBAxis(bmin, bmax)))
 }
 
 func faceCentroidAxis(mesh *MeshData, fi, axis int) float32 {

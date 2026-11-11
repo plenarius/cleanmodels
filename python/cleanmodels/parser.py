@@ -536,6 +536,8 @@ class _Parser:
             self.errorf("unknown node type %s, treating as dummy" % quote(node_type))
         if self.current_anim is not None:
             self.current_anim_node = AnimNode(name)
+            if node_type in ("trimesh", "skin", "animmesh", "danglymesh", "aabb", "emitter", "light", "reference", "camera"):
+                self.current_anim_node.type = node_type
             return
         self.current_node = node
         if self.node_stack:

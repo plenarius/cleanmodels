@@ -1,46 +1,44 @@
 """Declaration order of a decompiled model's geometry nodes: a port of
 pkg/mdl/binary_order.go.
 
-Prefers ascending part number (no supermodel, numbers 0..n-1, unique names,
-and compiling that order rebuilds the stored numbers and tree), then for each
-node whose children get sorted the order the game's std::sort turns back into
-the stored one (a node whose stored children no order gives keeps them), then
-the stored order. A candidate is only taken when compiling it rebuilds the
-stored tree node for node, apart from such a node's children. A duplicate name
-that is some node's parent keeps the stored order.
+Prefers ascending part number (no supermodel, numbers 0..n-1, no name used
+twice a parent, and compiling that order rebuilds the stored numbers and tree),
+then for each node whose children get sorted the order the game's std::sort
+turns back into the stored one (a node whose stored children no order gives
+keeps them), then the stored order. A candidate is only taken when compiling it
+rebuilds the stored tree node for node, apart from such a node's children. The
+candidates are planned with the stored transparencyhints (stored_hints: those
+of meshes the decompile gave another).
 """
 
-from .compiler_order import engine_sort, reorder_children, transparency_less
+from .compiler_order import engine_sort, hint_less, mesh_hint, reorder_children
 from .compiler_tree import resolve_geom_tree
-from .gostr import equal_fold, go_lower, trim_space
+from .gostr import equal_fold, trim_space
 from .types import Node
+from .writer import duplicate_is_parent
 
 
-def declaration_order(m):
+def declaration_order(m, stored_hints=None):
     """declarationOrder: reorder m.nodes in place."""
     stored = m.nodes
     if len(stored) < 2 or any(n is None for n in stored):
         return
-    names = set()
-    dup = set()
-    for n in stored:
-        key = go_lower(n.name)
-        if key in names:
-            dup.add(key)
-        names.add(key)
-    for n in stored:
-        if go_lower(n.parent) in dup:
-            return
+    hint = mesh_hint
+    if stored_hints:
+        def hint(n):
+            h = stored_hints.get(n)
+            return n.mesh.transparency_hint if h is None else h
+    dup_parent = duplicate_is_parent(stored)
     parent_of, children = resolve_geom_tree(stored)
     if not _walks_as(stored, children, stored):
         return
-    if not dup:
+    if not dup_parent:
         order = _part_number_order(m)
-        if order is not None and _compiles_to(order, stored, parent_of, children, None, True):
+        if order is not None and _compiles_to(order, stored, parent_of, children, None, True, hint):
             m.nodes = order
             return
-    order, unsorted = _inverse_sort_order(stored, children)
-    if order is not None and _compiles_to(order, stored, parent_of, children, unsorted, False):
+    order, unsorted = _inverse_sort_order(stored, children, hint)
+    if order is not None and _compiles_to(order, stored, parent_of, children, unsorted, False, hint):
         m.nodes = order
 
 
@@ -59,27 +57,27 @@ def _part_number_order(m):
     return order
 
 
-def _inverse_sort_order(stored, children):
+def _inverse_sort_order(stored, children, hint):
     """inverseSortOrder: (order, unsorted parents), (None, None) when unchanged."""
+    less = hint_less(hint)
     decl = {}
     unsorted = None
     for p in stored:
         kids = children.get(p, [])
-        if not any(k.mesh is not None and k.mesh.transparency_hint > 0 for k in kids):
+        if not any(k.mesh is not None and hint(k) > 0 for k in kids):
             continue
-        if any(transparency_less(kids[j], kids[j - 1]) for j in range(1, len(kids))):
+        if any(less(kids[j], kids[j - 1]) for j in range(1, len(kids))):
             if unsorted is None:
                 unsorted = set()
             unsorted.add(p)
             continue
         pos = []
         index = {}
-        for i, k in enumerate(kids):
+        for i in range(len(kids)):
             s = Node()
-            s.mesh = k.mesh
             pos.append(s)
             index[s] = i
-        engine_sort(pos, transparency_less)
+        engine_sort(pos, lambda a, b, kids=kids: less(kids[index[a]], kids[index[b]]))
         d = [None] * len(kids)
         for j, s in enumerate(pos):
             d[index[s]] = kids[j]
@@ -100,14 +98,14 @@ def _inverse_sort_order(stored, children):
     return order, unsorted
 
 
-def _compiles_to(order, stored, stored_parent, stored_children, unsorted, numbers):
+def _compiles_to(order, stored, stored_parent, stored_children, unsorted, numbers, hint):
     if not equal_fold(order[0].parent, "NULL"):
         return False
     parent_of, children = resolve_geom_tree(order)
     for n in order:
         if parent_of.get(n) is not stored_parent.get(n):
             return False
-    reorder_children(order[0], children)
+    reorder_children(order[0], children, hint)
     want = stored
     if unsorted:
         kids = dict(stored_children)
