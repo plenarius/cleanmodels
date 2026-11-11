@@ -1,0 +1,53 @@
+# nwn-mdl-spec conformance probe zspec_dupctrl (CC0-1.0)
+# A static controller given twice in one node. Light "up" has shadowradius
+# and radius 5 then 15 (as in a Layonara fx_flame01 light); light "down"
+# has them 15 then 5, so the first, the last and the larger value are told
+# apart. Mesh "quad" has alpha 0.25 then 0.75.
+newmodel zspec_dupctrl
+setsupermodel zspec_dupctrl NULL
+classification effect
+beginmodelgeom zspec_dupctrl
+node dummy zspec_dupctrl
+  parent NULL
+endnode
+node light up
+  parent zspec_dupctrl
+  position 0 0 1
+  color 1 0.5 0.25
+  shadowradius 5
+  radius 5
+  multiplier 1
+  shadowradius 15
+  radius 15
+endnode
+node light down
+  parent zspec_dupctrl
+  position 2 0 1
+  color 0.25 0.5 1
+  shadowradius 15
+  radius 15
+  multiplier 1
+  shadowradius 5
+  radius 5
+endnode
+node trimesh quad
+  parent zspec_dupctrl
+  bitmap zspec_t0
+  alpha 0.25
+  verts 4
+    -1 -1 0
+    1 -1 0
+    1 1 0
+    -1 1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+  alpha 0.75
+endnode
+endmodelgeom zspec_dupctrl
+donemodel zspec_dupctrl

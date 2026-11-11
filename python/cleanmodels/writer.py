@@ -291,10 +291,6 @@ class _Writer:
             ind(4, "flarecolorshifts %d" % len(l.flare_color_shifts))
             for c in l.flare_color_shifts:
                 ind(6, fmt_vec3(c))
-        if l.shadow_radius != 0:
-            ind(4, "shadowradius %s" % fmt_float(l.shadow_radius))
-        if l.vertical_displacement != 0:
-            ind(4, "verticaldisplacement %s" % fmt_float(l.vertical_displacement))
 
     def write_emitter_data(self, n, e):
         ind = self.indent

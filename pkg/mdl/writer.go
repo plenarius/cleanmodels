@@ -603,12 +603,6 @@ func (w *writer) writeLightData(n *Node, l *LightData) {
 			w.indent(6, "%s", fmtVec3(c))
 		}
 	}
-	if l.ShadowRadius != 0 {
-		w.indent(4, "shadowradius %s", fmtFloat(l.ShadowRadius))
-	}
-	if l.VerticalDisplacement != 0 {
-		w.indent(4, "verticaldisplacement %s", fmtFloat(l.VerticalDisplacement))
-	}
 }
 
 func (w *writer) writeEmitterData(n *Node, e *EmitterData) {

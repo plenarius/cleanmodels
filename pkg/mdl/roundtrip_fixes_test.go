@@ -351,3 +351,35 @@ donemodel ejt
 		t.Errorf("no warning; warnings %v", m.Warnings)
 	}
 }
+
+// A light's shadowradius and verticaldisplacement are written once.
+func TestWriteLightControllersOnce(t *testing.T) {
+	src := `newmodel lco
+setsupermodel lco NULL
+classification EFFECT
+setanimationscale 1.0
+beginmodelgeom lco
+  node dummy lco
+    parent NULL
+  endnode
+  node light lamp
+    parent lco
+    color 1 1 1
+    radius 5
+    multiplier 1
+    shadowradius 7
+    verticaldisplacement 2
+  endnode
+endmodelgeom
+donemodel lco
+`
+	var text bytes.Buffer
+	if err := Write(mustDecompile(t, mustCompile(t, mustParseASCII(t, src))), &text); err != nil {
+		t.Fatal(err)
+	}
+	for _, kw := range []string{"shadowradius 7", "verticaldisplacement 2"} {
+		if n := strings.Count(text.String(), kw); n != 1 {
+			t.Errorf("%q written %d times", kw, n)
+		}
+	}
+}

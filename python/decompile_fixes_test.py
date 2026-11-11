@@ -120,6 +120,27 @@ endmodelgeom
 donemodel ejt
 """
 
+LIGHT = """newmodel lco
+setsupermodel lco NULL
+classification EFFECT
+setanimationscale 1.0
+beginmodelgeom lco
+  node dummy lco
+    parent NULL
+  endnode
+  node light lamp
+    parent lco
+    color 1 1 1
+    radius 5
+    multiplier 1
+    shadowradius 7
+    verticaldisplacement 2
+  endnode
+endmodelgeom
+donemodel lco
+"""
+
+
 def compile_text(text):
     return compile(parse(text.encode("latin-1")).model)
 
@@ -250,6 +271,12 @@ class RoundTripFixes(unittest.TestCase):
         self.assertNotIn("texture ", write(m))
         self.assertTrue(any('emitter "chunks": texture field holds bytes that are not text (cd cc 4c 3e)' in w.message
                             for w in m.warnings), [w.message for w in m.warnings])
+
+    def test_light_controllers_once(self):
+        text = write(decompile(compile_text(LIGHT)))
+        for kw in ("shadowradius 7", "verticaldisplacement 2"):
+            self.assertEqual(text.count(kw), 1, kw)
+
 
 
 if __name__ == "__main__":
