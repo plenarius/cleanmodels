@@ -328,6 +328,43 @@ class RoundTripFixes(unittest.TestCase):
         self.assertEqual([n.name for n in d.model.nodes], ["root", "lower", "trim", "b", "wall"])
         self.assertEqual(lower.mesh.transparency_hint, 2)
 
+    def test_order_donor_sorted_by_new_hint(self):
+        # trlk1_o08_01's plane10: the donor's stored hint 1 was the only one above
+        # 0; restored with its receiver's 0, nothing is sorted, and the stored
+        # order must be kept
+        def quad(bitmap, render, dx):
+            q = MeshData()
+            q.bitmap = bitmap
+            q.render = render
+            q.verts = [(dx, 0.0, 0.0), (dx + 1, 0.0, 0.0), (dx + 1, 1.0, 0.0), (dx, 1.0, 0.0)]
+            q.tverts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+            q.faces = [Face((0, 1, 2), 0, (0, 1, 2)), Face((0, 2, 3), 0, (0, 2, 3))]
+            return q
+
+        def node(name, mesh, x=0.0):
+            n = Node(name, "root")
+            n.mesh = mesh
+            n.position = (x, 0.0, 0.0)
+            return n
+
+        stored = [Node("root", "NULL")] + [node("m%d" % i, quad("other", 1, 10.0 + 2 * i)) for i in range(20)]
+        wall = node("wall", quad("tex", 1, 0.0))
+        wall.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        wall.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        lower = node("lower", quad("tex", 0, 5.0), -3.0)
+        lower.mesh.transparency_hint = 1
+        stored += [wall, lower]
+        d = _Decompiler(b"", [])
+        d.model.super_model = "NULL"
+        d.model.nodes = list(stored)
+        d.render_lists = {wall: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]}
+        unmerge_render_lists(d)
+        self.assertEqual((lower.mesh.transparency_hint, d.stored_hints.get(lower)), (0, 1))
+        declaration_order(d.model, d.stored_hints)
+        _, children = resolve_geom_tree(d.model.nodes)
+        reorder_children(d.model.nodes[0], children)
+        self.assertTrue(_walks_as(d.model.nodes, children, stored), [n.name for n in d.model.nodes])
+
     def test_order_part_numbers_duplicate_leaf(self):
         first = compile_text(DUP_LEAF)
         again = compile_text(write(decompile(first)))

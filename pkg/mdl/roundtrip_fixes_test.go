@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -795,4 +796,36 @@ func TestAnimNodesWithoutGeometryFollowTypeWord(t *testing.T) {
 		}
 	}
 	recompileStable(t, ours)
+}
+
+// A restored donor among more than 16 siblings whose stored hint (1) was the
+// only one above 0 (trlk1_o08_01's plane10): restored, it takes its
+// receiver's 0, so a compile sorts nothing and the stored order rebuilds the
+// stored tree. Planning with the stored hint instead declared the siblings in
+// the order a sort would turn back, which the compile, not sorting, kept.
+func TestDecompileOrderDonorSortedByNewHint(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	stored := []*Node{root}
+	for i := 0; i < 20; i++ {
+		q := mergeQuad("other", 1, float32(10+2*i))
+		stored = append(stored, &Node{Name: "m" + strconv.Itoa(i), Parent: "root", Mesh: q})
+	}
+	wall := &Node{Name: "wall", Parent: "root", Mesh: mergeQuad("tex", 1, 0)}
+	wall.Mesh.Verts = append(wall.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	wall.Mesh.TVerts = append(wall.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	lower := &Node{Name: "lower", Parent: "root", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: -3}}
+	lower.Mesh.TransparencyHint = 1
+	stored = append(stored, wall, lower)
+	d := &decompiler{model: &Model{Nodes: append([]*Node(nil), stored...), SuperModel: "NULL"}}
+	d.renderLists = map[*Node][]uint16{wall: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}}
+	d.unmergeRenderLists()
+	if lower.Mesh.TransparencyHint != 0 || d.storedHints[lower] != 1 {
+		t.Fatalf("lower: hint %d, stored %v; want restored with wall's hint 0, stored 1", lower.Mesh.TransparencyHint, d.storedHints)
+	}
+	declarationOrder(d.model, d.storedHints)
+	_, children := resolveGeomTree(d.model.Nodes)
+	reorderChildren(d.model.Nodes[0], children)
+	if !walksAs(d.model.Nodes, children, stored) {
+		t.Errorf("a compile of %s does not rebuild the stored tree", nodeNames(d.model.Nodes))
+	}
 }

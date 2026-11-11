@@ -39,23 +39,14 @@ import (
 // how the inverse sort lists it.
 //
 // The candidates are planned and checked with the transparencyhints the
-// stored tree was sorted by: storedHints holds the stored hint of each mesh
-// the decompile gave another (a restored donor takes its receiver's,
-// unmergeRenderLists). The ASCII carries the new hints, so a compile sorts
-// such a node's siblings by them; the rest of the tree comes back as stored.
+// ASCII carries. storedHints holds the stored hint of each mesh the decompile
+// gave another (a restored donor takes its receiver's, unmergeRenderLists);
+// when no candidate rebuilds the stored tree with the new hints, they are
+// planned again with the stored ones, which the stored tree was sorted by.
 func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	stored := m.Nodes
 	if len(stored) < 2 || slices.Contains(stored, nil) {
 		return
-	}
-	hint := meshHint
-	if len(storedHints) > 0 {
-		hint = func(n *Node) int32 {
-			if h, ok := storedHints[n]; ok {
-				return h
-			}
-			return n.Mesh.TransparencyHint
-		}
 	}
 	// The writer and the compiler find a parent by name: the nearest node of
 	// that name declared before it (resolveGeomTree). Where a duplicate name
@@ -68,13 +59,36 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	if !walksAs(stored, children, stored) {
 		return
 	}
-	if !dupParent {
-		if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true, hint) {
-			m.Nodes = order
-			return
+	plan := func(hint func(*Node) int32) []*Node {
+		if !dupParent {
+			if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true, hint) {
+				return order
+			}
 		}
+		if order, unsorted := inverseSortOrder(stored, children, hint); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false, hint) {
+			return order
+		}
+		return nil
 	}
-	if order, unsorted := inverseSortOrder(stored, children, hint); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false, hint) {
+	// First with the hints the ASCII carries, which the compile sorts by: an
+	// order found there rebuilds the stored tree as compiled. Only when none
+	// is found, and the stored order does not rebuild it either, the stored
+	// hints a restored donor had are tried: the stored tree was sorted by
+	// them, so an order planned with them can still give the stored numbers,
+	// and the compile then moves only what the donors' new hints sort
+	// elsewhere. Planning with them first would let std::sort, past 16
+	// children, reshuffle every tie of a donor's siblings where an order
+	// with the new hints keeps them.
+	order := plan(meshHint)
+	if order == nil && len(storedHints) > 0 && !compilesTo(stored, stored, parentOf, children, nil, false, meshHint) {
+		order = plan(func(n *Node) int32 {
+			if h, ok := storedHints[n]; ok {
+				return h
+			}
+			return n.Mesh.TransparencyHint
+		})
+	}
+	if order != nil {
 		m.Nodes = order
 	}
 }

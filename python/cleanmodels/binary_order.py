@@ -7,8 +7,9 @@ then for each node whose children get sorted the order the game's std::sort
 turns back into the stored one (a node whose stored children no order gives
 keeps them), then the stored order. A candidate is only taken when compiling it
 rebuilds the stored tree node for node, apart from such a node's children. The
-candidates are planned with the stored transparencyhints (stored_hints: those
-of meshes the decompile gave another).
+candidates are planned with the transparencyhints the ASCII carries, and only
+when none is taken with the stored ones (stored_hints: those of meshes the
+decompile gave another).
 """
 
 from .compiler_order import engine_sort, hint_less, mesh_hint, reorder_children
@@ -23,22 +24,30 @@ def declaration_order(m, stored_hints=None):
     stored = m.nodes
     if len(stored) < 2 or any(n is None for n in stored):
         return
-    hint = mesh_hint
-    if stored_hints:
-        def hint(n):
-            h = stored_hints.get(n)
-            return n.mesh.transparency_hint if h is None else h
     dup_parent = duplicate_is_parent(stored)
     parent_of, children = resolve_geom_tree(stored)
     if not _walks_as(stored, children, stored):
         return
-    if not dup_parent:
-        order = _part_number_order(m)
-        if order is not None and _compiles_to(order, stored, parent_of, children, None, True, hint):
-            m.nodes = order
-            return
-    order, unsorted = _inverse_sort_order(stored, children, hint)
-    if order is not None and _compiles_to(order, stored, parent_of, children, unsorted, False, hint):
+
+    def plan(hint):
+        if not dup_parent:
+            order = _part_number_order(m)
+            if order is not None and _compiles_to(order, stored, parent_of, children, None, True, hint):
+                return order
+        order, unsorted = _inverse_sort_order(stored, children, hint)
+        if order is not None and _compiles_to(order, stored, parent_of, children, unsorted, False, hint):
+            return order
+        return None
+
+    # first with the hints the ASCII carries; the stored hints of restored
+    # donors only when no order rebuilds the stored tree with them
+    order = plan(mesh_hint)
+    if order is None and stored_hints and not _compiles_to(stored, stored, parent_of, children, None, False, mesh_hint):
+        def stored_hint(n):
+            h = stored_hints.get(n)
+            return n.mesh.transparency_hint if h is None else h
+        order = plan(stored_hint)
+    if order is not None:
         m.nodes = order
 
 

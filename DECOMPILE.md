@@ -92,11 +92,16 @@ and tree; else, for each node whose children get sorted, the order the sort
 turns back into the stored one; else the stored order. A candidate is taken
 only when a compile of it rebuilds the stored tree.
 
-- **Sort keys.** The candidates are planned with the transparencyhints the
-  stored tree was sorted by. A donor restored from a merged render list takes
-  its receiver's hint (see "Merged render lists"), so its stored hint is kept
-  aside for this. The ASCII carries the new hint, and a compile sorts the
-  donor among its siblings by it; the rest of the tree comes back as stored.
+- **Sort keys.** A donor restored from a merged render list takes its
+  receiver's transparencyhint (see "Merged render lists"), and the ASCII
+  carries that one, so the candidates are planned with it first: an order
+  found that way rebuilds the stored tree as a compile sorts it. Only when
+  none does, and the stored order does not either, are they planned with the
+  stored hints, which the stored tree was sorted by; the compile then sorts
+  the donor among its siblings by its new hint (`plc_tn1_28`). Planning with
+  the stored hints first moved the equal-hint siblings of a donor whose
+  stored hint was the only one above 0 (`trlk1_o08_01`): the compile, sorting
+  nothing, kept the order a sort would have turned back.
 - **Duplicate names.** A parent is found by name: the nearest node of that
   name declared before it. A name used twice by nodes that are no parent
   changes nothing. Where a name used twice is some node's parent (a child
