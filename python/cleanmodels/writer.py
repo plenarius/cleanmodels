@@ -375,6 +375,7 @@ class _Writer:
             self.vec3_list(6, "verts", an.mesh.verts)
             self.write_faces(6, an.mesh.faces)
             self.vec3_list(6, "tverts", an.mesh.tverts)
+            self.vec3_list(6, "normals", an.mesh.normals)
         if an.anim_mesh is not None:
             am = an.anim_mesh
             if am.clip_u != 0 or am.clip_v != 0 or am.clip_w != 0 or am.clip_h != 0:

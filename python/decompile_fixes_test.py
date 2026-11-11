@@ -277,6 +277,15 @@ class RoundTripFixes(unittest.TestCase):
         for kw in ("shadowradius 7", "verticaldisplacement 2"):
             self.assertEqual(text.count(kw), 1, kw)
 
+    def test_animmesh_normals(self):
+        with open(os.path.join(ENGINE, "zspec_animnrm.mdl"), "rb") as f:
+            golden = f.read()
+        with open(os.path.join(ENGINE, "zspec_animnrm.ascii.mdl"), "rb") as f:
+            ours = compile(parse(f.read()).model)
+        want, got = write(decompile(golden)), write(decompile(ours))
+        self.assertIn("normals 4", want.split("newanim", 1)[1])
+        self.assertEqual([ln for ln in got.splitlines() if "orientation 0 0 1 0" not in ln],
+                         [ln for ln in want.splitlines() if "orientation 0 0 1 0" not in ln])
 
 
 if __name__ == "__main__":

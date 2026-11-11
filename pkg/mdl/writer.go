@@ -746,6 +746,7 @@ func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
 		w.writeVec3ListAt(6, "verts", mesh.Verts)
 		w.writeFaces(6, mesh.Faces)
 		w.writeVec3ListAt(6, "tverts", mesh.TVerts)
+		w.writeVec3ListAt(6, "normals", mesh.Normals)
 	}
 
 	// AnimMesh parameters (sampleperiod, clip*, animverts, animtverts)

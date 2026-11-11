@@ -34,6 +34,7 @@ from .types import (
 
 MESH_HEADER_SIZE = 512
 MESH_HEADER_P_MDX_VERTEX = 444
+MESH_HEADER_P_MDX_NORMAL = 468
 MAX_READ_NODE_DEPTH = 256
 
 _U32 = struct.Struct("<I")
@@ -1217,7 +1218,7 @@ class _Decompiler:
 
         anim_mesh_verts = 0
         anim_faces_def = (0, 0, 0)
-        anim_p_vertex = anim_p_tex0 = 0
+        anim_p_vertex = anim_p_tex0 = anim_p_normals = 0
         if has_mesh and has_anim:
             mesh_start = self.p
             self.skip(8)
@@ -1227,6 +1228,8 @@ class _Decompiler:
             count_verts = self.read_u16()
             self.skip(2)
             anim_p_tex0 = self.read_i32()
+            self.seek(mesh_start + MESH_HEADER_P_MDX_NORMAL)
+            anim_p_normals = self.read_i32()
             anim_mesh_verts = count_verts
             self.seek(mesh_start + MESH_HEADER_SIZE)
         elif has_mesh:
@@ -1273,6 +1276,10 @@ class _Decompiler:
             if anim_p_tex0 >= 0:
                 self.at("tverts")
                 mesh.tverts = self.read_vec2_array_at(self.go_to_mdx_pointer(anim_p_tex0), anim_mesh_verts, mesh.tverts)
+            if anim_p_normals >= 0:
+                self.at("normals")
+                mesh.normals = self.read_vec3_array_at(self.go_to_mdx_pointer(anim_p_normals), anim_mesh_verts,
+                                                       mesh.normals)
             if anim_faces_def[1] > 0 and anim_faces_def[0] != 0:
                 self.read_faces(mesh, anim_faces_def)
             an.mesh = mesh

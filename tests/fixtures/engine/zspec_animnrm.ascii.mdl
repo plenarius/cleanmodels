@@ -1,0 +1,147 @@
+# nwn-mdl-spec conformance probe zspec_animnrm (CC0-1.0)
+# A normals list in an animation's animmesh node. Two animmesh nodes share a
+# folded quad (vertex 2 raised) whose faces are in smoothing groups 1 and 2,
+# so normals computed from the groups would split vertices 0 and 2 (6 merged
+# vertices); the given normals (0.6 0 0.8 at every vertex) would not (4).
+# Both geometry nodes give the normals. In the animation, node "given"
+# repeats them and node "computed" does not.
+newmodel zspec_animnrm
+setsupermodel zspec_animnrm NULL
+classification effect
+beginmodelgeom zspec_animnrm
+node dummy zspec_animnrm
+  parent NULL
+endnode
+node animmesh given
+  parent zspec_animnrm
+  position 0 0 0
+  bitmap zspec_t0
+  verts 4
+    -1 -1 0
+    1 -1 0
+    1 1 1
+    -1 1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 2 0 2 3 0
+  normals 4
+    0.6 0 0.8
+    0.6 0 0.8
+    0.6 0 0.8
+    0.6 0 0.8
+endnode
+node animmesh computed
+  parent zspec_animnrm
+  position 3 0 0
+  bitmap zspec_t0
+  verts 4
+    -1 -1 0
+    1 -1 0
+    1 1 1
+    -1 1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 2 0 2 3 0
+  normals 4
+    0.6 0 0.8
+    0.6 0 0.8
+    0.6 0 0.8
+    0.6 0 0.8
+endnode
+endmodelgeom zspec_animnrm
+newanim animloop01 zspec_animnrm
+  length 1
+  transtime 0
+  animroot zspec_animnrm
+  node dummy zspec_animnrm
+    parent NULL
+  endnode
+  node animmesh given
+    parent zspec_animnrm
+    sampleperiod 0.5
+    bitmap zspec_t0
+    verts 4
+      -1 -1 0
+      1 -1 0
+      1 1 1
+      -1 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 2 0 2 3 0
+    normals 4
+      0.6 0 0.8
+      0.6 0 0.8
+      0.6 0 0.8
+      0.6 0 0.8
+    animverts 8
+      -1 -1 0
+      1 -1 0.01
+      1 1 1.02
+      -1 1 0.03
+      -1 -1 0.1
+      1 -1 0.11
+      1 1 1.12
+      -1 1 0.13
+    animtverts 8
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+      0.25 0 0
+      1.25 0 0
+      1.25 1 0
+      0.25 1 0
+  endnode
+  node animmesh computed
+    parent zspec_animnrm
+    sampleperiod 0.5
+    bitmap zspec_t0
+    verts 4
+      -1 -1 0
+      1 -1 0
+      1 1 1
+      -1 1 0
+    tverts 4
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+    faces 2
+      0 1 2 1 0 1 2 0
+      0 2 3 2 0 2 3 0
+    animverts 8
+      -1 -1 0.5
+      1 -1 0.51
+      1 1 1.52
+      -1 1 0.53
+      -1 -1 0.6
+      1 -1 0.61
+      1 1 1.62
+      -1 1 0.63
+    animtverts 8
+      0 0 0
+      1 0 0
+      1 1 0
+      0 1 0
+      0.25 0 0
+      1.25 0 0
+      1.25 1 0
+      0.25 1 0
+  endnode
+doneanim animloop01 zspec_animnrm
+donemodel zspec_animnrm

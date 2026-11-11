@@ -345,6 +345,13 @@ each vertex in every set before the next vertex. The ASCII lists one whole set
 after another, so `readAnimMeshHeader` transposes them (`animSetMajor`), and
 the compiler transposes them back over its GPU vertices (finding 44).
 
+An animation's animmesh node carries a mesh of its own (verts, faces, tverts
+and normals). Its `normals` are read, written in the animation node and
+parsed there: the game's compiler stores them as given and keeps the vertex
+count, and without them computes per-face normals from the smoothing groups
+and splits the vertices, so the vertex sets no longer line up (nwn-mdl-spec
+MDL-MESH-065, probe `zspec_animnrm`).
+
 ## AABB walkmeshes
 
 `readAABBHeader` reads the root pointer, then `readAABBTree` walks the

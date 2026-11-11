@@ -30,6 +30,7 @@ const (
 	meshHeaderPMdxVertex = 444 // int32 p_mdx_vertex
 	meshHeaderCountVerts = 448 // uint16 count_vertexes
 	meshHeaderPMdxTex0   = 452 // int32 p_mdx_texture0
+	meshHeaderPMdxNormal = 468 // int32 p_mdx_normals
 )
 
 // DecompileFile reads a binary MDL from disk.
@@ -2315,7 +2316,7 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 
 	var animMeshVerts int
 	var animFacesDef binArrayDef
-	var animPMdxVertex, animPMdxTex0 int32
+	var animPMdxVertex, animPMdxTex0, animPMdxNormals int32
 	if hasMesh && hasAnim {
 		meshStart := d.pos()
 		d.skip(8)                          // p_func1, p_func2
@@ -2325,6 +2326,8 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		countVerts, _ := d.readU16()       // offset meshHeaderCountVerts
 		d.skip(2)                          // countTextures
 		animPMdxTex0, _ = d.readI32()      // offset meshHeaderPMdxTex0
+		d.seek(meshStart + meshHeaderPMdxNormal)
+		animPMdxNormals, _ = d.readI32()
 		animMeshVerts = int(countVerts)
 		d.seek(meshStart + meshHeaderSize)
 	} else if hasMesh {
@@ -2385,6 +2388,13 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		if animPMdxTex0 >= 0 {
 			d.at("tverts")
 			d.readMDXTexCoords(&mesh.TVerts, animPMdxTex0, animMeshVerts)
+		}
+		// The game's compiler reads an animation's animmesh normals as a
+		// geometry mesh's (nwn-mdl-spec MDL-MESH-065); without them it
+		// computes per-face normals and splits the vertices.
+		if animPMdxNormals >= 0 {
+			d.at("normals")
+			d.readMDXVec3Array(&mesh.Normals, animPMdxNormals, animMeshVerts)
 		}
 		if animFacesDef.Count > 0 && animFacesDef.Ptr != 0 {
 			d.readFaces(mesh, animFacesDef)

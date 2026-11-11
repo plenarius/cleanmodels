@@ -873,7 +873,7 @@ class _Parser:
             self.key_list(tokens, an.position_keys, 40, "position bezier keys", self.position_bezier_key)
         elif kw == "orientationkey":
             self.key_list(tokens, an.orientation_keys, 20, "orientation keys", self.orientation_key)
-        elif kw == "verts" or kw == "faces" or kw == "tverts":
+        elif kw == "verts" or kw == "faces" or kw == "tverts" or kw == "normals":
             if len(tokens) >= 2:
                 if an.mesh is None:
                     an.mesh = MeshData()
@@ -882,7 +882,8 @@ class _Parser:
                     if kw == "faces":
                         self.read_face_list(an.mesh.faces, c)
                     else:
-                        self.read_vec_list(an.mesh.verts if kw == "verts" else an.mesh.tverts, c, 3)
+                        lst = {"verts": an.mesh.verts, "tverts": an.mesh.tverts, "normals": an.mesh.normals}[kw]
+                        self.read_vec_list(lst, c, 3)
         elif kw in _ANIM_MESH_FLOATS:
             if len(tokens) >= 2:
                 if an.anim_mesh is None:
