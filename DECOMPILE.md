@@ -252,8 +252,9 @@ The game never draws a render-0 mesh (`PartTriMesh::IsPartRenderable`), and it
 builds shadows from face lists whatever the render flag. ASCII has only faces,
 so `unmergeRenderLists` (`binary_merged.go`) matches each donor's faces to
 copies in a receiver's list (texture coordinates, side lengths, and the copy
-that lies where the donor does in world space first) and writes what the game
-drew, in one of two ways:
+that lies where the donor does in world space first; every receiver first takes
+only donors whose copies it holds in place, so of two receivers of one texture
+neither takes the other's) and writes what the game drew, in one of two ways:
 
 - **Restored** (usual): the donor gets render 1 and draws on its own. It takes
   what its copies were drawn with, not its own values, which were never drawn:
@@ -272,7 +273,8 @@ drew, in one of two ways:
   and look as they did. So a donor folds when its vertices, placed in world
   space, miss its copies (the merging tool baked them without the donor's
   `scale`), when an animation moves a node on the donor's or the receiver's
-  parent chain below the nodes they share (cabinet doors the game drew still),
+  parent chain below the nodes they share (cabinet and safe doors the game drew
+  still, as part of the cabinet),
   or when an animation changes the alpha or self-illumination of either away
   from the receiver's. If both cast shadows, the donor gets `shadow 0`, since
   the receiver's copies now cast it.

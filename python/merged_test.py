@@ -177,7 +177,7 @@ class MergedRenderLists(unittest.TestCase):
         self.assertEqual(m.stored_adjacency[2:], [[-1, -1, 3], [2, -1, -1]])
         self.assertEqual(d.model.render_merges, [("wall", [], 0, ["lower"])])
         self.assertEqual(len(d.model.notes), 1)
-        self.assertIn("lower (an animation moves lower, which the game drew still)", d.model.notes[0].message)
+        self.assertIn("lower (an animation moves lower, but the game drew it as part of wall)", d.model.notes[0].message)
         self.assertIn("lower get shadow 0", d.model.notes[0].message)
 
     def test_fold_rule(self):
@@ -232,6 +232,22 @@ class MergedRenderLists(unittest.TestCase):
         d.render_lists = {recv: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11]}
         unmerge_render_lists(d)
         self.assertEqual(d.model.render_merges, [("wall", ["a", "b"], 0, [])])
+
+    def test_donor_to_receiver_in_place(self):
+        r1 = node("wall1", merge_quad("tex", 1, 0.0))
+        r2 = node("wall2", merge_quad("tex", 1, 20.0))
+        a = node("a", merge_quad("tex", 0, 5.0), (-3.0, 0.0, 0.0))  # drawn at 2..3, in wall2
+        b = node("b", merge_quad("tex", 0, 5.0), (7.0, 0.0, 0.0))  # drawn at 12..13, in wall1
+        r1.mesh.verts += [(12.0, 0.0, 0.0), (13.0, 0.0, 0.0), (13.0, 1.0, 0.0), (12.0, 1.0, 0.0)]
+        r2.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        for r in (r1, r2):
+            r.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        rl = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]
+        d = _Decompiler(b"", [])
+        d.model.nodes = [r1, r2, a, b]
+        d.render_lists = {r1: rl, r2: rl}
+        unmerge_render_lists(d)
+        self.assertEqual(d.model.render_merges, [("wall1", ["b"], 0, []), ("wall2", ["a"], 0, [])])
 
     def test_donor_normals_from_turned_copy(self):
         recv = node("wall", merge_quad("tex", 1, 0.0))

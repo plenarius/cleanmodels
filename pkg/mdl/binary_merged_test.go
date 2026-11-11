@@ -283,7 +283,7 @@ func TestUnmergeRenderListsFoldsAnimatedDonor(t *testing.T) {
 	if len(rm) != 1 || len(rm[0].Donors) != 0 || len(rm[0].Folded) != 1 {
 		t.Errorf("merges: %+v", rm)
 	}
-	if len(d.model.Notes) != 1 || !strings.Contains(d.model.Notes[0].Message, "lower (an animation moves lower, which the game drew still)") ||
+	if len(d.model.Notes) != 1 || !strings.Contains(d.model.Notes[0].Message, "lower (an animation moves lower, but the game drew it as part of wall)") ||
 		!strings.Contains(d.model.Notes[0].Message, "lower get shadow 0") {
 		t.Errorf("notes: %+v", d.model.Notes)
 	}
@@ -344,6 +344,30 @@ func TestUnmergeRenderListsPrefersCopyInPlace(t *testing.T) {
 	d.renderLists = map[*Node][]uint16{recv: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11}}
 	d.unmergeRenderLists()
 	if rm := d.model.RenderMerges; len(rm) != 1 || len(rm[0].Donors) != 2 || len(rm[0].Folded) != 0 {
+		t.Errorf("merges: %+v", rm)
+	}
+}
+
+// Two receivers of one texture, each holding a copy of a donor of the same
+// shape: each donor goes to the receiver that holds its copy where it lies,
+// not to the first receiver its shape fits, and neither is folded.
+func TestUnmergeRenderListsDonorToReceiverInPlace(t *testing.T) {
+	r1 := &Node{Name: "wall1", Mesh: mergeQuad("tex", 1, 0)}
+	r2 := &Node{Name: "wall2", Mesh: mergeQuad("tex", 1, 20)}
+	a := &Node{Name: "a", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: -3}} // drawn at 2..3, in wall2
+	b := &Node{Name: "b", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: 7}}  // drawn at 12..13, in wall1
+	r1.Mesh.Verts = append(r1.Mesh.Verts, Vec3{12, 0, 0}, Vec3{13, 0, 0}, Vec3{13, 1, 0}, Vec3{12, 1, 0})
+	r2.Mesh.Verts = append(r2.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	for _, r := range []*Node{r1, r2} {
+		r.Mesh.TVerts = append(r.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	}
+	rl := []uint16{0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}
+	d := &decompiler{model: &Model{Nodes: []*Node{r1, r2, a, b}}}
+	d.renderLists = map[*Node][]uint16{r1: rl, r2: rl}
+	d.unmergeRenderLists()
+	rm := d.model.RenderMerges
+	if len(rm) != 2 || len(rm[0].Donors) != 1 || rm[0].Donors[0] != "b" || len(rm[1].Donors) != 1 || rm[1].Donors[0] != "a" ||
+		len(rm[0].Folded)+len(rm[1].Folded) != 0 {
 		t.Errorf("merges: %+v", rm)
 	}
 }

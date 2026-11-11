@@ -1739,11 +1739,12 @@ def apply_tangent_clones(d):
 
 
 def unmerge_render_lists(d):
-    """unmergeRenderLists: restore or fold merged donors, note or warn per receiver."""
+    """unmergeRenderLists: restore or fold merged donors, note or warn per receiver. Donors are matched in
+    two passes over the receivers: first only one whose every triangle has a copy where it lies in world
+    space, then any by shape alone."""
     if not d.render_lists:
         return
     parent_of = None
-    motion = None
     world = {}
 
     def world_of(n):
@@ -1752,8 +1753,7 @@ def unmerge_render_lists(d):
             w = world[n] = world_vertices(parent_of, n)
         return w
 
-    used = set()
-    receivers = set()
+    recs = []  # [r, rl, extra, unreadable, wr, donors: [(n, at, pairs)]]
     for r in d.model.nodes:
         rl = d.render_lists.get(r)
         if r.mesh is None or rl is None or len(rl) <= 3 * len(r.mesh.faces):
@@ -1776,36 +1776,46 @@ def unmerge_render_lists(d):
             continue
         if parent_of is None:
             parent_of = resolve_geom_tree(d.model.nodes)[0]
-            motion = _merge_motion(d.model)
-        receivers.add(id(r))
-        wr = world_of(r)
+        recs.append([r, rl, extra, unreadable, world_of(r), []])
+    if not recs:
+        return
+    used = set()
+    for in_place in (True, False):
+        for rec in recs:
+            r, wr = rec[0], rec[4]
+            for at, n in enumerate(d.model.nodes):
+                m = n.mesh
+                if (n is r or m is None or id(n) in used or m.render != 0 or d.render_lists.get(n) or not m.faces
+                        or not equal_fold(m.bitmap, r.mesh.bitmap)):
+                    continue
+                wd = world_of(n)
+                trial = rec[2].copy()
+                ok = True
+                pairs = []  # each donor face and the copy it matched
+                for fi, f in enumerate(m.faces):
+                    t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2], fi)
+                    i = -1
+                    if t is not None:
+                        i = trial.find(t, lambda c, t=t: _world_fits(wd, t[3], wr, c[3]))
+                    if i < 0 or (in_place and not _world_fits(wd, t[3], wr, trial.get(t, i)[3])):
+                        ok = False
+                        break
+                    pairs.append((t, trial.get(t, i)))
+                    trial.take(t, i)
+                if not ok:
+                    continue
+                rec[2] = trial
+                used.add(id(n))
+                rec[5].append((n, at, pairs))
+    motion = _merge_motion(d.model)
+    for r, rl, extra, unreadable, wr, matched in recs:
+        matched.sort(key=lambda x: x[1])
         donors, folded_names = [], []
         folded = []  # donor faces folded into r, and their copies
         fold_why, shadow_off, restyled = [], [], []
-        for n in d.model.nodes:
+        for n, _at, pairs in matched:
             m = n.mesh
-            if (n is r or m is None or id(n) in used or id(n) in receivers or m.render != 0 or d.render_lists.get(n)
-                    or not m.faces or not equal_fold(m.bitmap, r.mesh.bitmap)):
-                continue
-            wd = world_of(n)
-            trial = extra.copy()
-            ok = True
-            pairs = []  # each donor face and the copy it matched
-            for fi, f in enumerate(m.faces):
-                t = _mesh_tri(m, f.verts[0], f.verts[1], f.verts[2], fi)
-                i = -1
-                if t is not None:
-                    i = trial.find(t, lambda c, t=t: _world_fits(wd, t[3], wr, c[3]))
-                if i < 0:
-                    ok = False
-                    break
-                pairs.append((t, trial.get(t, i)))
-                trial.take(t, i)
-            if not ok:
-                continue
-            extra = trial
-            used.add(id(n))
-            why = _fold_reason(parent_of, motion, r, n, wr, wd, pairs)
+            why = _fold_reason(parent_of, motion, r, n, wr, world_of(n), pairs)
             if why:
                 folded.extend(pairs)
                 folded_names.append(n.name)
@@ -1914,7 +1924,7 @@ def _fold_reason(parent_of, motion, r, n, wr, wd, pairs):
     in_r, in_d = set(rc), set(dc)
     for x in dc:
         if x not in in_r and go_lower(x.name) in moves:
-            return "an animation moves %s, which the game drew still" % x.name
+            return "an animation moves %s, but the game drew it as part of %s" % (x.name, r.name)
     for x in rc:
         if x not in in_d and go_lower(x.name) in moves:
             return "an animation moves %s, with the copies" % x.name

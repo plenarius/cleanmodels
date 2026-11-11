@@ -148,15 +148,37 @@ func (p *triPool) take(t mergeTri, i int) {
 	p.n--
 }
 
+// mergeReceiver is a mesh whose render list draws more than its faces, while
+// unmergeRenderLists matches donors to it.
+type mergeReceiver struct {
+	r          *Node
+	rl         []uint16
+	extra      triPool // the list's triangles no face or donor has taken yet
+	unreadable int
+	wr         []Vec3 // r's vertices in world space
+	donors     []mergeDonor
+}
+
+// mergeDonor is a donor matched to a receiver: its faces and their copies.
+type mergeDonor struct {
+	n     *Node
+	at    int // its index in the model's nodes
+	pairs [][2]mergeTri
+}
+
 // unmergeRenderLists finds merged meshes in the model just read and restores
 // or folds the donors (see above), with a note for each receiver, and a
 // warning for triangles no donor accounts for.
+//
+// Donors are matched in two passes over the receivers: first only a donor
+// whose every triangle has a copy where it lies in world space, then any by
+// shape alone. Two receivers of one texture can each hold copies of a donor
+// of the same shape, and a receiver must not take the other's.
 func (d *decompiler) unmergeRenderLists() {
 	if len(d.renderLists) == 0 {
 		return
 	}
 	var idx map[*Node]*Node
-	var motion mergeMotion
 	world := map[*Node][]Vec3{}
 	worldOf := func(n *Node) []Vec3 {
 		w, ok := world[n]
@@ -166,8 +188,7 @@ func (d *decompiler) unmergeRenderLists() {
 		}
 		return w
 	}
-	used := map[*Node]bool{}
-	receivers := map[*Node]bool{}
+	var recs []*mergeReceiver
 	for _, r := range d.model.Nodes {
 		rl := d.renderLists[r]
 		if r.Mesh == nil || len(rl) <= 3*len(r.Mesh.Faces) {
@@ -175,71 +196,87 @@ func (d *decompiler) unmergeRenderLists() {
 		}
 		// A triangle of the index list that cannot be read (a vertex index
 		// past the vertex list) counts as lost.
-		var extra triPool
-		unreadable := 0
+		rec := &mergeReceiver{r: r, rl: rl}
 		for k := 0; k+2 < len(rl); k += 3 {
 			if t, ok := meshTri(r.Mesh, int(rl[k]), int(rl[k+1]), int(rl[k+2])); ok {
 				t.k = k / 3
-				extra.add(t)
+				rec.extra.add(t)
 			} else {
-				unreadable++
+				rec.unreadable++
 			}
 		}
 		for _, f := range r.Mesh.Faces {
 			if t, ok := meshTri(r.Mesh, int(f.Verts[0]), int(f.Verts[1]), int(f.Verts[2])); ok {
-				if i := extra.find(t); i >= 0 {
-					extra.take(t, i)
+				if i := rec.extra.find(t); i >= 0 {
+					rec.extra.take(t, i)
 				}
 			}
 		}
-		if extra.n == 0 && unreadable == 0 {
+		if rec.extra.n == 0 && rec.unreadable == 0 {
 			continue
 		}
 		if idx == nil {
 			idx = nodeIndex(d.model)
-			motion = newMergeMotion(d.model)
 		}
-		receivers[r] = true
-		wr := worldOf(r)
+		rec.wr = worldOf(r)
+		recs = append(recs, rec)
+	}
+	if len(recs) == 0 {
+		return
+	}
+	used := map[*Node]bool{}
+	for _, inPlace := range [2]bool{true, false} {
+		for _, rec := range recs {
+			r := rec.r
+			for at, n := range d.model.Nodes {
+				m := n.Mesh
+				if n == r || m == nil || used[n] || m.Render != 0 || len(d.renderLists[n]) > 0 || len(m.Faces) == 0 ||
+					!strings.EqualFold(m.Bitmap, r.Mesh.Bitmap) {
+					continue
+				}
+				wd := worldOf(n)
+				// Take the donor's triangles from a copy: a donor counts only
+				// when all of them are there.
+				trial := triPool{byUV: map[[3][2]float32][]mergeTri{}, n: rec.extra.n}
+				for k, v := range rec.extra.byUV {
+					trial.byUV[k] = append([]mergeTri(nil), v...)
+				}
+				ok := true
+				var pairs [][2]mergeTri // each donor face and the copy it matched
+				for fi, f := range m.Faces {
+					t, good := meshTri(m, int(f.Verts[0]), int(f.Verts[1]), int(f.Verts[2]))
+					i := -1
+					if good {
+						t.k = fi
+						i = trial.findPreferring(t, func(c mergeTri) bool { return worldFits(wd, t.vi, rec.wr, c.vi) })
+					}
+					if i < 0 || inPlace && !worldFits(wd, t.vi, rec.wr, trial.get(t, i).vi) {
+						ok = false
+						break
+					}
+					pairs = append(pairs, [2]mergeTri{t, trial.get(t, i)})
+					trial.take(t, i)
+				}
+				if !ok {
+					continue
+				}
+				rec.extra = trial
+				used[n] = true
+				rec.donors = append(rec.donors, mergeDonor{n: n, at: at, pairs: pairs})
+			}
+		}
+	}
+	motion := newMergeMotion(d.model)
+	for _, rec := range recs {
+		r := rec.r
+		sort.SliceStable(rec.donors, func(i, j int) bool { return rec.donors[i].at < rec.donors[j].at })
 		merge := RenderMerge{Receiver: r.Name}
 		var folded [][2]mergeTri // donor faces folded into r, and their copies
 		var foldWhy, shadowOff, restyled []string
-		for _, n := range d.model.Nodes {
-			m := n.Mesh
-			if n == r || m == nil || used[n] || receivers[n] || m.Render != 0 || len(d.renderLists[n]) > 0 ||
-				len(m.Faces) == 0 || !strings.EqualFold(m.Bitmap, r.Mesh.Bitmap) {
-				continue
-			}
-			wd := worldOf(n)
-			// Take the donor's triangles from a copy: a donor counts only
-			// when all of them are there.
-			trial := triPool{byUV: map[[3][2]float32][]mergeTri{}, n: extra.n}
-			for k, v := range extra.byUV {
-				trial.byUV[k] = append([]mergeTri(nil), v...)
-			}
-			ok := true
-			var pairs [][2]mergeTri // each donor face and the copy it matched
-			for fi, f := range m.Faces {
-				t, good := meshTri(m, int(f.Verts[0]), int(f.Verts[1]), int(f.Verts[2]))
-				i := -1
-				if good {
-					t.k = fi
-					i = trial.findPreferring(t, func(c mergeTri) bool { return worldFits(wd, t.vi, wr, c.vi) })
-				}
-				if i < 0 {
-					ok = false
-					break
-				}
-				pairs = append(pairs, [2]mergeTri{t, trial.get(t, i)})
-				trial.take(t, i)
-			}
-			if !ok {
-				continue
-			}
-			extra = trial
-			used[n] = true
-			if why := foldReason(idx, motion, r, n, wr, wd, pairs); why != "" {
-				folded = append(folded, pairs...)
+		for _, dn := range rec.donors {
+			n, m := dn.n, dn.n.Mesh
+			if why := foldReason(idx, motion, r, n, rec.wr, worldOf(n), dn.pairs); why != "" {
+				folded = append(folded, dn.pairs...)
 				merge.Folded = append(merge.Folded, n.Name)
 				foldWhy = append(foldWhy, fmt.Sprintf("%s (%s)", n.Name, why))
 				if m.Shadow != 0 && r.Mesh.Shadow != 0 {
@@ -252,13 +289,13 @@ func (d *decompiler) unmergeRenderLists() {
 			if diff := copyDrawingState(r, n); len(diff) > 0 {
 				restyled = append(restyled, fmt.Sprintf("%s (%s)", n.Name, strings.Join(diff, ", ")))
 			}
-			donorCorners(n, pairs)
+			donorCorners(n, dn.pairs)
 			merge.Donors = append(merge.Donors, n.Name)
 		}
-		merge.Lost = extra.n + unreadable
+		merge.Lost = rec.extra.n + rec.unreadable
 		d.model.RenderMerges = append(d.model.RenderMerges, merge)
 		foldCopies(r, folded)
-		dropCopyVertices(r, rl)
+		dropCopyVertices(r, rec.rl)
 		if len(merge.Donors) > 0 {
 			d.note(WarnGeneral, 0, r.Name,
 				"its render list also draws %s, merged into it by the tool that compiled the model (render 0 and no render list of their own): written with render 1, which draws the same as separate meshes",
@@ -397,7 +434,7 @@ func foldReason(idx map[*Node]*Node, motion mergeMotion, r, n *Node, wr, wd []Ve
 	}
 	for _, x := range dc {
 		if !inR[x] && motion.moves[strings.ToLower(x.Name)] {
-			return fmt.Sprintf("an animation moves %s, which the game drew still", x.Name)
+			return fmt.Sprintf("an animation moves %s, but the game drew it as part of %s", x.Name, r.Name)
 		}
 	}
 	for _, x := range rc {
