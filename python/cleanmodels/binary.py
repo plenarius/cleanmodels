@@ -259,14 +259,21 @@ class _Decompiler:
 
     def read_fixed_string(self, n):
         """Returns (string, ok). A short read returns ("", False)."""
+        s, _, ok = self.read_fixed_text(n)
+        return s, ok
+
+    def read_fixed_text(self, n):
+        """readFixedText: (string, junk bytes or None, ok)."""
         at = self._take(n)
         if at is None:
-            return "", False
+            return "", None, False
         buf = self.data[at:at + n]
         end = buf.find(b"\0")
         if end >= 0:
             buf = buf[:end]
-        return bytes(c for c in buf if 0x20 <= c < 0x7F).decode("ascii").lower(), True
+        clean = bytes(c for c in buf if 0x20 <= c < 0x7F)
+        junk = bytes(buf) if len(clean) < len(buf) else None
+        return clean.decode("ascii").lower(), junk, True
 
     def read_array_def(self):
         """Returns (ptr, count, alloc); zeros on a short read (no read_err)."""
@@ -509,7 +516,13 @@ class _Decompiler:
         em.update = self.read_fixed_string(32)[0]
         em.render = self.read_fixed_string(32)[0]
         em.blend = self.read_fixed_string(32)[0]
-        em.texture = self.read_fixed_string(64)[0]
+        tex_at = self.p
+        em.texture, junk, _ = self.read_fixed_text(64)
+        if junk is not None:
+            em.texture = ""
+            self.warn(WARN_GENERAL, tex_at, node.name,
+                      "emitter %s: texture field holds bytes that are not text (%s); no texture written"
+                      % (quote(node.name), " ".join("%02x" % c for c in junk)))
         chunk = self.read_fixed_string(16)[0]
         if chunk:
             em.chunk_name = chunk

@@ -167,7 +167,7 @@ func TestCompiledVolatileStreamOrder(t *testing.T) {
 // stream as Vec3 (the old behaviour) consumed three times the data present and
 // spilled into whatever followed, so the recovered signs were arbitrary.
 func TestHandednessRoundTrip(t *testing.T) {
-	m := mustDecompile(t, mustCompile(t, mustParseASCII(t, normalMappedQuad)))
+	m := mustDecompileStored(t, mustCompile(t, mustParseASCII(t, normalMappedQuad)))
 	n := m.FindNode("top")
 	if n == nil || n.Mesh == nil {
 		t.Fatal("mesh node 'top' missing after roundtrip")

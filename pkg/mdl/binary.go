@@ -385,9 +385,16 @@ func (d *decompiler) skip(n int) error {
 }
 
 func (d *decompiler) readFixedString(n int) (string, error) {
+	s, _, err := d.readFixedText(n)
+	return s, err
+}
+
+// readFixedText is readFixedString that also returns the bytes before the
+// first NUL when any of them is not printable ASCII (and is dropped from s).
+func (d *decompiler) readFixedText(n int) (s string, junk []byte, err error) {
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(d.r, buf); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	end := 0
 	for end < n && buf[end] != 0 {
@@ -399,7 +406,10 @@ func (d *decompiler) readFixedString(n int) (string, error) {
 			clean = append(clean, buf[i])
 		}
 	}
-	return strings.ToLower(string(clean)), nil
+	if len(clean) < end {
+		junk = buf[:end]
+	}
+	return strings.ToLower(string(clean)), junk, nil
 }
 
 // readArrayDef reads a 12-byte array_definition {p_array_start, nr_used, nr_alloc}.
@@ -845,7 +855,15 @@ func (d *decompiler) readEmitterHeader(node *Node) {
 	em.Update, _ = d.readFixedString(32)
 	em.Render, _ = d.readFixedString(32)
 	em.Blend, _ = d.readFixedString(32)
-	em.Texture, _ = d.readFixedString(64)
+	texAt := d.pos()
+	tex, junk, _ := d.readFixedText(64)
+	em.Texture = tex
+	if junk != nil {
+		// Uninitialised memory an old compiler left (a chunk emitter draws its
+		// chunk, not the texture): what printable bytes it holds are no name.
+		em.Texture = ""
+		d.warn(WarnGeneral, texAt, node.Name, "emitter %q: texture field holds bytes that are not text (% x); no texture written", node.Name, junk)
+	}
 
 	chunk, _ := d.readFixedString(16)
 	if chunk != "" {

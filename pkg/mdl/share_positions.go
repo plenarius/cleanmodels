@@ -19,6 +19,8 @@ import (
 // Which vertices to join comes from the binary's stored neighbours: when face i
 // names face j across an edge, that edge's ends were one source vertex in each
 // (the neighbours were computed on source indices), so their vertices are joined.
+// After a compile dropped degenerate faces the stored neighbours are numbered
+// as the source faces were; storedNeighbours renumbers them first.
 // Nothing else is: duplicate positions the source kept apart stay apart, so a
 // compile links no face the original did not. Normals,
 // tangents, colours, skin weights and dangly constraints are listed once per
@@ -137,9 +139,10 @@ func sharePositions(n *Node) {
 			parent[ra] = rb
 		}
 	}
+	adj := storedNeighbours(m)
 	for fi, f := range m.Faces {
 		for k := 0; k < 3; k++ {
-			j := int(m.StoredAdjacency[fi][k])
+			j := int(adj[fi][k])
 			if j < 0 || j >= len(m.Faces) || j == fi {
 				continue
 			}

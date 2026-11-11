@@ -217,10 +217,10 @@ first uses it. A clone used before the last original vertex's first use
 therefore moves, and every vertex after it with it: no ASCII with tangents
 compiles back to the binary's vertex order. On Layonara's haks this made 713
 models (cleanmodels v4.17.5) differ in vertex order between a compile and the
-compile of its own decompile. So, when the index list does not use the
-vertices in order and the mesh is normal-mapped (its own render hint, or its
-material found in `DecompileOptions.MaterialDirs`, which the CLI fills with
-the same locations as compile's resource dirs), the decompiler folds each
+compile of its own decompile. So, when the mesh is normal-mapped (its own
+render hint, or its material found in `DecompileOptions.MaterialDirs`, which
+the CLI fills with the same locations as compile's resource dirs), the
+decompiler folds each
 clone back into the vertex it was cloned from, drops the tangents, and runs
 the compile's merge and tangent generation on the result. Only if that gives
 the binary's vertices back exactly (count, order, positions, UVs, normals,
@@ -230,6 +230,16 @@ the index list) is the mesh written that way, with a note:
 ```
 mesh "box1199": tangents left out: a compile generates the same ones (the mesh is normal-mapped), and only a generating compile keeps their 22 cloned vertices at the end of the vertex list
 ```
+
+(without the clause about clones when there are none). That includes a mesh
+whose index list already uses its vertices in first-use order, which a
+compile with the tangents written would number the same: its face records
+would then name the clones (a generating compile keeps the vertex each was
+cloned from in them), and two vertices on a UV seam whose generated tangents
+differ could not be written as one position, so a compile would link no faces
+across the seam. On Layonara's haks that left 168 models unstable
+(cleanmodels v4.17.5); leaving the tangents out makes 158 of them
+byte-stable and the other 10 differ only in face neighbours.
 
 Anything else keeps its stored tangents, as do meshes whose stream had bad
 vectors filled, and `KeepVertexSplits` (which writes one vertex per binary
@@ -282,6 +292,22 @@ neither takes the other's) and writes what the game drew, in one of two ways:
 Either way, the receiver's vertices that only the copies used are dropped: the
 compile computes bounds over every vertex (MDL-MESH-050), so unused ones moved
 the model's bounding box between a compile and the compile of its decompile.
+
+### Shared positions after dropped faces
+
+A binary vertex is one per distinct corner, so the decompiler gives vertices
+split only by a UV seam one position again, following the stored face
+neighbours (`sharePositions`, nwn-mdl-spec MDL-MESH-025). When the compile
+dropped a degenerate face, those neighbours are not in binary numbering: the
+game, and cleanmodels, write face record k with source face k's neighbours,
+numbered as source faces (MDL-MESH-021, MDL-MESH-022). `storedNeighbours`
+(`share_neighbours.go`) finds where faces were dropped from the neighbours
+themselves (the numbering in which each record's links share their edge by
+position) and renumbers them before positions are shared; without that, eight
+of Layonara's models shared almost no position (`eld02_g02_05`
+`meshTEC0505`: 62 positions written for the source's 41). The stored
+neighbours themselves (`MeshData.StoredAdjacency`) stay as read, since
+`OpenMultiEdgesBinary` patches the file by record.
 
 ## Skin meshes
 
@@ -460,6 +486,12 @@ pre-deduplication ASCII vertex/UV indexing the original author may have
 used. The ASCII output therefore has one vertex/UV per face corner. This
 is the same layout `nwnmdlcomp` and the game compiler would accept and
 re-emit.
+- **Junk emitter texture names are left out.** An emitter whose texture
+field holds bytes that are not printable ASCII before its first NUL
+(uninitialised memory some old compilers left on chunk emitters, which draw
+their chunk, not the texture: `ff ff ff ff`, `cd cc 4c 3e`) gets no
+`texture` line, with a warning, instead of a name made of what printable
+bytes there are (`l>`).
 - **AABB tree is preserved verbatim.** We don't recompute the tree on read;
 whatever split the original compiler chose is what shows up in the
 ASCII. The compiler's `RebuildAABB` is a separate, opt-in step.

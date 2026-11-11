@@ -229,6 +229,29 @@ func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
 		return Vec3{}, Vec3{}, 0
 	}
 	idx := nodeIndexFromSlice(m.Nodes)
+	// Each node turned by the axis-angle the decompiler writes for the
+	// quaternion the compile stores, not by the ASCII's own: two axis-angles
+	// that compile to the same quaternion give the same box, so a round trip
+	// that moves the text by an ulp does not move the box.
+	rot := make(map[*Node]Vec4, len(m.Nodes))
+	world := func(n *Node, v Vec3) Vec3 {
+		for _, nd := range parentChain(idx, n) {
+			o, ok := rot[nd]
+			if !ok {
+				q := axisAngleToQuat(nd.Orientation)
+				aa := quaternionToAngleAxis([]float32{q.X, q.Y, q.Z, q.W})
+				o = Vec4{X: aa[0], Y: aa[1], Z: aa[2], W: aa[3]}
+				rot[nd] = o
+			}
+			s := nd.Scale
+			if s == 0 {
+				s = 1
+			}
+			r := RotateVectorAxisAngle(Vec3{X: v.X * s, Y: v.Y * s, Z: v.Z * s}, o)
+			v = Vec3{X: r.X + nd.Position.X, Y: r.Y + nd.Position.Y, Z: r.Z + nd.Position.Z}
+		}
+		return v
+	}
 	first := true
 	extend := func(p Vec3) {
 		if first {
@@ -244,12 +267,12 @@ func modelBounds(m *Model) (bmin, bmax Vec3, radius float32) {
 			continue
 		}
 		if n.Mesh != nil && len(n.Mesh.Verts) > 0 {
-			for _, wv := range WorldVerticesCached(idx, n) {
-				extend(wv)
+			for _, v := range n.Mesh.Verts {
+				extend(world(n, v))
 			}
 			continue
 		}
-		extend(LocalToWorld(idx, n, Vec3{}))
+		extend(world(n, Vec3{}))
 	}
 	if first {
 		return Vec3{}, Vec3{}, 0
