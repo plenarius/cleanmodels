@@ -1,6 +1,7 @@
 package mdl
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -10,23 +11,49 @@ import (
 // drawn as one: the receiving mesh's render index list (MDL-BIN-049) holds its
 // own faces' triangles and copies of the other meshes' (the donors), whose
 // vertices it appends to its own; each donor keeps its faces but gets render 0
-// and an empty index list. The game draws the index lists, so the model looks
-// whole. ASCII has only faces, so a decompile that reads them alone loses the
-// copies and writes the donors invisible (Layonara's tin01 tiles lost their
-// lower walls that way after a repair, nwn-module#476).
+// and an empty index list. The game draws the index lists, never a render-0
+// mesh, so the model looks whole. ASCII has only faces, so a decompile that
+// reads them alone loses the copies and writes the donors invisible
+// (Layonara's tin01 tiles lost their lower walls that way after a repair,
+// nwn-module#476).
 //
-// The decompiler puts the merge back: a render-0 donor with no index list of
-// its own, the same texture as a receiver, and every triangle among the
-// receiver's triangles beyond its own faces, is written with render 1. That
-// draws the same thing as separate meshes. Triangles are matched by their
-// corners' texture coordinates, copied exactly, and their side lengths
-// (within 1 mm), so neither node's placement matters.
+// The decompiler puts the merge back. A donor is a render-0 mesh with no index
+// list of its own, the same texture as a receiver, and every triangle among
+// the receiver's triangles beyond its own faces. Triangles are matched by
+// their corners' texture coordinates, copied exactly, and their side lengths
+// (within 1 mm), preferring the copy that lies where the donor's triangle
+// does in world space. The output must draw what the game drew, so each donor
+// is either:
+//
+//   - Restored (the usual case): written with render 1, it draws as a separate
+//     mesh. It is given what its copies were drawn with, which its own values
+//     were not, since the game never drew it: the receiver's drawing settings
+//     (copyDrawingState) and the copies' corner normals, tangents and
+//     handedness (donorCorners).
+//   - Folded: when the donor restored would draw something other than its
+//     copies, the copies are written as faces of the receiver, as the game
+//     drew them, and the donor keeps render 0. The rule (foldReason): the
+//     restored donor must draw where its copies were drawn, in the rest pose
+//     and in every animation, and look as they did. It does not when its
+//     vertices, placed in world space, miss its copies (a copy baked without
+//     the donor's scale), when an animation moves a node on the donor's or the
+//     receiver's parent chain below the nodes they share (the copies stay
+//     with the receiver, the donor would move on its own), or when an
+//     animation changes the alpha or self-illumination of either one away
+//     from the receiver's. A folded donor that casts a shadow (from its faces,
+//     whatever its render, E68) stops casting one when the receiver casts
+//     shadows, as the copies now cast it.
+//
+// Either way, the receiver's vertices that only the copies used are dropped:
+// the compile computes bounds over every vertex (MDL-MESH-050), so unused ones
+// would change the model's bounding box.
 
 // RenderMerge records a mesh whose render index list draws more than its
 // faces: the donors put back, and the triangles none of them accounts for.
 type RenderMerge struct {
 	Receiver string
-	Donors   []string
+	Donors   []string // put back with render 1
+	Folded   []string // left at render 0, their copies written as the receiver's faces
 	Lost     int
 }
 
@@ -37,8 +64,11 @@ type RenderMerge struct {
 type mergeTri struct {
 	uv   [3][2]float32
 	side [3]float64
-	mesh *MeshData // where the triangle's corners are, for donorNormals
+	mesh *MeshData // where the triangle's corners are, for donorCorners
 	vi   [3]int    // its vertex indices in mesh, in the order given
+	// k is the triangle's index in the receiver's render list, or the face
+	// index of a donor's triangle.
+	k int
 }
 
 const mergeTolerance = 1e-3 // m
@@ -90,14 +120,24 @@ func (p *triPool) add(t mergeTri) {
 }
 
 // find returns the index in its bucket of a triangle the shape of t, or -1.
-func (p *triPool) find(t mergeTri) int {
+func (p *triPool) find(t mergeTri) int { return p.findPreferring(t, nil) }
+
+// findPreferring is find, taking the first triangle for which pref holds
+// when there is one.
+func (p *triPool) findPreferring(t mergeTri, pref func(c mergeTri) bool) int {
+	first := -1
 	for i, c := range p.byUV[t.uv] {
 		if math.Abs(c.side[0]-t.side[0]) <= mergeTolerance && math.Abs(c.side[1]-t.side[1]) <= mergeTolerance &&
 			math.Abs(c.side[2]-t.side[2]) <= mergeTolerance {
-			return i
+			if pref == nil || pref(c) {
+				return i
+			}
+			if first < 0 {
+				first = i
+			}
 		}
 	}
-	return -1
+	return first
 }
 
 func (p *triPool) get(t mergeTri, i int) mergeTri { return p.byUV[t.uv][i] }
@@ -108,24 +148,26 @@ func (p *triPool) take(t mergeTri, i int) {
 	p.n--
 }
 
-// unmergeRenderLists finds merged meshes in the model just read and puts the
-// donors back (see above), with a note for each receiver, and a warning for
-// triangles no donor accounts for.
+// unmergeRenderLists finds merged meshes in the model just read and restores
+// or folds the donors (see above), with a note for each receiver, and a
+// warning for triangles no donor accounts for.
 func (d *decompiler) unmergeRenderLists() {
 	if len(d.renderLists) == 0 {
 		return
 	}
-	// Nodes an animation moves (more than one position or orientation key):
-	// a donor among them is drawn still in game, as part of its receiver.
-	moves := map[string]bool{}
-	for _, a := range d.model.Animations {
-		for _, an := range a.Nodes {
-			if len(an.PositionKeys) > 1 || len(an.OrientationKeys) > 1 {
-				moves[strings.ToLower(an.Name)] = true
-			}
+	var idx map[*Node]*Node
+	var motion mergeMotion
+	world := map[*Node][]Vec3{}
+	worldOf := func(n *Node) []Vec3 {
+		w, ok := world[n]
+		if !ok {
+			w = WorldVerticesCached(idx, n)
+			world[n] = w
 		}
+		return w
 	}
 	used := map[*Node]bool{}
+	receivers := map[*Node]bool{}
 	for _, r := range d.model.Nodes {
 		rl := d.renderLists[r]
 		if r.Mesh == nil || len(rl) <= 3*len(r.Mesh.Faces) {
@@ -137,6 +179,7 @@ func (d *decompiler) unmergeRenderLists() {
 		unreadable := 0
 		for k := 0; k+2 < len(rl); k += 3 {
 			if t, ok := meshTri(r.Mesh, int(rl[k]), int(rl[k+1]), int(rl[k+2])); ok {
+				t.k = k / 3
 				extra.add(t)
 			} else {
 				unreadable++
@@ -152,13 +195,22 @@ func (d *decompiler) unmergeRenderLists() {
 		if extra.n == 0 && unreadable == 0 {
 			continue
 		}
+		if idx == nil {
+			idx = nodeIndex(d.model)
+			motion = newMergeMotion(d.model)
+		}
+		receivers[r] = true
+		wr := worldOf(r)
 		merge := RenderMerge{Receiver: r.Name}
+		var folded [][2]mergeTri // donor faces folded into r, and their copies
+		var foldWhy, shadowOff, restyled []string
 		for _, n := range d.model.Nodes {
 			m := n.Mesh
-			if n == r || m == nil || used[n] || m.Render != 0 || len(d.renderLists[n]) > 0 || len(m.Faces) == 0 ||
-				!strings.EqualFold(m.Bitmap, r.Mesh.Bitmap) {
+			if n == r || m == nil || used[n] || receivers[n] || m.Render != 0 || len(d.renderLists[n]) > 0 ||
+				len(m.Faces) == 0 || !strings.EqualFold(m.Bitmap, r.Mesh.Bitmap) {
 				continue
 			}
+			wd := worldOf(n)
 			// Take the donor's triangles from a copy: a donor counts only
 			// when all of them are there.
 			trial := triPool{byUV: map[[3][2]float32][]mergeTri{}, n: extra.n}
@@ -167,11 +219,12 @@ func (d *decompiler) unmergeRenderLists() {
 			}
 			ok := true
 			var pairs [][2]mergeTri // each donor face and the copy it matched
-			for _, f := range m.Faces {
+			for fi, f := range m.Faces {
 				t, good := meshTri(m, int(f.Verts[0]), int(f.Verts[1]), int(f.Verts[2]))
 				i := -1
 				if good {
-					i = trial.find(t)
+					t.k = fi
+					i = trial.findPreferring(t, func(c mergeTri) bool { return worldFits(wd, t.vi, wr, c.vi) })
 				}
 				if i < 0 {
 					ok = false
@@ -185,27 +238,44 @@ func (d *decompiler) unmergeRenderLists() {
 			}
 			extra = trial
 			used[n] = true
+			if why := foldReason(idx, motion, r, n, wr, wd, pairs); why != "" {
+				folded = append(folded, pairs...)
+				merge.Folded = append(merge.Folded, n.Name)
+				foldWhy = append(foldWhy, fmt.Sprintf("%s (%s)", n.Name, why))
+				if m.Shadow != 0 && r.Mesh.Shadow != 0 {
+					m.Shadow = 0
+					shadowOff = append(shadowOff, n.Name)
+				}
+				continue
+			}
 			m.Render = 1
-			donorNormals(m, pairs)
+			if diff := copyDrawingState(r, n); len(diff) > 0 {
+				restyled = append(restyled, fmt.Sprintf("%s (%s)", n.Name, strings.Join(diff, ", ")))
+			}
+			donorCorners(n, pairs)
 			merge.Donors = append(merge.Donors, n.Name)
 		}
 		merge.Lost = extra.n + unreadable
 		d.model.RenderMerges = append(d.model.RenderMerges, merge)
+		foldCopies(r, folded)
+		dropCopyVertices(r, rl)
 		if len(merge.Donors) > 0 {
 			d.note(WarnGeneral, 0, r.Name,
 				"its render list also draws %s, merged into it by the tool that compiled the model (render 0 and no render list of their own): written with render 1, which draws the same as separate meshes",
 				strings.Join(merge.Donors, ", "))
 		}
-		var moving []string
-		for _, n := range merge.Donors {
-			if moves[strings.ToLower(n)] {
-				moving = append(moving, n)
-			}
-		}
-		if len(moving) > 0 {
+		if len(restyled) > 0 {
 			d.note(WarnGeneral, 0, r.Name,
-				"this model's animations move %s, which the game drew still, as part of this mesh's render list: with render 1, the animations move it",
-				strings.Join(moving, ", "))
+				"the game drew the triangles of %s with this mesh's drawing settings, which differ from their own: given this mesh's, so they draw as before",
+				strings.Join(restyled, "; "))
+		}
+		if len(foldWhy) > 0 {
+			msg := fmt.Sprintf("its render list also draws %s, merged into it by the tool that compiled the model, which as separate meshes would draw differently from the original: their copies are written as this mesh's faces, as the game drew them, and they keep render 0",
+				strings.Join(foldWhy, "; "))
+			if len(shadowOff) > 0 {
+				msg += fmt.Sprintf(". %s get shadow 0, as the copies in this mesh now cast their shadow", strings.Join(shadowOff, ", "))
+			}
+			d.note(WarnGeneral, 0, r.Name, "%s", msg)
 		}
 		if merge.Lost > 0 {
 			d.warn(WarnGeneral, 0, r.Name,
@@ -215,18 +285,434 @@ func (d *decompiler) unmergeRenderLists() {
 	}
 }
 
-// donorNormals gives a donor put back the normals its copies were drawn with.
-// The copy is what the game drew, and its normals can differ from the donor's
-// own: where a donor's back-to-back faces share a vertex its stored normal is
-// (0, 0, 0), while the copy holds the normalised one (MDL-MESH-032 turns the
-// zero vector into (1, 0, 0)). The copy sits in the receiver's frame: one
-// rotation, taken from the donor's largest triangle, turns it into the
-// donor's. Each matched triangle that rotation maps onto its copy (sides within
-// mergeTolerance) gives its corners' copy normals; a vertex takes them when
-// every such triangle using it agrees (within mergeNormalTolerance) and its own
-// normal differs. Otherwise it keeps its own.
-func donorNormals(m *MeshData, pairs [][2]mergeTri) {
-	if len(m.Normals) < len(m.Verts) {
+const (
+	// mergeWorldTolerance is how far apart (m) a donor's corner and its
+	// copy's may be in world space and still draw the same.
+	mergeWorldTolerance = 2e-3
+	// mergeKeyTolerance compares animation keys with the rest pose, and
+	// alpha and colour values.
+	mergeKeyTolerance = 1e-4
+)
+
+// worldFits reports whether the triangle at vertex indices a of the world
+// positions wa lies on the one at b of wb, corners in the same turn.
+func worldFits(wa []Vec3, a [3]int, wb []Vec3, b [3]int) bool {
+	for r := 0; r < 3; r++ {
+		fits := true
+		for j := 0; j < 3 && fits; j++ {
+			fits = dist3(vec3d(wa[a[j]]), vec3d(wb[b[(j+r)%3]])) <= mergeWorldTolerance
+		}
+		if fits {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeMotion is what a model's animations do to its nodes, by lower-case
+// name: whether one moves it from its rest pose, and every alpha and
+// self-illumination key value.
+type mergeMotion struct {
+	moves     map[string]bool
+	alpha     map[string][]float32
+	selfIllum map[string][]Vec3
+}
+
+func newMergeMotion(m *Model) mergeMotion {
+	geom := map[string]*Node{}
+	for _, n := range m.Nodes {
+		if k := strings.ToLower(n.Name); geom[k] == nil {
+			geom[k] = n
+		}
+	}
+	mm := mergeMotion{moves: map[string]bool{}, alpha: map[string][]float32{}, selfIllum: map[string][]Vec3{}}
+	for _, a := range m.Animations {
+		for i := range a.Nodes {
+			an := &a.Nodes[i]
+			k := strings.ToLower(an.Name)
+			if g := geom[k]; g != nil && animMoves(g, an) {
+				mm.moves[k] = true
+			}
+			for _, key := range an.AlphaKeys {
+				mm.alpha[k] = append(mm.alpha[k], key.Value)
+			}
+			for _, key := range an.SelfIllumColorKeys {
+				mm.selfIllum[k] = append(mm.selfIllum[k], key.Value)
+			}
+		}
+	}
+	return mm
+}
+
+// animMoves reports whether an's keys put node g anywhere but its rest pose.
+func animMoves(g *Node, an *AnimNode) bool {
+	for _, k := range an.PositionKeys {
+		if !nearVec3(k.Value, g.Position) {
+			return true
+		}
+	}
+	for _, k := range an.OrientationKeys {
+		if !sameRotation(k.Value, g.Orientation) {
+			return true
+		}
+	}
+	s := g.Scale
+	if s == 0 {
+		s = 1
+	}
+	for _, k := range an.ScaleKeys {
+		if !nearF(k.Value, s) {
+			return true
+		}
+	}
+	return false
+}
+
+func nearF(a, b float32) bool { return math.Abs(float64(a)-float64(b)) <= mergeKeyTolerance }
+
+func nearVec3(a, b Vec3) bool { return nearF(a.X, b.X) && nearF(a.Y, b.Y) && nearF(a.Z, b.Z) }
+
+// sameRotation reports whether two axis-angle orientations turn the X and Y
+// axes to the same place.
+func sameRotation(a, b Vec4) bool {
+	for _, v := range [2]Vec3{{X: 1}, {Y: 1}} {
+		if !nearVec3(RotateVectorAxisAngle(v, a), RotateVectorAxisAngle(v, b)) {
+			return false
+		}
+	}
+	return true
+}
+
+// foldReason says why donor n, restored, would draw something other than its
+// copies in receiver r (see the rule above), or "" when it would not. wr and
+// wd are their vertices in world space; pairs, n's faces and their copies.
+func foldReason(idx map[*Node]*Node, motion mergeMotion, r, n *Node, wr, wd []Vec3, pairs [][2]mergeTri) string {
+	rc, dc := parentChain(idx, r), parentChain(idx, n)
+	inR, inD := map[*Node]bool{}, map[*Node]bool{}
+	for _, x := range rc {
+		inR[x] = true
+	}
+	for _, x := range dc {
+		inD[x] = true
+	}
+	for _, x := range dc {
+		if !inR[x] && motion.moves[strings.ToLower(x.Name)] {
+			return fmt.Sprintf("an animation moves %s, which the game drew still", x.Name)
+		}
+	}
+	for _, x := range rc {
+		if !inD[x] && motion.moves[strings.ToLower(x.Name)] {
+			return fmt.Sprintf("an animation moves %s, with the copies", x.Name)
+		}
+	}
+	for _, x := range [2]*Node{r, n} {
+		for _, v := range motion.alpha[strings.ToLower(x.Name)] {
+			if !nearF(v, r.Mesh.Alpha) {
+				return fmt.Sprintf("an animation changes the alpha of %s", x.Name)
+			}
+		}
+		for _, v := range motion.selfIllum[strings.ToLower(x.Name)] {
+			if !nearVec3(v, r.Mesh.SelfIllumColor) {
+				return fmt.Sprintf("an animation changes the self-illumination of %s", x.Name)
+			}
+		}
+	}
+	for _, p := range pairs {
+		if worldFits(wd, p[0].vi, wr, p[1].vi) {
+			continue
+		}
+		for _, x := range dc {
+			if !inR[x] && x.Scale != 0 && x.Scale != 1 {
+				return fmt.Sprintf("the game drew it without the scale %s of %s", fmtFloat(x.Scale), x.Name)
+			}
+		}
+		return "the game drew it elsewhere than the mesh itself is"
+	}
+	return ""
+}
+
+// copyDrawingState gives donor n receiver r's drawing settings, which the
+// game drew n's copies with, and returns the ones that differed.
+func copyDrawingState(r, n *Node) []string {
+	rm, m := r.Mesh, n.Mesh
+	var diff []string
+	f1 := func(name string, dst *float32, v float32) bool {
+		if *dst == v || (*dst != *dst && v != v) {
+			return false
+		}
+		*dst = v
+		diff = append(diff, name)
+		return true
+	}
+	f3 := func(name string, dst *Vec3, v Vec3) bool {
+		x, y, z := dst.X, dst.Y, dst.Z
+		if (x == v.X || (x != x && v.X != v.X)) && (y == v.Y || (y != y && v.Y != v.Y)) && (z == v.Z || (z != z && v.Z != v.Z)) {
+			return false
+		}
+		*dst = v
+		diff = append(diff, name)
+		return true
+	}
+	i1 := func(name string, dst *int32, v int32) {
+		if *dst != v {
+			*dst = v
+			diff = append(diff, name)
+		}
+	}
+	s1 := func(name string, dst *string, v string) {
+		if !strings.EqualFold(*dst, v) && !(isNullName(*dst) && isNullName(v)) {
+			*dst = v
+			diff = append(diff, name)
+		}
+	}
+	f3("diffuse", &m.Diffuse, rm.Diffuse)
+	f3("ambient", &m.Ambient, rm.Ambient)
+	f3("specular", &m.Specular, rm.Specular)
+	f1("shininess", &m.Shininess, rm.Shininess)
+	s1("texture1", &m.Texture1, rm.Texture1)
+	s1("texture2", &m.Texture2, rm.Texture2)
+	s1("materialname", &m.MaterialName, rm.MaterialName)
+	s1("renderhint", &m.RenderHint, rm.RenderHint)
+	i1("transparencyhint", &m.TransparencyHint, rm.TransparencyHint)
+	i1("tilefade", &m.TileFade, rm.TileFade)
+	i1("rotatetexture", &m.RotateTexture, rm.RotateTexture)
+	if f1("alpha", &m.Alpha, rm.Alpha) && r.isDeclared("alpha") {
+		n.declare("alpha")
+	}
+	if f3("selfillumcolor", &m.SelfIllumColor, rm.SelfIllumColor) && r.isDeclared("selfillumcolor") {
+		n.declare("selfillumcolor")
+	}
+	return diff
+}
+
+func isNullName(s string) bool { return s == "" || strings.EqualFold(s, "NULL") }
+
+// foldCopies writes the copies of folded donor faces as faces of receiver r,
+// in the order of r's render list, as the game drew them: each takes its
+// donor face's smoothing group and material, and its stored neighbours are
+// the donor face's, where those were folded too.
+func foldCopies(r *Node, folded [][2]mergeTri) {
+	if len(folded) == 0 {
+		return
+	}
+	sort.SliceStable(folded, func(i, j int) bool { return folded[i][1].k < folded[j][1].k })
+	m := r.Mesh
+	base := len(m.Faces)
+	at := map[*MeshData]map[int]int{} // donor mesh, donor face -> r's new face
+	for i, p := range folded {
+		if at[p[0].mesh] == nil {
+			at[p[0].mesh] = map[int]int{}
+		}
+		at[p[0].mesh][p[0].k] = base + i
+	}
+	adj := len(m.StoredAdjacency) == len(m.Faces)
+	for _, p := range folded {
+		dt, c := p[0], p[1]
+		df := dt.mesh.Faces[dt.k]
+		v := [3]int32{int32(c.vi[0]), int32(c.vi[1]), int32(c.vi[2])}
+		m.Faces = append(m.Faces, Face{Verts: v, UVs: v, SmoothGroup: df.SmoothGroup, Material: df.Material})
+		if !adj {
+			continue
+		}
+		a := [3]int16{-1, -1, -1}
+		if rot, ok := copyCorners(dt, c); ok && len(dt.mesh.StoredAdjacency) == len(dt.mesh.Faces) {
+			for e := 0; e < 3; e++ {
+				j := int(dt.mesh.StoredAdjacency[dt.k][e])
+				if nf, ok := at[dt.mesh][j]; ok && j >= 0 && nf <= math.MaxInt16 {
+					a[(e+rot)%3] = int16(nf)
+				}
+			}
+		}
+		m.StoredAdjacency = append(m.StoredAdjacency, a)
+	}
+}
+
+// dropCopyVertices removes from receiver r the vertices its render list rl
+// used and none of its faces uses: those only the copies of restored donors
+// (or lost triangles) used. Returns how many it removed.
+func dropCopyVertices(r *Node, rl []uint16) int {
+	m := r.Mesh
+	nv := len(m.Verts)
+	used := make([]bool, nv)
+	for _, f := range m.Faces {
+		for k := 0; k < 3; k++ {
+			if f.Verts[k] != f.UVs[k] {
+				return 0 // not the decompiler's one-index-per-corner layout
+			}
+			if v := f.Verts[k]; v >= 0 && int(v) < nv {
+				used[v] = true
+			}
+		}
+	}
+	drop := make([]bool, nv)
+	any := false
+	for _, v := range rl {
+		if int(v) < nv && !used[v] {
+			drop[v] = true
+			any = true
+		}
+	}
+	if !any {
+		return 0
+	}
+	keep := make([]int, 0, nv)
+	for i := 0; i < nv; i++ {
+		if !drop[i] {
+			keep = append(keep, i)
+		}
+	}
+	if !keepVertices(r, keep) {
+		return 0
+	}
+	return nv - len(keep)
+}
+
+// vertexListsOK reports whether every per-vertex list of n's mesh has one
+// entry per vertex (or none) and its faces index vertices and UVs alike, so
+// its vertices can be removed or copied.
+func vertexListsOK(n *Node) bool {
+	m := n.Mesh
+	if n.Aabb != nil || n.AnimMesh != nil || len(m.CornerNormals) > 0 || len(m.MirrorList) > 0 ||
+		len(m.TexIndices0)+len(m.TexIndices1)+len(m.TexIndices2)+len(m.TexIndices3) > 0 {
+		return false
+	}
+	nv := len(m.Verts)
+	full := func(l int) bool { return l == 0 || l == nv }
+	if !full(len(m.Normals)) || !full(len(m.Tangents)) || !full(len(m.Colors)) || !full(len(m.TVerts)) ||
+		!full(len(m.TVerts1)) || !full(len(m.TVerts2)) || !full(len(m.TVerts3)) {
+		return false
+	}
+	if n.Skin != nil && !full(len(n.Skin.Weights)) || n.Dangly != nil && !full(len(n.Dangly.Constraints)) {
+		return false
+	}
+	for _, f := range m.Faces {
+		if f.Verts != f.UVs {
+			return false
+		}
+	}
+	return true
+}
+
+// keepVertices keeps only the vertices keep (ascending) of n's mesh and
+// renumbers its faces; false, changing nothing, when vertexListsOK fails or a
+// face uses a vertex not kept.
+func keepVertices(n *Node, keep []int) bool {
+	if !vertexListsOK(n) {
+		return false
+	}
+	m := n.Mesh
+	nv := len(m.Verts)
+	newIdx := make([]int32, nv)
+	for i := range newIdx {
+		newIdx[i] = -1
+	}
+	for ni, oi := range keep {
+		newIdx[oi] = int32(ni)
+	}
+	for _, f := range m.Faces {
+		for k := 0; k < 3; k++ {
+			if v := f.Verts[k]; v >= 0 && int(v) < nv && newIdx[v] < 0 {
+				return false
+			}
+		}
+	}
+	pick3 := func(l []Vec3) []Vec3 {
+		if len(l) == 0 {
+			return l
+		}
+		out := make([]Vec3, len(keep))
+		for ni, oi := range keep {
+			out[ni] = l[oi]
+		}
+		return out
+	}
+	m.Verts, m.Normals, m.Colors = pick3(m.Verts), pick3(m.Normals), pick3(m.Colors)
+	m.TVerts, m.TVerts1, m.TVerts2, m.TVerts3 = pick3(m.TVerts), pick3(m.TVerts1), pick3(m.TVerts2), pick3(m.TVerts3)
+	if len(m.Tangents) > 0 {
+		t := make([]Vec4, len(keep))
+		for ni, oi := range keep {
+			t[ni] = m.Tangents[oi]
+		}
+		m.Tangents = t
+	}
+	if n.Skin != nil && len(n.Skin.Weights) > 0 {
+		w := make([]VertexWeight, len(keep))
+		for ni, oi := range keep {
+			w[ni] = n.Skin.Weights[oi]
+		}
+		n.Skin.Weights = w
+	}
+	if n.Dangly != nil && len(n.Dangly.Constraints) > 0 {
+		c := make([]float32, len(keep))
+		for ni, oi := range keep {
+			c[ni] = n.Dangly.Constraints[oi]
+		}
+		n.Dangly.Constraints = c
+	}
+	for fi := range m.Faces {
+		for k := 0; k < 3; k++ {
+			if v := m.Faces[fi].Verts[k]; v >= 0 && int(v) < nv {
+				m.Faces[fi].Verts[k] = newIdx[v]
+				m.Faces[fi].UVs[k] = newIdx[v]
+			}
+		}
+	}
+	return true
+}
+
+// copyVertex appends a copy of vertex v of n's mesh, with everything listed
+// per vertex, and returns its index. The caller checks vertexListsOK.
+func copyVertex(n *Node, v int) int {
+	m := n.Mesh
+	nv := len(m.Verts)
+	add3 := func(l []Vec3) []Vec3 {
+		if len(l) == nv {
+			return append(l, l[v])
+		}
+		return l
+	}
+	m.Verts = append(m.Verts, m.Verts[v])
+	m.Normals, m.Colors = add3(m.Normals), add3(m.Colors)
+	m.TVerts, m.TVerts1, m.TVerts2, m.TVerts3 = add3(m.TVerts), add3(m.TVerts1), add3(m.TVerts2), add3(m.TVerts3)
+	if len(m.Tangents) == nv {
+		m.Tangents = append(m.Tangents, m.Tangents[v])
+	}
+	if n.Skin != nil && len(n.Skin.Weights) == nv {
+		n.Skin.Weights = append(n.Skin.Weights, n.Skin.Weights[v])
+	}
+	if n.Dangly != nil && len(n.Dangly.Constraints) == nv {
+		n.Dangly.Constraints = append(n.Dangly.Constraints, n.Dangly.Constraints[v])
+	}
+	return nv
+}
+
+// donorCorners gives a donor put back the normals, tangents and handedness its
+// copies were drawn with. The copy is what the game drew, and its corners can
+// differ from the donor's own: where a donor's back-to-back faces share a
+// vertex its stored normal is (0, 0, 0), while the copy holds the normalised
+// one (MDL-MESH-032 turns the zero vector into (1, 0, 0)); and a donor has no
+// index list, so the tangent clones of its vertices (MDL-MESH-043) are in its
+// vertex list but no face reaches them, while its copies use them.
+//
+// The copy sits in the receiver's frame: one rotation, taken from the donor's
+// largest triangle, turns it into the donor's. Each matched triangle that
+// rotation maps onto its copy (sides within mergeTolerance) gives its corners'
+// copy values. A vertex whose corners all get the same values (normals and
+// tangents within mergeNormalTolerance, the same handedness) takes them where
+// its own differ. Where they disagree, the vertex keeps the group that matches
+// its own values (or else the first), and the corners of each other group
+// move to a vertex of the same position and UV that has that group's values:
+// an unused one already there (the donor's own clone) or a copy of the vertex.
+func donorCorners(n *Node, pairs [][2]mergeTri) {
+	m := n.Mesh
+	nv := len(m.Verts)
+	if nv == 0 || len(pairs) == 0 {
+		return
+	}
+	cm := pairs[0][1].mesh
+	useN := len(m.Normals) >= nv && len(cm.Normals) >= len(cm.Verts)
+	useT := len(m.Tangents) >= nv && len(cm.Tangents) >= len(cm.Verts)
+	if !useN && !useT {
 		return
 	}
 	type match struct {
@@ -238,9 +724,6 @@ func donorNormals(m *MeshData, pairs [][2]mergeTri) {
 	best, bestArea := -1, 0.0
 	for _, p := range pairs {
 		d, c := p[0], p[1]
-		if len(c.mesh.Normals) < len(c.mesh.Verts) {
-			continue
-		}
 		r, ok := copyCorners(d, c)
 		if !ok {
 			continue
@@ -278,11 +761,32 @@ func donorNormals(m *MeshData, pairs [][2]mergeTri) {
 		}
 		return n
 	}
-	type cand struct {
-		n             [3]float64
-		set, conflict bool
+	type values struct {
+		n, t [3]float64
+		w    float32
 	}
-	cands := make([]cand, len(m.Verts))
+	same := func(a, b values) bool {
+		if useN && dist3(a.n, b.n) > mergeNormalTolerance {
+			return false
+		}
+		return !useT || (dist3(a.t, b.t) <= mergeNormalTolerance && (a.w < 0) == (b.w < 0))
+	}
+	own := func(v int) values {
+		var o values
+		if useN {
+			o.n = vec3d(m.Normals[v])
+		}
+		if useT {
+			t := m.Tangents[v]
+			o.t, o.w = [3]float64{float64(t.X), float64(t.Y), float64(t.Z)}, t.W
+		}
+		return o
+	}
+	type group struct {
+		v       values
+		corners [][2]int // face, corner
+	}
+	groups := make([][]group, nv)
 	for _, mt := range ms {
 		fits := true
 		for j := 0; j < 3 && fits; j++ {
@@ -295,19 +799,87 @@ func donorNormals(m *MeshData, pairs [][2]mergeTri) {
 			continue
 		}
 		for j := 0; j < 3; j++ {
-			n := toDonor(vec3d(mt.c.mesh.Normals[mt.c.vi[(j+mt.r)%3]]))
+			cv := mt.c.vi[(j+mt.r)%3]
+			var want values
+			if useN {
+				want.n = toDonor(vec3d(cm.Normals[cv]))
+			}
+			if useT {
+				t := cm.Tangents[cv]
+				want.t, want.w = toDonor([3]float64{float64(t.X), float64(t.Y), float64(t.Z)}), t.W
+			}
 			v := mt.d.vi[j]
-			switch {
-			case !cands[v].set:
-				cands[v] = cand{n: n, set: true}
-			case dist3(cands[v].n, n) > mergeNormalTolerance:
-				cands[v].conflict = true
+			placed := false
+			for gi := range groups[v] {
+				if same(groups[v][gi].v, want) {
+					groups[v][gi].corners = append(groups[v][gi].corners, [2]int{mt.d.k, j})
+					placed = true
+					break
+				}
+			}
+			if !placed {
+				groups[v] = append(groups[v], group{v: want, corners: [][2]int{{mt.d.k, j}}})
 			}
 		}
 	}
-	for v, c := range cands {
-		if c.set && !c.conflict && dist3(vec3d(m.Normals[v]), c.n) > mergeNormalTolerance {
-			m.Normals[v] = vec3f(c.n)
+	set := func(v int, want values) {
+		if useN && dist3(vec3d(m.Normals[v]), want.n) > mergeNormalTolerance {
+			m.Normals[v] = vec3f(want.n)
+		}
+		if useT {
+			t := m.Tangents[v]
+			if dist3([3]float64{float64(t.X), float64(t.Y), float64(t.Z)}, want.t) > mergeNormalTolerance || (t.W < 0) != (want.w < 0) {
+				m.Tangents[v] = Vec4{X: float32(want.t[0]), Y: float32(want.t[1]), Z: float32(want.t[2]), W: want.w}
+			}
+		}
+	}
+	usedByFace := make([]bool, nv)
+	for _, f := range m.Faces {
+		for k := 0; k < 3; k++ {
+			if v := f.Verts[k]; v >= 0 && int(v) < nv {
+				usedByFace[v] = true
+			}
+		}
+	}
+	split := vertexListsOK(n)
+	for v := 0; v < nv; v++ {
+		gs := groups[v]
+		if len(gs) == 0 {
+			continue
+		}
+		home := 0
+		if len(gs) > 1 {
+			o := own(v)
+			for gi := range gs {
+				if same(gs[gi].v, o) {
+					home = gi
+					break
+				}
+			}
+		}
+		set(v, gs[home].v)
+		if !split {
+			continue
+		}
+		for gi, g := range gs {
+			if gi == home {
+				continue
+			}
+			u := -1
+			for x := 0; x < nv; x++ {
+				if x != v && !usedByFace[x] && sameCorner(m, v, x) && same(own(x), g.v) {
+					u = x
+					break
+				}
+			}
+			if u < 0 {
+				u = copyVertex(n, v)
+				set(u, g.v)
+			}
+			for _, c := range g.corners {
+				m.Faces[c[0]].Verts[c[1]] = int32(u)
+				m.Faces[c[0]].UVs[c[1]] = int32(u)
+			}
 		}
 	}
 }

@@ -242,6 +242,45 @@ degenerate face added before dropping the face) still can't be written: the
 ASCII has no faces that would make it, so a compile of the decompile loses
 it, and every vertex after it moves up.
 
+### Merged render lists
+
+Some tools compile a model with the meshes of one texture drawn as one: the
+receiver's index list (MDL-BIN-049) holds its own faces' triangles followed by
+copies of other meshes' triangles, in its own frame and with its own appended
+vertices; each donor keeps its faces, with render 0 and an empty index list.
+The game never draws a render-0 mesh (`PartTriMesh::IsPartRenderable`), and it
+builds shadows from face lists whatever the render flag. ASCII has only faces,
+so `unmergeRenderLists` (`binary_merged.go`) matches each donor's faces to
+copies in a receiver's list (texture coordinates, side lengths, and the copy
+that lies where the donor does in world space first) and writes what the game
+drew, in one of two ways:
+
+- **Restored** (usual): the donor gets render 1 and draws on its own. It takes
+  what its copies were drawn with, not its own values, which were never drawn:
+  the receiver's drawing settings (diffuse, ambient, specular, shininess,
+  texture 1 and 2, material, render hint, transparency hint, tile fade,
+  rotatetexture, alpha, self-illumination; a note names those that differed),
+  and the copies' normals, tangents and handedness. A donor has no index list,
+  so its tangent clones reach none of its faces: where its copies disagree on a
+  vertex, the corners of each other group move to the donor's own unused clone
+  of it, or to a new copy of the vertex.
+- **Folded**: when the donor restored would draw something other than its
+  copies, the copies are written as faces of the receiver (in index-list
+  order, with the donor face's smoothing group, material and stored
+  neighbours), and the donor keeps render 0. The rule: the restored donor must
+  draw where its copies were drawn in the rest pose and in every animation,
+  and look as they did. So a donor folds when its vertices, placed in world
+  space, miss its copies (the merging tool baked them without the donor's
+  `scale`), when an animation moves a node on the donor's or the receiver's
+  parent chain below the nodes they share (cabinet doors the game drew still),
+  or when an animation changes the alpha or self-illumination of either away
+  from the receiver's. If both cast shadows, the donor gets `shadow 0`, since
+  the receiver's copies now cast it.
+
+Either way, the receiver's vertices that only the copies used are dropped: the
+compile computes bounds over every vertex (MDL-MESH-050), so unused ones moved
+the model's bounding box between a compile and the compile of its decompile.
+
 ## Skin meshes
 
 Skin nodes carry a per-vertex bone weight table and a per-mesh

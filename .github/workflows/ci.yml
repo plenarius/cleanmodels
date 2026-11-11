@@ -64,6 +64,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      - name: Merged render lists
+        run: python python/merged_test.py
+
       - name: Parity with the Go decompiler
         run: python python/parity_test.py
 

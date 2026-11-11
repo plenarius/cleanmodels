@@ -115,6 +115,19 @@ def _apply(t, v):
     return (f32(rx + t.px), f32(ry + t.py), f32(rz + t.pz))
 
 
+def world_vertices(parent_of, n):
+    """transforms.go WorldVerticesCached: n's mesh vertices in world space."""
+    if n is None or n.mesh is None:
+        return None
+    chain = [_NodeXform(nd) for nd in parent_chain(parent_of, n)]
+    out = []
+    for p in n.mesh.verts:
+        for t in chain:
+            p = _apply(t, p)
+        out.append(p)
+    return out
+
+
 def model_bounds(m):
     """transforms.go modelBounds: (bmin, bmax, radius) of the model in world space."""
     if m is None or not m.nodes:

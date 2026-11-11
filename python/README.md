@@ -82,6 +82,10 @@ Go change that isn't ported fails CI in the same pull request:
   mutations of each (numbers nudged, lines dropped or duplicated, names
   repeated, bytes corrupted). Compiled bytes and compile warnings.
 
+CI also runs `python/merged_test.py`, unit tests of the merged render lists
+(`binary_merged.go`) that build the decompiler's state by hand, as
+`pkg/mdl/binary_merged_test.go` does: no fixture has every case.
+
 Each requires identical output and warnings, or both refusing the file.
 `python/internal/foldorbits` prints the case-folding table in `gostr.py`.
 
