@@ -16,6 +16,7 @@ import struct
 from . import controllers
 from .share_positions import share_positions
 from .gen_tangents import omit_generated_tangents
+from .binary_order import declaration_order
 from .controllers import controller_id
 from .compiler_normals import game_normalize
 from .compiler_mesh import ExpandedMesh
@@ -103,6 +104,7 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
         omit_generated_tangents(d, list(material_dirs))
         for n in d.model.nodes:
             share_positions(n)
+    declaration_order(d.model)
     return d.model
 
 

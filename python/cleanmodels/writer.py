@@ -95,6 +95,10 @@ class _Writer:
             if n is None:
                 continue
             children.setdefault(go_lower(n.parent), []).append(n)
+        if _declared_in_number_order(m.nodes, root):
+            for n in m.nodes:
+                self.write_node(n)
+            return
         visited = set()
         # Iterative pre-order, children in declaration order (writeNodeRecursive)
         stack = [(root, 0)]
@@ -466,3 +470,22 @@ _ZERO3 = (0.0, 0.0, 0.0)
 def _handle(key, i, zero):
     """A bezier key's handle; a linear key in a bezier controller has zero handles."""
     return key[i] if len(key) > i else zero
+
+
+def _declared_in_number_order(nodes, root):
+    """declaredInNumberOrder: the nodes as listed are a declaration order to
+    keep (part numbers 0..n-1 in list order, root first, unique names, each
+    parent listed before its child)."""
+    if len(nodes) < 2 or nodes[0] is not root:
+        return False
+    seen = set()
+    for i, n in enumerate(nodes):
+        if n is None or n.part_number != i:
+            return False
+        if i > 0 and go_lower(n.parent) not in seen:
+            return False
+        name = go_lower(n.name)
+        if name in seen:
+            return False
+        seen.add(name)
+    return True
