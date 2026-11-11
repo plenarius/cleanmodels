@@ -19,8 +19,8 @@ from .compiler_mesh import CompileError, MeshMixin, anim_sets, anim_vertex_major
 from .compiler_node import NodeMixin
 from .compiler_order import reorder_children
 from .compiler_skinbind import SkinBindMixin, SkinBindPatch
-from .compiler_tree import anim_node_numbers, is_root_parent, node_occurrences, pair_anim_nodes_to_geom, resolve_anim_tree, \
-    resolve_geom_tree
+from .compiler_tree import anim_node_numbers, is_root_parent, node_occurrences, pair_anim_nodes_to_geom, prune_anim_tree, \
+    resolve_anim_tree, resolve_geom_tree
 from .f32 import f32
 from .parser import new_parsed_light_data
 from .types import EmitterData, Node
@@ -434,8 +434,12 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         self.anim_numbers = anim_node_numbers(anim.nodes, root_an, self.model.root_node(), self.children_of,
                                               self.node_ids)
         if root_an is not None:
-            visited = set()
-            root_off, count = self.write_anim_tree(root_an, anim_children, visited)
+            # The game cuts the tree to its animroot (MDL-NODE-045) but counts
+            # the nodes it cut (MDL-NODE-042).
+            children, pruned = prune_anim_tree(root_an, anim_children, anim.root)
+            visited = set(pruned)
+            root_off, count = self.write_anim_tree(root_an, children, visited)
+            count += len(pruned)
             self.warn_dropped_anim(anim, visited)
         core.patch_u32(root_ptr_off, root_off)
         core.patch_u32(count_nodes_off, count)

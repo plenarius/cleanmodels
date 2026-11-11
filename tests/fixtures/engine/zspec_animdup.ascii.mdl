@@ -1,0 +1,75 @@
+# nwn-mdl-spec conformance probe zspec_animdup (CC0-1.0)
+# Animations that share a name. `swing` is given twice, with different
+# lengths, transtimes, events and keys on arm, with `idle` between them, and
+# a fourth animation `SWING` differs from them only in case. What the game's
+# compiler writes (how many animations, in which order, each with its own
+# data) shows whether the compiler keeps, merges or drops a repeated name.
+newmodel zspec_animdup
+setsupermodel zspec_animdup NULL
+classification character
+beginmodelgeom zspec_animdup
+node dummy zspec_animdup
+  parent NULL
+endnode
+node dummy arm
+  parent zspec_animdup
+  position 0 0 1
+endnode
+endmodelgeom zspec_animdup
+newanim swing zspec_animdup
+  length 1
+  transtime 0.25
+  animroot zspec_animdup
+  event 0.5 hit
+  node dummy zspec_animdup
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animdup
+    positionkey 2
+      0 0 0 1
+      1 0 0 2
+  endnode
+doneanim swing zspec_animdup
+newanim idle zspec_animdup
+  length 0.5
+  transtime 0
+  animroot zspec_animdup
+  node dummy zspec_animdup
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animdup
+    position 0 0 1.5
+  endnode
+doneanim idle zspec_animdup
+newanim swing zspec_animdup
+  length 2
+  transtime 0.5
+  animroot zspec_animdup
+  event 1.5 snd_footstep
+  node dummy zspec_animdup
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animdup
+    positionkey 2
+      0 0 0 1
+      2 0 0 3
+  endnode
+doneanim swing zspec_animdup
+newanim SWING zspec_animdup
+  length 3
+  transtime 0.75
+  animroot zspec_animdup
+  node dummy zspec_animdup
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animdup
+    positionkey 2
+      0 0 0 1
+      3 0 0 4
+  endnode
+doneanim SWING zspec_animdup
+donemodel zspec_animdup

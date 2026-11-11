@@ -110,6 +110,25 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
     return d.model
 
 
+def written_anim_root(stored, matched, nodes):
+    """writtenAnimRoot: the animroot to write, matching case for case the node
+    the stored one matched (MDL-NODE-045), or none when it matched none."""
+    lower = stored.lower()
+    if not stored or equal_fold(stored, "NULL"):
+        return lower
+    names = set(n.name for n in nodes)
+    if matched:
+        if lower not in names:
+            for n in nodes:
+                if equal_fold(n.name, stored):
+                    return n.name
+        return lower
+    for s in (lower, stored, stored.upper()):
+        if s not in names:
+            return s
+    return stored
+
+
 class _PendingSkin:
     __slots__ = ("node", "bone_part_nums", "bind_count", "map_pos", "skin_weights", "skin_bone_refs")
 
@@ -142,6 +161,7 @@ class _Decompiler:
         self.mdx_size = 0
         self.root_node_ptr = 0
         self.anim_ptrs = []
+        self.anim_stored_names = []  # Go: animStoredNames (writtenAnimRoot)
         self.node_order = []   # (name, part number)
         self.pending_skins = []
         self.visited_ptrs = set()
@@ -268,6 +288,16 @@ class _Decompiler:
 
     def read_fixed_text(self, n):
         """readFixedText: (string, junk bytes or None, ok)."""
+        s, junk, ok = self.read_fixed_text_case(n)
+        return s.lower(), junk, ok
+
+    def read_fixed_string_case(self, n):
+        """readFixedStringCase: read_fixed_string with the letters' case kept."""
+        s, _, ok = self.read_fixed_text_case(n)
+        return s, ok
+
+    def read_fixed_text_case(self, n):
+        """readFixedTextCase: read_fixed_text with the letters' case kept."""
         at = self._take(n)
         if at is None:
             return "", None, False
@@ -277,7 +307,7 @@ class _Decompiler:
             buf = buf[:end]
         clean = bytes(c for c in buf if 0x20 <= c < 0x7F)
         junk = bytes(buf) if len(clean) < len(buf) else None
-        return clean.decode("ascii").lower(), junk, True
+        return clean.decode("ascii"), junk, True
 
     def read_array_def(self):
         """Returns (ptr, count, alloc); zeros on a short read (no read_err)."""
@@ -1166,7 +1196,7 @@ class _Decompiler:
         self.skip(4 + 12 + 12 + 4 + 4)
         length = self.read_f32()[0]
         trans_time = self.read_f32()[0]
-        root, _ = self.read_fixed_string(64)
+        root, _ = self.read_fixed_string_case(64)  # in its case until the nodes are read
         events_def, _ = self.read_array_def()
         anim = Animation(name, length, trans_time, root)
         if events_def[1] > 0 and events_def[0] != 0:
@@ -1178,8 +1208,10 @@ class _Decompiler:
                         t = self.read_f32()[0]
                         ename, _ = self.read_fixed_string(32)
                         anim.events.append((t, ename))
+        self.anim_stored_names = []
         if root_node_ptr != 0:
             self.read_anim_node(anim, root_node_ptr, "NULL", 0)
+        anim.root = written_anim_root(root, root in self.anim_stored_names, anim.nodes)
         self.model.animations.append(anim)
         return None
 
@@ -1198,7 +1230,9 @@ class _Decompiler:
             return
 
         self.skip(24 + 4 + 4)
-        node_name, _ = self.read_fixed_string(32)
+        stored_name, _ = self.read_fixed_string_case(32)
+        self.anim_stored_names.append(stored_name)
+        node_name = stored_name.lower()
         self.where = (anim.name, node_name, "the node header")
         self.skip(8)
         children_def, _ = self.read_array_def()

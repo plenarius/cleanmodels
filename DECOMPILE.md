@@ -421,6 +421,15 @@ stored order, each overwriting the field (nwn-mdl-spec MDL-CTRL-036). ASCII
 holds one key list per controller, so the last one's keys are written; they
 were appended to the first one's before, which made one controller of both.
 
+The animroot is written so that it matches, case for case, the node the stored
+one matched, or none when it matched none (`writtenAnimRoot`, nwn-mdl-spec
+MDL-NODE-045): the game's compiler cut the tree to the node the animroot named
+by exact name, and a compile of the ASCII cuts it again by the same rule.
+Node names are written in lower case, so a matching animroot is too, and one
+that matched nothing is written in lower case unless that would now match a
+node: `zspec_animroot`'s `ARM` over a node `arm` stays `ARM` (it was written
+`arm` up to 4.17.5, and a recompile then dropped `leg`).
+
 An animation node takes its geometry node's type. A node the geometry has no
 node of that name for is written with the type word its stored flags give
 (`AnimNode.Type`): `trimesh` for 0x21, `light` for 0x3, `emitter` for 0x5,
