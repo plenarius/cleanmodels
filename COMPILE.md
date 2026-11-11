@@ -73,6 +73,19 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
    MDL-NODE-040): its path is walked down the geometry tree, and a match takes
    that geometry node's number; a node the geometry lacks gets -1 under a
    matched parent and otherwise its declaration index in the animation.
+   An animation node takes its geometry node's type (MDL-NODE-041). A node
+   the geometry lacks takes the type its own type word names, whatever keys
+   it has, as the game's compiler does (nwn-mdl-spec MDL-NODE-044, engine
+   fixture `zspec_animnogeo`): `trimesh` gets flags 0x21 and an empty mesh
+   header, `light` 0x3 and `emitter` 0x5 with the header of one declared with
+   no fields, `dummy` 0x1. It keeps the keys that type reads and drops the
+   rest (an `alphakey` on a dummy). As a dummy, `tvd_udoor_09`'s
+   `09_DWK_wg_closed` lost its alpha keys. The other mesh words (`skin`,
+   `danglymesh`, `aabb`, `animmesh`) are not probed: they get the mesh flag
+   and header, which keeps their mesh controllers; `reference` and `camera`
+   stay dummies. The game writes the controllers in the order of their lines
+   and leaves heap bytes in the empty mesh header and the emitter header; ours
+   are in the fixed order and zeroed, which reads the same.
 5. **File header** — `{0, core_len, mdx_len}` is written last with the final
   buffer sizes, then `core` and `vol` are appended.
 
@@ -183,7 +196,9 @@ negative when the right child is on the lower side; a tie is -z). We derive it
 the same way, and `TestOracleAabbTreeMatchesGame` checks every walkmesh tree in
 the oracle fixtures against the game's, plane included. A model with no tree,
 or a tree that is not a complete preorder tree over the mesh's faces, gets one
-built by `buildAABBTree` instead. `RebuildAABB` (in
+built by `buildAABBTree` instead, a median split whose planes follow the same
+rule (leaves 0, each inner node from its children): a compile of its decompile
+reads the tree back and derives the same planes, so the two compiles match. `RebuildAABB` (in
 `pkg/mdl/repair_walkmesh.go`) is a repair the user asks for and has no
 game equivalent. Repairs that move a walkmesh's vertices (pivots, scale,
 raise/lower, snap) move its tree's boxes with them.

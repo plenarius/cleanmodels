@@ -82,17 +82,20 @@ func Decompile(r io.ReadSeeker, fileSize int64) (*Model, error) {
 
 // DecompileWithOptions is Decompile with options.
 func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, error) {
-	m, err := decompileStored(r, fileSize, opts)
+	m, hints, err := decompileStored(r, fileSize, opts)
 	if err != nil {
 		return nil, err
 	}
-	declarationOrder(m)
+	declarationOrder(m, hints)
 	return m, nil
 }
 
 // decompileStored is DecompileWithOptions with the geometry nodes listed in
-// the binary's stored (depth-first) order.
-func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, error) {
+// the binary's stored (depth-first) order. It also returns the stored
+// transparencyhint of each mesh whose hint the decompile changed (a restored
+// donor takes its receiver's, unmergeRenderLists), which the stored tree was
+// sorted by: declarationOrder plans with them.
+func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*Model, map[*Node]int32, error) {
 	d := &decompiler{
 		r:           r,
 		fileSize:    fileSize,
@@ -104,10 +107,10 @@ func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*M
 	}
 
 	if err := d.readFileHeader(); err != nil {
-		return nil, fmt.Errorf("file header: %w", err)
+		return nil, nil, fmt.Errorf("file header: %w", err)
 	}
 	if err := d.readModelHeader(); err != nil {
-		return nil, fmt.Errorf("model header: %w", err)
+		return nil, nil, fmt.Errorf("model header: %w", err)
 	}
 	if d.rootNodePtr != 0 {
 		if err := d.readNode(d.rootNodePtr, "NULL"); err != nil {
@@ -139,7 +142,7 @@ func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*M
 		}
 	}
 
-	return d.model, nil
+	return d.model, d.storedHints, nil
 }
 
 type decompiler struct {
@@ -167,6 +170,9 @@ type decompiler struct {
 	// renderLists holds each geometry mesh's render index list
 	// (MDL-BIN-049), for unmergeRenderLists (binary_merged.go).
 	renderLists map[*Node][]uint16
+	// storedHints holds the stored transparencyhint of each mesh
+	// unmergeRenderLists gave another (for declarationOrder).
+	storedHints map[*Node]int32
 
 	// tangentFills are the meshes whose tangent stream holds bad vectors,
 	// in the order read, for fillTangents (binary_tangents.go).
@@ -2376,6 +2382,16 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		Name:   nodeName,
 		Parent: parentName,
 	}
+	// The type the flags give, for a node the geometry lacks: a compile of
+	// the type word gets the flags back (nwn-mdl-spec MDL-NODE-044).
+	switch nodeFlag {
+	case 3:
+		animNode.Type = "light"
+	case 5:
+		animNode.Type = "emitter"
+	case 33:
+		animNode.Type = "trimesh"
+	}
 
 	// Read mesh data for animmesh animation nodes
 	if hasMesh && hasAnim && animMeshVerts > 0 {
@@ -2428,8 +2444,20 @@ func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, ke
 	if len(keys) == 0 {
 		return
 	}
+	// A controller id given twice (nwn-mdl-spec MDL-CTRL-036): the engine
+	// applies a node's controllers in stored order, each overwriting the
+	// field, and ASCII holds one key list per controller, so the last one's
+	// keys are kept. Appending them to the first one's would make one
+	// controller of both.
+	seen := make(map[string]bool)
 	for _, entry := range d.resolveControllerDefs(keys, nodeFlag, animNode.Name) {
 		rows := d.readControllerRows(entry.def, dataDef.Ptr, int(entry.key.TimeStart), int(entry.key.DataStart), int(entry.key.ValueCount), entry.numCols)
+		if len(rows) > 0 {
+			if seen[entry.def.Name] {
+				animNode.clearController(entry.def.Name)
+			}
+			seen[entry.def.Name] = true
+		}
 		if entry.bezier && entry.def.Name == "position" {
 			for _, r := range rows {
 				if len(r.Values) >= 9 {
@@ -2474,8 +2502,7 @@ func runtimeWidth(def ControllerDef, vals []float32) []float32 {
 }
 
 // addAnimBezierKeys adds a bezier float or colour controller's rows (value,
-// handle in, handle out) and marks the controller bezier. Linear keys of the
-// same controller, if any, keep zero handles.
+// handle in, handle out) and marks the controller bezier.
 func (d *decompiler) addAnimBezierKeys(an *AnimNode, name string, rows []controllerRow) {
 	if getter, ok := animControllerFloatTable[name]; ok {
 		for _, r := range rows {
@@ -2499,6 +2526,26 @@ func (d *decompiler) addAnimBezierKeys(an *AnimNode, name string, rows []control
 		}
 		an.setBezier(name)
 	}
+}
+
+// clearController drops the keys of the named controller (as
+// resolveControllerDefs names it) and its bezier mark.
+func (an *AnimNode) clearController(name string) {
+	switch name {
+	case "position":
+		an.PositionKeys = nil
+		an.PositionBezier = false
+		return
+	case "orientation":
+		an.OrientationKeys = nil
+		return
+	}
+	if getter, ok := animControllerFloatTable[name]; ok {
+		*getter(an) = nil
+	} else if getter, ok := animControllerColorTable[name]; ok {
+		*getter(an) = nil
+	}
+	delete(an.Bezier, name)
 }
 
 func (d *decompiler) addAnimKey(an *AnimNode, name string, time float32, vals []float32) {

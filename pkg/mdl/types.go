@@ -438,6 +438,14 @@ type ColorKey struct {
 type AnimNode struct {
 	Name   string
 	Parent string
+	// Type is the node type the animation gives the node, for a node the
+	// geometry has none of that name for (otherwise the geometry node's type
+	// is used, nwn-mdl-spec MDL-NODE-041): the type an ASCII declares (empty
+	// for dummy), or the one a binary node's flags give ("trimesh", "light"
+	// or "emitter"). The compiler writes such a node with that type's flags
+	// and header, and only the keys that type reads (MDL-NODE-044); the
+	// writer writes it.
+	Type string
 
 	// Base node controllers
 	PositionKeys   []PositionKey

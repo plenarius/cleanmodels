@@ -8,8 +8,12 @@ step.
 """
 
 
-def reorder_children(root, children):
-    """reorderChildren: MdlNode::ReorderChildren over the geometry tree."""
+def reorder_children(root, children, hint=None):
+    """reorderChildren: MdlNode::ReorderChildren over the geometry tree; with
+    hint, reorderChildrenBy (each mesh's transparencyhint given by hint)."""
+    if hint is None:
+        hint = mesh_hint
+    less = hint_less(hint)
     visited = set()
     stack = [root]
     while stack:
@@ -19,12 +23,28 @@ def reorder_children(root, children):
         visited.add(n)
         kids = children.get(n, [])
         for k in kids:
-            if k.mesh is not None and k.mesh.transparency_hint > 0:
+            if k.mesh is not None and hint(k) > 0:
                 kids = list(kids)
-                engine_sort(kids, transparency_less)
+                engine_sort(kids, less)
                 children[n] = kids
                 break
         stack.extend(kids)
+
+
+def mesh_hint(n):
+    """meshHint: a mesh's transparencyhint."""
+    return n.mesh.transparency_hint
+
+
+def hint_less(hint):
+    """hintLess: transparency_less with each mesh's hint given by hint."""
+    def less(a, b):
+        if a.mesh is None:
+            return b.mesh is not None
+        if b.mesh is None:
+            return False
+        return hint(a) < hint(b)
+    return less
 
 
 def transparency_less(a, b):

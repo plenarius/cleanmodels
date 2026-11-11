@@ -15,8 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cleanmodels import compile, decompile, parse, write  # noqa: E402,A004
 from cleanmodels import binary as _binary  # noqa: E402
+from cleanmodels.binary import _Decompiler, unmerge_render_lists  # noqa: E402
+from cleanmodels.compiler_node import aabb_split_plane, build_aabb_tree  # noqa: E402
 from cleanmodels.binary_order import declaration_order  # noqa: E402
 from cleanmodels.compiler_order import reorder_children  # noqa: E402
+from cleanmodels.binary_order import _walks_as  # noqa: E402
 from cleanmodels.compiler_tree import resolve_geom_tree  # noqa: E402
 from cleanmodels.f32 import f32, f32_bits  # noqa: E402
 from cleanmodels.share_neighbours import stored_neighbours  # noqa: E402
@@ -154,7 +157,7 @@ def tsort50(super_model="zz_missing"):
 def stored_tree(data):
     """storedTree: parent/name per node, as stored (no declaration order)."""
     keep = _binary.declaration_order
-    _binary.declaration_order = lambda m: None
+    _binary.declaration_order = lambda m, hints=None: None
     try:
         m = decompile(data)
     finally:
@@ -229,7 +232,9 @@ class RoundTripFixes(unittest.TestCase):
         m.super_model = "NULL"
         m.nodes = list(nodes)
         declaration_order(m)
-        self.assertTrue(all(a is b for a, b in zip(m.nodes, nodes)), "reordered although a duplicate is a parent")
+        _, children = resolve_geom_tree(m.nodes)
+        reorder_children(m.nodes[0], children)
+        self.assertTrue(_walks_as(m.nodes, children, nodes), "a compile of the order taken changes the stored tree")
 
     def test_order_per_parent(self):
         m = stored_tree(compile_text(tsort50()))
@@ -286,6 +291,360 @@ class RoundTripFixes(unittest.TestCase):
         self.assertIn("normals 4", want.split("newanim", 1)[1])
         self.assertEqual([ln for ln in got.splitlines() if "orientation 0 0 1 0" not in ln],
                          [ln for ln in want.splitlines() if "orientation 0 0 1 0" not in ln])
+
+    def test_order_stored_donor_hint(self):
+        def quad(bitmap, render, dx, hint):
+            q = MeshData()
+            q.bitmap = bitmap
+            q.render = render
+            q.transparency_hint = hint
+            q.verts = [(dx, 0.0, 0.0), (dx + 1, 0.0, 0.0), (dx + 1, 1.0, 0.0), (dx, 1.0, 0.0)]
+            q.tverts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+            q.faces = [Face((0, 1, 2), 0, (0, 1, 2)), Face((0, 2, 3), 0, (0, 2, 3))]
+            return q
+
+        def node(name, mesh, number, x=0.0):
+            n = Node(name, "root")
+            n.mesh = mesh
+            n.part_number = number
+            n.position = (x, 0.0, 0.0)
+            return n
+
+        root = Node("root", "NULL")
+        b = node("b", None, 3)
+        lower = node("lower", quad("tex", 0, 5.0, 0), 1, -3.0)
+        trim = node("trim", quad("othertex", 1, 9.0, 1), 2)
+        wall = node("wall", quad("tex", 1, 0.0, 2), 4)
+        wall.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        wall.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        d = _Decompiler(b"", [])
+        d.model.super_model = "NULL"
+        d.model.nodes = [root, b, lower, trim, wall]
+        d.render_lists = {wall: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7], trim: []}
+        unmerge_render_lists(d)
+        self.assertEqual((lower.mesh.render, lower.mesh.transparency_hint), (1, 2))
+        self.assertEqual(list(d.stored_hints.items()), [(lower, 0)])
+        declaration_order(d.model, d.stored_hints)
+        self.assertEqual([n.name for n in d.model.nodes], ["root", "lower", "trim", "b", "wall"])
+        self.assertEqual(lower.mesh.transparency_hint, 2)
+
+    def test_order_donor_sorted_by_new_hint(self):
+        # trlk1_o08_01's plane10: the donor's stored hint 1 was the only one above
+        # 0; restored with its receiver's 0, nothing is sorted, and the stored
+        # order must be kept
+        def quad(bitmap, render, dx):
+            q = MeshData()
+            q.bitmap = bitmap
+            q.render = render
+            q.verts = [(dx, 0.0, 0.0), (dx + 1, 0.0, 0.0), (dx + 1, 1.0, 0.0), (dx, 1.0, 0.0)]
+            q.tverts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+            q.faces = [Face((0, 1, 2), 0, (0, 1, 2)), Face((0, 2, 3), 0, (0, 2, 3))]
+            return q
+
+        def node(name, mesh, x=0.0):
+            n = Node(name, "root")
+            n.mesh = mesh
+            n.position = (x, 0.0, 0.0)
+            return n
+
+        stored = [Node("root", "NULL")] + [node("m%d" % i, quad("other", 1, 10.0 + 2 * i)) for i in range(20)]
+        wall = node("wall", quad("tex", 1, 0.0))
+        wall.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        wall.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        lower = node("lower", quad("tex", 0, 5.0), -3.0)
+        lower.mesh.transparency_hint = 1
+        stored += [wall, lower]
+        d = _Decompiler(b"", [])
+        d.model.super_model = "NULL"
+        d.model.nodes = list(stored)
+        d.render_lists = {wall: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]}
+        unmerge_render_lists(d)
+        self.assertEqual((lower.mesh.transparency_hint, d.stored_hints.get(lower)), (0, 1))
+        declaration_order(d.model, d.stored_hints)
+        _, children = resolve_geom_tree(d.model.nodes)
+        reorder_children(d.model.nodes[0], children)
+        self.assertTrue(_walks_as(d.model.nodes, children, stored), [n.name for n in d.model.nodes])
+
+    def test_order_part_numbers_with_stored_donor_hint(self):
+        # plc_tn2_13: part-number order planned with the donor's stored hint gives
+        # the numbers, and its compile moves only the donor
+        def quad(bitmap, render, dx, hint=0):
+            q = MeshData()
+            q.bitmap = bitmap
+            q.render = render
+            q.transparency_hint = hint
+            q.verts = [(dx, 0.0, 0.0), (dx + 1, 0.0, 0.0), (dx + 1, 1.0, 0.0), (dx, 1.0, 0.0)]
+            q.tverts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+            q.faces = [Face((0, 1, 2), 0, (0, 1, 2)), Face((0, 2, 3), 0, (0, 2, 3))]
+            return q
+
+        def node(name, mesh, number, x=0.0):
+            n = Node(name, "root")
+            n.mesh = mesh
+            n.part_number = number
+            n.position = (x, 0.0, 0.0)
+            return n
+
+        root = Node("root", "NULL")
+        b = node("b", None, 3)
+        lower = node("lower", quad("tex", 0, 5.0), 2, -3.0)
+        trim = node("trim", quad("othertex", 1, 9.0, 1), 1)
+        wall = node("wall", quad("tex", 1, 0.0, 1), 4)
+        wall.mesh.verts += [(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0), (2.0, 1.0, 0.0)]
+        wall.mesh.tverts += [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+        d = _Decompiler(b"", [])
+        d.model.super_model = "NULL"
+        d.model.nodes = [root, b, lower, trim, wall]
+        d.render_lists = {wall: [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7], trim: []}
+        unmerge_render_lists(d)
+        self.assertEqual((lower.mesh.transparency_hint, d.stored_hints.get(lower)), (1, 0))
+        declaration_order(d.model, d.stored_hints)
+        self.assertEqual([n.name for n in d.model.nodes], ["root", "trim", "lower", "b", "wall"])
+
+    def test_order_part_numbers_duplicate_leaf(self):
+        first = compile_text(DUP_LEAF)
+        again = compile_text(write(decompile(first)))
+        tree = [(n.parent, n.name, n.part_number) for n in stored_tree(first).nodes]
+        self.assertEqual([(n.parent, n.name, n.part_number) for n in stored_tree(again).nodes], tree)
+
+    def test_order_child_named_like_root(self):
+        text = ["newmodel dpr\nsetsupermodel dpr NULL\nclassification TILE\nsetanimationscale 1.0\n"
+                "beginmodelgeom dpr\n  node dummy dpr\n    parent NULL\n  endnode\n  node dummy dpr\n    parent dpr\n  endnode\n"]
+        for i in range(24):
+            text.append("  node trimesh m%02d\n    parent dpr\n    transparencyhint %d\n    bitmap blank\n"
+                        "    verts 3\n      0 0 0\n      1 0 0\n      0 1 %d\n    faces 1\n      0 1 2  1  0 0 0  0\n"
+                        "  endnode\n" % (i, 1 if i == 3 else 0, i))
+        text.append("endmodelgeom dpr\ndonemodel dpr\n")
+        first = compile_text("".join(text))
+        again = compile_text(write(decompile(first)))
+        tree = [(n.parent, n.name) for n in stored_tree(first).nodes]
+        self.assertEqual([(n.parent, n.name) for n in stored_tree(again).nodes], tree)
+
+    def test_write_duplicate_parent_name_tree(self):
+        first = compile_text(DUP_PARENT_BRANCHES)
+        again = compile_text(write(decompile(first)))
+        tree = [(n.parent, n.name, n.part_number) for n in stored_tree(first).nodes]
+        self.assertEqual([(n.parent, n.name, n.part_number) for n in stored_tree(again).nodes], tree)
+
+    def test_duplicate_anim_controller_keeps_last(self):
+        data = bytearray(compile_text(DUP_CTRL))
+        hits = [i for i in range(len(data) - 11) if data[i:i + 6] == bytes([36, 0, 0, 0, 1, 0]) and data[i + 10] == 1]
+        self.assertEqual(len(hits), 1)
+        data[hits[0]] = 128
+        an = decompile(bytes(data)).animations[0].nodes[1]
+        self.assertEqual(an.float_keys.get("alpha"), [(0.0, 0.25)])
+        self.assertNotIn("scale", an.float_keys)
+
+    def test_built_aabb_tree_planes(self):
+        model = parse(BUILT_AABB.encode("latin-1")).model
+        tree = build_aabb_tree(model.find_node("walk").mesh)
+        for e in tree:
+            if e.leaf_face >= 0:
+                self.assertEqual(e.plane, 0)
+            else:
+                self.assertEqual(e.plane, aabb_split_plane(tree[e.left], tree[e.right]))
+        first = compile(model)
+        again = compile_text(write(decompile(first)))
+
+        def entries(data):
+            return [(e.bound_min, e.bound_max, e.leaf_face, e.plane) for e in decompile(data).find_node("walk").aabb.entries]
+
+        self.assertEqual(entries(again), entries(first))
+
+    def test_anim_mesh_keys_without_geometry(self):
+        first = compile_text(ANIM_NO_GEOM)
+        m = decompile(first)
+        self.assertEqual(compile_text(write(m)), first)
+        an = m.animations[0].nodes[2]
+        self.assertEqual((an.name, an.type, len(an.float_keys.get("alpha", []))), ("wg_closed", "trimesh", 2))
+        text = write(m)
+        self.assertIn("node trimesh wg_closed", text)
+        self.assertIn("node dummy gone", text)
+
+    def test_anim_nodes_without_geometry_follow_type_word(self):
+        # MDL-NODE-044, the game's compile of zspec_animnogeo
+        with open(os.path.join(ENGINE, "zspec_animnogeo.mdl"), "rb") as f:
+            golden = f.read()
+        with open(os.path.join(ENGINE, "zspec_animnogeo.ascii.mdl"), "rb") as f:
+            ours = compile(parse(f.read()).model)
+        wants = {
+            "x": ("trimesh", ["alpha", "orientation", "position"]),
+            "y": ("light", ["color", "position", "radius"]),
+            "z": ("trimesh", ["scale", "selfillumcolor"]),
+            "w": ("", ["position"]),
+            "v": ("trimesh", ["position"]),
+            "u": ("emitter", ["birthrate", "position"]),
+            "t": ("", []),
+        }
+
+        def ctrls(an):
+            out = [k for k, v in an.float_keys.items() if v] + [k for k, v in an.color_keys.items() if v]
+            if an.position_keys:
+                out.append("position")
+            if an.orientation_keys:
+                out.append("orientation")
+            return sorted(out)
+
+        for label, data in (("game", golden), ("ours", ours)):
+            got = {an.name: (an.type, ctrls(an)) for an in decompile(data).animations[0].nodes if an.name in wants}
+            self.assertEqual(got, wants, label)
+        text = write(decompile(golden))
+        for line in ("node trimesh x", "node light y", "node trimesh v", "node emitter u", "node dummy t"):
+            self.assertIn(line, text)
+        self.assertEqual(compile_text(write(decompile(ours))), ours)
+
+
+DUP_LEAF = """newmodel pdl
+setsupermodel pdl NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom pdl
+  node dummy pdl
+    parent NULL
+  endnode
+  node dummy a
+    parent pdl
+  endnode
+  node dummy m
+    parent pdl
+  endnode
+  node dummy m
+    parent a
+  endnode
+endmodelgeom pdl
+donemodel pdl
+"""
+
+DUP_PARENT_BRANCHES = """newmodel wdp
+setsupermodel wdp NULL
+classification PLACEABLE
+setanimationscale 1.0
+beginmodelgeom wdp
+  node dummy wdp
+    parent NULL
+  endnode
+  node dummy p
+    parent wdp
+  endnode
+  node dummy q
+    parent p
+  endnode
+  node dummy c1
+    parent q
+  endnode
+  node dummy q
+    parent wdp
+  endnode
+  node dummy c2
+    parent q
+  endnode
+endmodelgeom wdp
+donemodel wdp
+"""
+
+DUP_CTRL = """newmodel dac
+setsupermodel dac NULL
+classification PLACEABLE
+setanimationscale 1.0
+beginmodelgeom dac
+  node dummy dac
+    parent NULL
+  endnode
+  node trimesh quad
+    parent dac
+    bitmap blank
+    verts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    faces 1
+      0 1 2  1  0 0 0  0
+  endnode
+endmodelgeom dac
+newanim fade dac
+  length 1
+  transtime 0
+  animroot dac
+  node dummy dac
+    parent NULL
+  endnode
+  node trimesh quad
+    parent dac
+    scalekey 1
+      0 0.5
+    alphakey 1
+      0 0.25
+  endnode
+doneanim fade dac
+donemodel dac
+"""
+
+BUILT_AABB = """newmodel bat
+setsupermodel bat NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom bat
+  node dummy bat
+    parent NULL
+  endnode
+  node aabb walk
+    parent bat
+    bitmap blank
+    verts 9
+      0 0 0
+      1 0 0
+      2 0 0
+      0 1 0
+      1 1 0
+      2 1 0
+      0 3 0
+      1 3 0
+      2 3 0
+    faces 8
+      0 1 4  1  0 0 0  1
+      0 4 3  1  0 0 0  1
+      1 2 5  1  0 0 0  1
+      1 5 4  1  0 0 0  1
+      3 4 7  1  0 0 0  1
+      3 7 6  1  0 0 0  1
+      4 5 8  1  0 0 0  1
+      4 8 7  1  0 0 0  1
+  endnode
+endmodelgeom bat
+donemodel bat
+"""
+
+ANIM_NO_GEOM = """newmodel agn
+setsupermodel agn NULL
+classification DOOR
+setanimationscale 1.0
+beginmodelgeom agn
+  node dummy agn
+    parent NULL
+  endnode
+  node dummy grnd
+    parent agn
+  endnode
+endmodelgeom agn
+newanim closed agn
+  length 1
+  transtime 0
+  animroot agn
+  node dummy agn
+    parent NULL
+  endnode
+  node dummy gone
+    parent agn
+  endnode
+  node trimesh wg_closed
+    parent gone
+    alphakey 2
+      0 0
+      1 1
+  endnode
+doneanim closed agn
+donemodel agn
+"""
 
 
 if __name__ == "__main__":

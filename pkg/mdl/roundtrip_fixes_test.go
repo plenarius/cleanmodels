@@ -2,9 +2,11 @@ package mdl
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -230,7 +232,9 @@ func TestDecompileOrderDuplicateChildName(t *testing.T) {
 	sameTree(t, storedTree(t, first), storedTree(t, again), false)
 }
 
-// A duplicate name that is a parent keeps the stored order.
+// A duplicate name that is a parent gets no part-number order, but the
+// inverse sort still applies, checked against the stored parents: a compile
+// of the order taken rebuilds the stored tree.
 func TestDecompileOrderDuplicateParentName(t *testing.T) {
 	mesh := func(name, parent string, hint int32) *Node {
 		md := NewMeshData()
@@ -243,9 +247,11 @@ func TestDecompileOrderDuplicateParentName(t *testing.T) {
 	}
 	nodes = append(nodes, &Node{Name: "p", Parent: "root"})
 	m := &Model{Nodes: append([]*Node(nil), nodes...), SuperModel: "NULL"}
-	declarationOrder(m)
-	if !slices.Equal(m.Nodes, nodes) {
-		t.Error("reordered although a duplicate name is a parent")
+	declarationOrder(m, nil)
+	_, children := resolveGeomTree(m.Nodes)
+	reorderChildren(m.Nodes[0], children)
+	if !walksAs(m.Nodes, children, nodes) {
+		t.Error("a compile of the order taken does not rebuild the stored tree")
 	}
 }
 
@@ -259,7 +265,7 @@ func TestDecompileOrderPerParent(t *testing.T) {
 	}
 	text := strings.Replace(string(src), "setsupermodel zcm_tsort50 NULL", "setsupermodel zcm_tsort50 zz_missing", 1)
 	first := mustCompile(t, mustParseASCII(t, text))
-	m, err := decompileStored(bytes.NewReader(first), int64(len(first)), DecompileOptions{})
+	m, _, err := decompileStored(bytes.NewReader(first), int64(len(first)), DecompileOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +287,7 @@ func TestDecompileOrderPerParent(t *testing.T) {
 	}
 	stored := append(append([]*Node{top}, m.Nodes...), tail...)
 	m.Nodes = append([]*Node(nil), stored...)
-	declarationOrder(m)
+	declarationOrder(m, nil)
 	if slices.Equal(m.Nodes, stored) {
 		t.Fatal("stored order kept: the unsorted parent dropped the inverse sort of the other")
 	}
@@ -381,5 +387,473 @@ donemodel lco
 		if n := strings.Count(text.String(), kw); n != 1 {
 			t.Errorf("%q written %d times", kw, n)
 		}
+	}
+}
+
+// A restored donor takes its receiver's transparencyhint
+// (copyDrawingState), but the stored tree was sorted by its own:
+// declarationOrder plans with the stored one. Here part-number order gives
+// the stored tree and numbers only with the donor's stored hint 0 (with 2 it
+// would sort after trim).
+func TestDecompileOrderStoredDonorHint(t *testing.T) {
+	hinted := func(m *MeshData, hint int32) *MeshData {
+		m.TransparencyHint = hint
+		return m
+	}
+	root := &Node{Name: "root", Parent: "NULL"}
+	b := &Node{Name: "b", Parent: "root", PartNumber: 3}
+	lower := &Node{Name: "lower", Parent: "root", Mesh: hinted(mergeQuad("tex", 0, 5), 0), Position: Vec3{X: -3}, PartNumber: 1}
+	trim := &Node{Name: "trim", Parent: "root", Mesh: hinted(mergeQuad("othertex", 1, 9), 1), PartNumber: 2}
+	wall := &Node{Name: "wall", Parent: "root", Mesh: hinted(mergeQuad("tex", 1, 0), 2), PartNumber: 4}
+	wall.Mesh.Verts = append(wall.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	wall.Mesh.TVerts = append(wall.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	stored := []*Node{root, b, lower, trim, wall}
+	d := &decompiler{model: &Model{Nodes: append([]*Node(nil), stored...), SuperModel: "NULL"}}
+	d.renderLists = map[*Node][]uint16{wall: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}, trim: nil}
+	d.unmergeRenderLists()
+	if lower.Mesh.Render != 1 || lower.Mesh.TransparencyHint != 2 {
+		t.Fatalf("lower: render %d, hint %d; want restored with wall's hint 2", lower.Mesh.Render, lower.Mesh.TransparencyHint)
+	}
+	if h, ok := d.storedHints[lower]; !ok || h != 0 || len(d.storedHints) != 1 {
+		t.Fatalf("stored hints %v, want lower's 0 only", d.storedHints)
+	}
+	declarationOrder(d.model, d.storedHints)
+	if want := []*Node{root, lower, trim, b, wall}; !slices.Equal(d.model.Nodes, want) {
+		t.Errorf("order %s, want part-number order", nodeNames(d.model.Nodes))
+	}
+	if lower.Mesh.TransparencyHint != 2 {
+		t.Error("the ASCII must keep the donor's new hint")
+	}
+}
+
+func nodeNames(nodes []*Node) string {
+	var names []string
+	for _, n := range nodes {
+		names = append(names, n.Name)
+	}
+	return strings.Join(names, " ")
+}
+
+// A name used twice by nodes that are no parent (two leaves named m) still
+// lets part-number order through, and the writer keeps it: the original was
+// declared out of tree order (b before a's child), and its numbers come back.
+func TestDecompileOrderPartNumbersDuplicateLeaf(t *testing.T) {
+	src := `newmodel pdl
+setsupermodel pdl NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom pdl
+  node dummy pdl
+    parent NULL
+  endnode
+  node dummy a
+    parent pdl
+  endnode
+  node dummy m
+    parent pdl
+  endnode
+  node dummy m
+    parent a
+  endnode
+endmodelgeom pdl
+donemodel pdl
+`
+	first := mustCompile(t, mustParseASCII(t, src))
+	again := recompile(t, mustDecompile(t, first), nil)
+	sameTree(t, storedTree(t, first), storedTree(t, again), true)
+}
+
+// A child dummy named like the root and parent of more than 16 meshes, one
+// with transparencyhint 1 (eld02_p18_01): the meshes are sorted by std::sort,
+// which shuffles the hint-0 ones. The decompile declares them in the order
+// the sort turns back into the stored one, and the writer finds each node's
+// children by node (nearest preceding name), so the tree comes back.
+func TestDecompileOrderChildNamedLikeRoot(t *testing.T) {
+	var src strings.Builder
+	src.WriteString(`newmodel dpr
+setsupermodel dpr NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom dpr
+  node dummy dpr
+    parent NULL
+  endnode
+  node dummy dpr
+    parent dpr
+  endnode
+`)
+	for i := 0; i < 24; i++ {
+		hint := 0
+		if i == 3 {
+			hint = 1
+		}
+		fmt.Fprintf(&src, `  node trimesh m%02d
+    parent dpr
+    transparencyhint %d
+    bitmap blank
+    verts 3
+      0 0 0
+      1 0 0
+      0 1 %d
+    faces 1
+      0 1 2  1  0 0 0  0
+  endnode
+`, i, hint, i)
+	}
+	src.WriteString("endmodelgeom dpr\ndonemodel dpr\n")
+	first := mustCompile(t, mustParseASCII(t, src.String()))
+	again := recompile(t, mustDecompile(t, first), nil)
+	sameTree(t, storedTree(t, first), storedTree(t, again), false)
+}
+
+// Two controllers of one id on an animation node (nwn-mdl-spec
+// MDL-CTRL-036): the engine applies both in order, so the last one's keys are
+// kept, not both merged into one list. The binary is made by turning an
+// animation node's scale controller (36) into a second alpha controller
+// (128).
+func TestDecompileDuplicateAnimControllerKeepsLast(t *testing.T) {
+	src := `newmodel dac
+setsupermodel dac NULL
+classification PLACEABLE
+setanimationscale 1.0
+beginmodelgeom dac
+  node dummy dac
+    parent NULL
+  endnode
+  node trimesh quad
+    parent dac
+    bitmap blank
+    verts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    faces 1
+      0 1 2  1  0 0 0  0
+  endnode
+endmodelgeom dac
+newanim fade dac
+  length 1
+  transtime 0
+  animroot dac
+  node dummy dac
+    parent NULL
+  endnode
+  node trimesh quad
+    parent dac
+    scalekey 1
+      0 0.5
+    alphakey 1
+      0 0.25
+  endnode
+doneanim fade dac
+donemodel dac
+`
+	data := mustCompile(t, mustParseASCII(t, src))
+	scale := []byte{36, 0, 0, 0, 1, 0}
+	at := -1
+	for i := 0; i+12 <= len(data); i++ {
+		if bytes.Equal(data[i:i+6], scale) && data[i+10] == 1 {
+			if at >= 0 {
+				t.Fatal("two scale controller keys")
+			}
+			at = i
+		}
+	}
+	if at < 0 {
+		t.Fatal("no scale controller key")
+	}
+	data[at] = 128
+	m := mustDecompile(t, data)
+	an := m.Animations[0].Nodes[1]
+	if want := []FloatKey{{Time: 0, Value: 0.25}}; !slices.Equal(an.AlphaKeys, want) || len(an.ScaleKeys) != 0 {
+		t.Errorf("alpha keys %v, scale keys %v; want the last alpha controller's only", an.AlphaKeys, an.ScaleKeys)
+	}
+}
+
+// A walkmesh with no tree gets one built by the compiler (buildAABBTree). Its
+// planes must be the engine's (inner nodes from their children, leaves 0),
+// as a compile of the decompile derives them from the tree it reads back, or
+// the second compile differs (tin01_i01_01).
+func TestRoundTripBuiltAABBTreePlanes(t *testing.T) {
+	src := `newmodel bat
+setsupermodel bat NULL
+classification TILE
+setanimationscale 1.0
+beginmodelgeom bat
+  node dummy bat
+    parent NULL
+  endnode
+  node aabb walk
+    parent bat
+    bitmap blank
+    verts 9
+      0 0 0
+      1 0 0
+      2 0 0
+      0 1 0
+      1 1 0
+      2 1 0
+      0 3 0
+      1 3 0
+      2 3 0
+    faces 8
+      0 1 4  1  0 0 0  1
+      0 4 3  1  0 0 0  1
+      1 2 5  1  0 0 0  1
+      1 5 4  1  0 0 0  1
+      3 4 7  1  0 0 0  1
+      3 7 6  1  0 0 0  1
+      4 5 8  1  0 0 0  1
+      4 8 7  1  0 0 0  1
+  endnode
+endmodelgeom bat
+donemodel bat
+`
+	model := mustParseASCII(t, src)
+	tree := buildAABBTree(model.FindNode("walk").Mesh)
+	for i, e := range tree {
+		if e.LeafFace >= 0 && e.Plane != 0 {
+			t.Errorf("leaf %d: plane %d, want 0", i, e.Plane)
+		}
+		if e.LeafFace < 0 && e.Plane != aabbSplitPlane(tree[e.Left], tree[e.Right]) {
+			t.Errorf("inner node %d: plane %d, want the engine's %d", i, e.Plane, aabbSplitPlane(tree[e.Left], tree[e.Right]))
+		}
+	}
+	first := mustCompile(t, model)
+	again := recompile(t, mustDecompile(t, first), nil)
+	want, got := mustDecompile(t, first).FindNode("walk").Aabb.Entries, mustDecompile(t, again).FindNode("walk").Aabb.Entries
+	if !slices.Equal(want, got) {
+		t.Errorf("the compile of the decompile writes another tree:\n%v\nwas\n%v", got, want)
+	}
+}
+
+// An animation node the geometry has no node for, stored with the mesh flag
+// and alpha keys (tvd_udoor_09's 09_DWK_wg_closed): the writer keeps its
+// type, so the keys are read back as mesh controllers, and the compiler gives
+// it the mesh flag and an empty mesh header, so they are written.
+func TestRoundTripAnimMeshKeysWithoutGeometry(t *testing.T) {
+	src := `newmodel agn
+setsupermodel agn NULL
+classification DOOR
+setanimationscale 1.0
+beginmodelgeom agn
+  node dummy agn
+    parent NULL
+  endnode
+  node dummy grnd
+    parent agn
+  endnode
+endmodelgeom agn
+newanim closed agn
+  length 1
+  transtime 0
+  animroot agn
+  node dummy agn
+    parent NULL
+  endnode
+  node dummy gone
+    parent agn
+  endnode
+  node trimesh wg_closed
+    parent gone
+    alphakey 2
+      0 0
+      1 1
+  endnode
+doneanim closed agn
+donemodel agn
+`
+	first := mustCompile(t, mustParseASCII(t, src))
+	m := recompileStable(t, first)
+	an := m.Animations[0].Nodes[2]
+	if an.Name != "wg_closed" || an.Type != "trimesh" || len(an.AlphaKeys) != 2 {
+		t.Fatalf("%s: type %q, %d alpha keys; want trimesh with 2", an.Name, an.Type, len(an.AlphaKeys))
+	}
+	var text bytes.Buffer
+	if err := Write(m, &text); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text.String(), "node trimesh wg_closed") {
+		t.Error("the animation node is not written as a trimesh")
+	}
+	if !strings.Contains(text.String(), "node dummy gone") {
+		t.Error("a node with no mesh flag is not written as a dummy")
+	}
+}
+
+// A name used by two parents in different branches (q under p, and q under
+// the root): the writer finds each node's children by node, so c2 is written
+// after the root's q, not under p's (which a compile would then make its
+// parent, the nearest q declared before).
+func TestWriteDuplicateParentNameTree(t *testing.T) {
+	src := `newmodel wdp
+setsupermodel wdp NULL
+classification PLACEABLE
+setanimationscale 1.0
+beginmodelgeom wdp
+  node dummy wdp
+    parent NULL
+  endnode
+  node dummy p
+    parent wdp
+  endnode
+  node dummy q
+    parent p
+  endnode
+  node dummy c1
+    parent q
+  endnode
+  node dummy q
+    parent wdp
+  endnode
+  node dummy c2
+    parent q
+  endnode
+endmodelgeom wdp
+donemodel wdp
+`
+	first := mustCompile(t, mustParseASCII(t, src))
+	again := recompile(t, mustDecompile(t, first), nil)
+	sameTree(t, storedTree(t, first), storedTree(t, again), true)
+}
+
+// Animation nodes the geometry lacks (nwn-mdl-spec MDL-NODE-044, the game's
+// compile of zspec_animnogeo): each takes the type its type word names,
+// whatever keys it has, and keeps only the keys that type reads. Our compile
+// gives each node the game's type and controllers, the decompile of either
+// writes the type word back, and that compiles to the same binary.
+func TestAnimNodesWithoutGeometryFollowTypeWord(t *testing.T) {
+	dir := filepath.Join("..", "..", "tests", "fixtures", "engine")
+	golden, err := os.ReadFile(filepath.Join(dir, "zspec_animnogeo.mdl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join(dir, "zspec_animnogeo.ascii.mdl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ours := mustCompile(t, mustParseASCII(t, string(src)))
+	type want struct {
+		typ   string
+		ctrls []string
+	}
+	wants := map[string]want{
+		"x": {"trimesh", []string{"position", "orientation", "alpha"}},
+		"y": {"light", []string{"position", "color", "radius"}},
+		"z": {"trimesh", []string{"scale", "selfillumcolor"}},
+		"w": {"", []string{"position"}},
+		"v": {"trimesh", []string{"position"}},
+		"u": {"emitter", []string{"position", "birthrate"}},
+		"t": {"", nil},
+	}
+	ctrls := func(an AnimNode) []string {
+		var out []string
+		if len(an.PositionKeys) > 0 {
+			out = append(out, "position")
+		}
+		if len(an.OrientationKeys) > 0 {
+			out = append(out, "orientation")
+		}
+		for _, e := range animControllerFloatList {
+			if len(*e.Getter(&an)) > 0 {
+				out = append(out, e.Name)
+			}
+		}
+		for _, e := range animControllerColorList {
+			if len(*e.Getter(&an)) > 0 {
+				out = append(out, e.Name)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	for label, data := range map[string][]byte{"game": golden, "ours": ours} {
+		m := mustDecompile(t, data)
+		seen := 0
+		for _, an := range m.Animations[0].Nodes {
+			w, ok := wants[an.Name]
+			if !ok {
+				continue
+			}
+			seen++
+			wc := slices.Clone(w.ctrls)
+			slices.Sort(wc)
+			if an.Type != w.typ || !slices.Equal(ctrls(an), wc) {
+				t.Errorf("%s %s: type %q, controllers %v; want %q, %v", label, an.Name, an.Type, ctrls(an), w.typ, wc)
+			}
+		}
+		if seen != len(wants) {
+			t.Errorf("%s: %d of the %d nodes", label, seen, len(wants))
+		}
+	}
+	var text bytes.Buffer
+	if err := Write(mustDecompile(t, golden), &text); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"node trimesh x", "node light y", "node trimesh v", "node emitter u", "node dummy t"} {
+		if !strings.Contains(text.String(), line) {
+			t.Errorf("the decompile of the game's compile has no %q", line)
+		}
+	}
+	recompileStable(t, ours)
+}
+
+// A restored donor among more than 16 siblings whose stored hint (1) was the
+// only one above 0 (trlk1_o08_01's plane10): restored, it takes its
+// receiver's 0, so a compile sorts nothing and the stored order rebuilds the
+// stored tree. Planning with the stored hint instead declared the siblings in
+// the order a sort would turn back, which the compile, not sorting, kept.
+func TestDecompileOrderDonorSortedByNewHint(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	stored := []*Node{root}
+	for i := 0; i < 20; i++ {
+		q := mergeQuad("other", 1, float32(10+2*i))
+		stored = append(stored, &Node{Name: "m" + strconv.Itoa(i), Parent: "root", Mesh: q})
+	}
+	wall := &Node{Name: "wall", Parent: "root", Mesh: mergeQuad("tex", 1, 0)}
+	wall.Mesh.Verts = append(wall.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	wall.Mesh.TVerts = append(wall.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	lower := &Node{Name: "lower", Parent: "root", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: -3}}
+	lower.Mesh.TransparencyHint = 1
+	stored = append(stored, wall, lower)
+	d := &decompiler{model: &Model{Nodes: append([]*Node(nil), stored...), SuperModel: "NULL"}}
+	d.renderLists = map[*Node][]uint16{wall: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}}
+	d.unmergeRenderLists()
+	if lower.Mesh.TransparencyHint != 0 || d.storedHints[lower] != 1 {
+		t.Fatalf("lower: hint %d, stored %v; want restored with wall's hint 0, stored 1", lower.Mesh.TransparencyHint, d.storedHints)
+	}
+	declarationOrder(d.model, d.storedHints)
+	_, children := resolveGeomTree(d.model.Nodes)
+	reorderChildren(d.model.Nodes[0], children)
+	if !walksAs(d.model.Nodes, children, stored) {
+		t.Errorf("a compile of %s does not rebuild the stored tree", nodeNames(d.model.Nodes))
+	}
+}
+
+// A restored donor whose stored place also sorts right with its new hint, in
+// a model declared out of tree order (plc_tn2_13): with the new hints the
+// stored order rebuilds the tree but not the numbers, and part-number order
+// gives neither. Part-number order planned with the stored hint gives the
+// numbers, and its compile moves only the donor: it is taken.
+func TestDecompileOrderPartNumbersWithStoredDonorHint(t *testing.T) {
+	root := &Node{Name: "root", Parent: "NULL"}
+	b := &Node{Name: "b", Parent: "root", PartNumber: 3}
+	lower := &Node{Name: "lower", Parent: "root", Mesh: mergeQuad("tex", 0, 5), Position: Vec3{X: -3}, PartNumber: 2}
+	trim := &Node{Name: "trim", Parent: "root", Mesh: mergeQuad("othertex", 1, 9), PartNumber: 1}
+	trim.Mesh.TransparencyHint = 1
+	wall := &Node{Name: "wall", Parent: "root", Mesh: mergeQuad("tex", 1, 0), PartNumber: 4}
+	wall.Mesh.TransparencyHint = 1
+	wall.Mesh.Verts = append(wall.Mesh.Verts, Vec3{2, 0, 0}, Vec3{3, 0, 0}, Vec3{3, 1, 0}, Vec3{2, 1, 0})
+	wall.Mesh.TVerts = append(wall.Mesh.TVerts, Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{1, 1, 0}, Vec3{0, 1, 0})
+	stored := []*Node{root, b, lower, trim, wall}
+	d := &decompiler{model: &Model{Nodes: append([]*Node(nil), stored...), SuperModel: "NULL"}}
+	d.renderLists = map[*Node][]uint16{wall: {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7}, trim: nil}
+	d.unmergeRenderLists()
+	if lower.Mesh.TransparencyHint != 1 || d.storedHints[lower] != 0 {
+		t.Fatalf("lower: hint %d, stored %v; want restored with wall's hint 1, stored 0", lower.Mesh.TransparencyHint, d.storedHints)
+	}
+	declarationOrder(d.model, d.storedHints)
+	if want := []*Node{root, trim, lower, b, wall}; !slices.Equal(d.model.Nodes, want) {
+		t.Errorf("order %s, want part-number order", nodeNames(d.model.Nodes))
 	}
 }

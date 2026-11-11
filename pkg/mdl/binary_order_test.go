@@ -32,7 +32,7 @@ func recompile(t *testing.T, model *Model, dirs []string) []byte {
 // part number, depth first.
 func storedTree(t *testing.T, data []byte) []string {
 	t.Helper()
-	m, err := decompileStored(bytes.NewReader(data), int64(len(data)), DecompileOptions{})
+	m, _, err := decompileStored(bytes.NewReader(data), int64(len(data)), DecompileOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestDecompileOrderKeepsUnsorted(t *testing.T) {
 		nodes = append(nodes, mesh("m"+strconv.Itoa(i), 0))
 	}
 	m := &Model{Nodes: append([]*Node(nil), nodes...), SuperModel: "NULL"}
-	declarationOrder(m)
+	declarationOrder(m, nil)
 	for i := range nodes {
 		if m.Nodes[i] != nodes[i] {
 			t.Fatalf("node %d: %s, want %s (stored order)", i, m.Nodes[i].Name, nodes[i].Name)

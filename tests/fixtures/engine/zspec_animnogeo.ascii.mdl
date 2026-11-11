@@ -1,0 +1,110 @@
+# nwn-mdl-spec conformance probe zspec_animnogeo (CC0-1.0)
+# Animation nodes the geometry has no node for, each declared with a type
+# word and keys: trimesh x (alphakey between position and orientation keys),
+# light y (colorkey, positionkey, radiuskey), trimesh z (selfillumcolorkey,
+# scalekey), dummy w (positionkey only), and the boundary cases trimesh v
+# (positionkey only), emitter u (birthratekey, positionkey) and dummy t
+# (alphakey, a mesh key on a dummy). The geometry has only the root and mesh
+# m, which the animation also keys, as a control. What the game's compiler
+# writes for each (flags, sub-headers, controllers and their order) shows
+# whether the type word, the keys, or neither decides a node's type.
+newmodel zspec_animnogeo
+setsupermodel zspec_animnogeo NULL
+classification door
+beginmodelgeom zspec_animnogeo
+node dummy zspec_animnogeo
+  parent NULL
+endnode
+node trimesh m
+  parent zspec_animnogeo
+  bitmap zspec_t0
+  verts 4
+    -1 -1 0
+    1 -1 0
+    1 1 0
+    -1 1 0
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+endnode
+endmodelgeom zspec_animnogeo
+newanim open zspec_animnogeo
+  length 1
+  transtime 0.25
+  animroot zspec_animnogeo
+  node dummy zspec_animnogeo
+    parent NULL
+  endnode
+  node trimesh m
+    parent zspec_animnogeo
+    alphakey 2
+      0 1
+      1 0.5
+  endnode
+  node trimesh x
+    parent zspec_animnogeo
+    positionkey 2
+      0 0 0 0
+      1 0 0 1
+    alphakey 2
+      0 1
+      1 0
+    orientationkey 2
+      0 0 0 1 0
+      1 0 0 1 1.5
+  endnode
+  node light y
+    parent zspec_animnogeo
+    colorkey 2
+      0 1 0 0
+      1 0 0 1
+    positionkey 2
+      0 1 0 0
+      1 1 0 2
+    radiuskey 2
+      0 5
+      1 10
+  endnode
+  node trimesh z
+    parent zspec_animnogeo
+    selfillumcolorkey 2
+      0 0 0 0
+      1 1 0.5 0.25
+    scalekey 2
+      0 1
+      1 2
+  endnode
+  node dummy w
+    parent zspec_animnogeo
+    positionkey 2
+      0 2 0 0
+      1 2 0 3
+  endnode
+  node trimesh v
+    parent zspec_animnogeo
+    positionkey 2
+      0 3 0 0
+      1 3 0 4
+  endnode
+  node emitter u
+    parent zspec_animnogeo
+    birthratekey 2
+      0 10
+      1 20
+    positionkey 2
+      0 4 0 0
+      1 4 0 5
+  endnode
+  node dummy t
+    parent zspec_animnogeo
+    alphakey 2
+      0 1
+      1 0.25
+  endnode
+doneanim open zspec_animnogeo
+donemodel zspec_animnogeo

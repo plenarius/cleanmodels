@@ -22,6 +22,8 @@ from .compiler_skinbind import SkinBindMixin, SkinBindPatch
 from .compiler_tree import anim_node_numbers, is_root_parent, node_occurrences, pair_anim_nodes_to_geom, resolve_anim_tree, \
     resolve_geom_tree
 from .f32 import f32
+from .parser import new_parsed_light_data
+from .types import EmitterData, Node
 from .gomath import go_lower, go_quote
 from .gostr import equal_fold, go_upper
 from .vec import model_bounds
@@ -471,6 +473,7 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         content = 1
         has_light = has_emitter = has_ref = has_mesh = has_skin = has_anim_mesh = False
         has_dangly = has_aabb = mesh_ctrl_only = False
+        declared = None  # a geometry-less node's stand-in, for its light or emitter header
         if geom is not None:
             gf = geom.node_type_flag()
             if gf & 0x02:
@@ -501,6 +504,24 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             elif gf & 0x20 and (an.float_keys.get("alpha") or an.color_keys.get("selfillumcolor")):
                 content |= 0x20
                 mesh_ctrl_only = True
+        else:
+            # a node the geometry lacks takes its type word's type, whatever keys
+            # it has (MDL-NODE-044); the other mesh words get the mesh flag and
+            # header, reference and camera stay dummies (not probed)
+            t = go_lower(an.type)
+            if t == "light":
+                has_light = True
+                content |= 0x02
+                declared = Node(an.name)
+                declared.light = new_parsed_light_data()
+            elif t == "emitter":
+                has_emitter = True
+                content |= 0x04
+                declared = Node(an.name)
+                declared.emitter = EmitterData()
+            elif _is_mesh_node_type(t):
+                content |= 0x20
+                mesh_ctrl_only = True
 
         core.zeros(24)
         core.i32(0)
@@ -514,12 +535,13 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         ctrl = [core.placeholder() for _ in range(6)]
         core.u32(content)
 
-        if has_light and geom is not None:
-            self.write_light_header(geom)
+        header_node = geom if geom is not None else declared
+        if has_light and header_node is not None:
+            self.write_light_header(header_node)
         elif has_light:
             core.zeros(92)
-        if has_emitter and geom is not None:
-            self.write_emitter_header(geom)
+        if has_emitter and header_node is not None:
+            self.write_emitter_header(header_node)
         elif has_emitter:
             core.zeros(216)
         if has_ref and geom is not None:
@@ -698,3 +720,8 @@ def _plural_classification_warning(cls):
 def _i32(v):
     v &= 0xFFFFFFFF
     return v - 0x100000000 if v >= 0x80000000 else v
+
+
+def _is_mesh_node_type(t):
+    """compiler.go isMeshNodeType: an ASCII node type word that makes a mesh."""
+    return go_lower(t) in ("trimesh", "skin", "animmesh", "danglymesh", "aabb")

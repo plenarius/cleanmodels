@@ -277,6 +277,9 @@ class AnimNode:
     def __init__(self, name="", parent=""):
         self.name = name
         self.parent = parent
+        # the node type for a node the geometry lacks (AnimNode.Type): the
+        # declared one ("" for dummy), or the one a binary node's flags give
+        self.type = ""
         # position keys: (time, value, tan_in, tan_out)
         self.position_keys = []
         self.position_bezier = False

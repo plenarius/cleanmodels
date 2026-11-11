@@ -514,6 +514,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	hasDangly := false
 	hasAABB := false
 	meshCtrlOnly := false
+	var declared *Node // a geometry-less node's stand-in, for its light or emitter header
 	if geomNode != nil {
 		gf := geomNode.NodeTypeFlag()
 		if gf&0x02 != 0 {
@@ -565,6 +566,30 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 			contentBits |= 0x20
 			meshCtrlOnly = true
 		}
+	} else {
+		// A node the geometry lacks takes the type its own type word names,
+		// whatever keys it has (nwn-mdl-spec MDL-NODE-044, probe
+		// zspec_animnogeo): trimesh 0x21 with an empty mesh header, light
+		// 0x3 and emitter 0x5 with the header of one declared with no
+		// fields, dummy 0x1. Its controllers are the keys that type reads;
+		// the rest are dropped (encodeAnimNodeControllers). The other mesh
+		// words are not probed: they get the mesh flag and header, which
+		// keeps their mesh controllers; reference and camera stay dummies.
+		switch strings.ToLower(an.Type) {
+		case "light":
+			hasLight = true
+			contentBits |= 0x02
+			declared = &Node{Name: an.Name, Light: newParsedLightData()}
+		case "emitter":
+			hasEmitter = true
+			contentBits |= 0x04
+			declared = &Node{Name: an.Name, Emitter: &EmitterData{}}
+		default:
+			if isMeshNodeType(an.Type) {
+				contentBits |= 0x20
+				meshCtrlOnly = true
+			}
+		}
 	}
 
 	nodeOff := int32(c.core.len())
@@ -596,13 +621,17 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	c.core.u32le(contentBits) // content_node
 
 	// Type-specific headers (same order as readAnimNodeDepth).
-	if hasLight && geomNode != nil {
-		c.writeLightHeader(geomNode)
+	headerNode := geomNode
+	if headerNode == nil {
+		headerNode = declared
+	}
+	if hasLight && headerNode != nil {
+		c.writeLightHeader(headerNode)
 	} else if hasLight {
 		c.core.zeros(92)
 	}
-	if hasEmitter && geomNode != nil {
-		c.writeEmitterHeader(geomNode)
+	if hasEmitter && headerNode != nil {
+		c.writeEmitterHeader(headerNode)
 	} else if hasEmitter {
 		c.core.zeros(216)
 	}
@@ -888,4 +917,14 @@ func (c *compiler) writeAnimMeshData(mesh *MeshData, am *AnimMeshData, exp *expa
 			c.core.f32le(v.Y)
 		}
 	}
+}
+
+// isMeshNodeType reports whether an ASCII node type word makes a mesh (node
+// flags with 0x20).
+func isMeshNodeType(t string) bool {
+	switch strings.ToLower(t) {
+	case "trimesh", "skin", "animmesh", "danglymesh", "aabb":
+		return true
+	}
+	return false
 }
