@@ -30,6 +30,7 @@ const (
 	meshHeaderPMdxVertex = 444 // int32 p_mdx_vertex
 	meshHeaderCountVerts = 448 // uint16 count_vertexes
 	meshHeaderPMdxTex0   = 452 // int32 p_mdx_texture0
+	meshHeaderPMdxNormal = 468 // int32 p_mdx_normals
 )
 
 // DecompileFile reads a binary MDL from disk.
@@ -385,9 +386,16 @@ func (d *decompiler) skip(n int) error {
 }
 
 func (d *decompiler) readFixedString(n int) (string, error) {
+	s, _, err := d.readFixedText(n)
+	return s, err
+}
+
+// readFixedText is readFixedString that also returns the bytes before the
+// first NUL when any of them is not printable ASCII (and is dropped from s).
+func (d *decompiler) readFixedText(n int) (s string, junk []byte, err error) {
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(d.r, buf); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	end := 0
 	for end < n && buf[end] != 0 {
@@ -399,7 +407,10 @@ func (d *decompiler) readFixedString(n int) (string, error) {
 			clean = append(clean, buf[i])
 		}
 	}
-	return strings.ToLower(string(clean)), nil
+	if len(clean) < end {
+		junk = buf[:end]
+	}
+	return strings.ToLower(string(clean)), junk, nil
 }
 
 // readArrayDef reads a 12-byte array_definition {p_array_start, nr_used, nr_alloc}.
@@ -845,7 +856,15 @@ func (d *decompiler) readEmitterHeader(node *Node) {
 	em.Update, _ = d.readFixedString(32)
 	em.Render, _ = d.readFixedString(32)
 	em.Blend, _ = d.readFixedString(32)
-	em.Texture, _ = d.readFixedString(64)
+	texAt := d.pos()
+	tex, junk, _ := d.readFixedText(64)
+	em.Texture = tex
+	if junk != nil {
+		// Uninitialised memory an old compiler left (a chunk emitter draws its
+		// chunk, not the texture): what printable bytes it holds are no name.
+		em.Texture = ""
+		d.warn(WarnGeneral, texAt, node.Name, "emitter %q: texture field holds bytes that are not text (% x); no texture written", node.Name, junk)
+	}
 
 	chunk, _ := d.readFixedString(16)
 	if chunk != "" {
@@ -2297,7 +2316,7 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 
 	var animMeshVerts int
 	var animFacesDef binArrayDef
-	var animPMdxVertex, animPMdxTex0 int32
+	var animPMdxVertex, animPMdxTex0, animPMdxNormals int32
 	if hasMesh && hasAnim {
 		meshStart := d.pos()
 		d.skip(8)                          // p_func1, p_func2
@@ -2307,6 +2326,8 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		countVerts, _ := d.readU16()       // offset meshHeaderCountVerts
 		d.skip(2)                          // countTextures
 		animPMdxTex0, _ = d.readI32()      // offset meshHeaderPMdxTex0
+		d.seek(meshStart + meshHeaderPMdxNormal)
+		animPMdxNormals, _ = d.readI32()
 		animMeshVerts = int(countVerts)
 		d.seek(meshStart + meshHeaderSize)
 	} else if hasMesh {
@@ -2367,6 +2388,13 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		if animPMdxTex0 >= 0 {
 			d.at("tverts")
 			d.readMDXTexCoords(&mesh.TVerts, animPMdxTex0, animMeshVerts)
+		}
+		// The game's compiler reads an animation's animmesh normals as a
+		// geometry mesh's (nwn-mdl-spec MDL-MESH-065); without them it
+		// computes per-face normals and splits the vertices.
+		if animPMdxNormals >= 0 {
+			d.at("normals")
+			d.readMDXVec3Array(&mesh.Normals, animPMdxNormals, animMeshVerts)
 		}
 		if animFacesDef.Count > 0 && animFacesDef.Ptr != 0 {
 			d.readFaces(mesh, animFacesDef)

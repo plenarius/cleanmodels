@@ -32,6 +32,11 @@ func (d *decompiler) omitGeneratedTangents() {
 			continue
 		}
 		if clones, ok := regenerableTangents(n, d.renderLists[n], d.opts.MaterialDirs); ok {
+			if clones == 0 {
+				d.note(WarnGeneral, 0, n.Name,
+					"mesh %q: tangents left out: a compile generates the same ones (the mesh is normal-mapped)", n.Name)
+				continue
+			}
 			d.note(WarnGeneral, 0, n.Name,
 				"mesh %q: tangents left out: a compile generates the same ones (the mesh is normal-mapped), and only a generating compile keeps their %d cloned vertices at the end of the vertex list",
 				n.Name, clones)
@@ -65,24 +70,15 @@ func regenerableTangents(n *Node, rl []uint16, materialDirs []string) (int, bool
 		len(m.TexIndices0)+len(m.TexIndices1)+len(m.TexIndices2)+len(m.TexIndices3)+len(m.MirrorList)+len(m.CornerNormals) > 0 {
 		return 0, false
 	}
-	// A list that uses each vertex first in vertex order compiles back to
-	// the same order with its tangents written: nothing to do.
-	seen := make([]bool, nv)
-	next, inOrder := 0, true
+	// Even a list that uses each vertex first in vertex order, which compiles
+	// back to the same vertex order with its tangents written, is taken: with
+	// tangents written, the face records would name the clones (a generating
+	// compile keeps the vertex each was cloned from), and positions across a UV
+	// seam whose generated tangents differ could not be shared (sharePositions).
 	for _, v := range rl {
 		if int(v) >= nv {
 			return 0, false
 		}
-		if !seen[v] {
-			seen[v] = true
-			if int(v) != next {
-				inOrder = false
-			}
-			next++
-		}
-	}
-	if inOrder && next == nv {
-		return 0, false
 	}
 	// A NaN anywhere: the comparisons below could not tell what the compile
 	// merges, so the stored tangents stay.

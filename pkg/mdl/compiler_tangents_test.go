@@ -189,7 +189,7 @@ donemodel tangenttest
 `
 	m := mustParseASCII(t, src)
 	bin := mustCompile(t, m)
-	m2 := mustDecompile(t, bin)
+	m2 := mustDecompileStored(t, bin)
 
 	n := m2.FindNode("tangentmesh")
 	if n == nil || n.Mesh == nil {
@@ -310,7 +310,7 @@ donemodel authored
 		t.Skip("ASCII parser did not populate authored tangents")
 	}
 	bin := mustCompile(t, m)
-	m2 := mustDecompile(t, bin)
+	m2 := mustDecompileStored(t, bin)
 
 	n := m2.FindNode("authoredmesh")
 	if n == nil || n.Mesh == nil {

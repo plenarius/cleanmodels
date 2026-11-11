@@ -25,11 +25,17 @@ import (
 //     into the stored one (inverse sort; MDL-NODE-012). std::sort's result
 //     depends only on its comparisons, so sorting the positions 0..n-1 by the
 //     stored children's keys gives out[j] = i, and declaring the stored child
-//     j at position i makes the sort put it back at j;
+//     j at position i makes the sort put it back at j. A node whose stored
+//     children are not in the comparison's order (no declaration order
+//     gives them) keeps them declared as stored; the others are still
+//     inverse-sorted;
 //  3. the stored order.
 //
 // A candidate is only taken when compiling it rebuilds the stored tree, node
-// for node, so a model the compiler cannot rebuild keeps its stored order. The
+// for node (apart from the children of such an unsorted node, which come back
+// as a compile of the stored order sorts them), so a model the compiler cannot
+// rebuild keeps its stored order. Duplicate names are allowed unless one is
+// some node's parent; part-number order needs unique names. The
 // writer keeps a part-number order as listed (declaredInNumberOrder) and
 // writes any other depth first, which is how the inverse sort lists it.
 func declarationOrder(m *Model) {
@@ -37,25 +43,36 @@ func declarationOrder(m *Model) {
 	if len(stored) < 2 || slices.Contains(stored, nil) {
 		return
 	}
-	// The writer and the compiler find a parent by name, so duplicate names
-	// keep the stored order.
+	// The writer and the compiler find a parent by name, so a model where a
+	// duplicate name is some node's parent keeps the stored order. Other
+	// duplicates are only ever children, found by pointer here.
 	names := make(map[string]bool, len(stored))
+	dup := make(map[string]bool)
 	for _, n := range stored {
 		key := strings.ToLower(n.Name)
 		if names[key] {
-			return
+			dup[key] = true
 		}
 		names[key] = true
+	}
+	for _, n := range stored {
+		if dup[strings.ToLower(n.Parent)] {
+			return
+		}
 	}
 	parentOf, children := resolveGeomTree(stored)
 	if !walksAs(stored, children, stored) {
 		return
 	}
-	if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, true) {
-		m.Nodes = order
-		return
+	// The writer keeps a part-number order only with unique names
+	// (declaredInNumberOrder).
+	if len(dup) == 0 {
+		if order := partNumberOrder(m); order != nil && compilesTo(order, stored, parentOf, children, nil, true) {
+			m.Nodes = order
+			return
+		}
 	}
-	if order := inverseSortOrder(stored, children); order != nil && compilesTo(order, stored, parentOf, false) {
+	if order, unsorted := inverseSortOrder(stored, children); order != nil && compilesTo(order, stored, parentOf, children, unsorted, false) {
 		m.Nodes = order
 	}
 }
@@ -80,10 +97,11 @@ func partNumberOrder(m *Model) []*Node {
 }
 
 // inverseSortOrder returns the depth-first declaration order whose sort gives
-// the stored children of every node, or nil when that is the stored order or
-// some sorted node's stored children are not in the comparison's order (no
-// declaration order reaches them).
-func inverseSortOrder(stored []*Node, children map[*Node][]*Node) []*Node {
+// the stored children of every node, or nil when that is the stored order.
+// A sorted node whose stored children are not in the comparison's order (no
+// declaration order reaches them) keeps them declared as stored, and is
+// returned in unsorted: the compile sorts them as it sorts the stored order.
+func inverseSortOrder(stored []*Node, children map[*Node][]*Node) (order []*Node, unsorted map[*Node]bool) {
 	decl := make(map[*Node][]*Node)
 	changed := false
 	for _, p := range stored {
@@ -91,10 +109,19 @@ func inverseSortOrder(stored []*Node, children map[*Node][]*Node) []*Node {
 		if !slices.ContainsFunc(kids, func(k *Node) bool { return k.Mesh != nil && k.Mesh.TransparencyHint > 0 }) {
 			continue
 		}
+		sorted := true
 		for j := 1; j < len(kids); j++ {
 			if transparencyLess(kids[j], kids[j-1]) {
-				return nil
+				sorted = false
+				break
 			}
+		}
+		if !sorted {
+			if unsorted == nil {
+				unsorted = make(map[*Node]bool)
+			}
+			unsorted[p] = true
+			continue
 		}
 		// Sort stand-ins for the positions 0..n-1: position i compares as the
 		// stored child i. Their order afterwards is out[j] = i.
@@ -115,9 +142,9 @@ func inverseSortOrder(stored []*Node, children map[*Node][]*Node) []*Node {
 		}
 	}
 	if !changed {
-		return nil
+		return nil, nil
 	}
-	order := make([]*Node, 0, len(stored))
+	order = make([]*Node, 0, len(stored))
 	stack := []*Node{stored[0]}
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
@@ -132,15 +159,17 @@ func inverseSortOrder(stored []*Node, children map[*Node][]*Node) []*Node {
 		}
 	}
 	if len(order) != len(stored) {
-		return nil
+		return nil, nil
 	}
-	return order
+	return order, unsorted
 }
 
 // compilesTo reports whether compiling the nodes declared in order writes the
 // stored tree: the same nodes depth-first, each under its stored parent, and
-// with numbers set, each numbered with its stored part number.
-func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, numbers bool) bool {
+// with numbers set, each numbered with its stored part number. The children
+// of a node in unsorted may come back in the order the compile sorts them
+// into (no declaration order gives their stored order back).
+func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, storedChildren map[*Node][]*Node, unsorted map[*Node]bool, numbers bool) bool {
 	if !strings.EqualFold(order[0].Parent, "NULL") {
 		return false
 	}
@@ -151,7 +180,18 @@ func compilesTo(order, stored []*Node, storedParent map[*Node]*Node, numbers boo
 		}
 	}
 	reorderChildren(order[0], children)
-	if !walksAs(order, children, stored) {
+	want := stored
+	if len(unsorted) > 0 {
+		kids := make(map[*Node][]*Node, len(storedChildren))
+		for p, k := range storedChildren {
+			kids[p] = k
+			if unsorted[p] {
+				kids[p] = children[p]
+			}
+		}
+		want = depthFirst(stored[0], kids)
+	}
+	if !walksAs(order, children, want) {
 		return false
 	}
 	if numbers {
@@ -189,4 +229,27 @@ func walksAs(nodes []*Node, children map[*Node][]*Node, want []*Node) bool {
 		}
 	}
 	return i == len(want)
+}
+
+// depthFirst lists the tree under root through children, each node once.
+func depthFirst(root *Node, children map[*Node][]*Node) []*Node {
+	var out []*Node
+	visited := make(map[*Node]bool)
+	stack := []*Node{root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if visited[n] {
+			continue
+		}
+		visited[n] = true
+		out = append(out, n)
+		kids := children[n]
+		for k := len(kids) - 1; k >= 0; k-- {
+			if !visited[kids[k]] {
+				stack = append(stack, kids[k])
+			}
+		}
+	}
+	return out
 }

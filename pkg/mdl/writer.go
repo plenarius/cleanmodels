@@ -603,12 +603,6 @@ func (w *writer) writeLightData(n *Node, l *LightData) {
 			w.indent(6, "%s", fmtVec3(c))
 		}
 	}
-	if l.ShadowRadius != 0 {
-		w.indent(4, "shadowradius %s", fmtFloat(l.ShadowRadius))
-	}
-	if l.VerticalDisplacement != 0 {
-		w.indent(4, "verticaldisplacement %s", fmtFloat(l.VerticalDisplacement))
-	}
 }
 
 func (w *writer) writeEmitterData(n *Node, e *EmitterData) {
@@ -752,6 +746,7 @@ func (w *writer) writeAnimNode(m *Model, an *AnimNode) {
 		w.writeVec3ListAt(6, "verts", mesh.Verts)
 		w.writeFaces(6, mesh.Faces)
 		w.writeVec3ListAt(6, "tverts", mesh.TVerts)
+		w.writeVec3ListAt(6, "normals", mesh.Normals)
 	}
 
 	// AnimMesh parameters (sampleperiod, clip*, animverts, animtverts)

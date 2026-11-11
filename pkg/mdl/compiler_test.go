@@ -704,6 +704,18 @@ func mustDecompile(t *testing.T, data []byte) *Model {
 	return m
 }
 
+// mustDecompileStored decompiles with KeepVertexSplits, which keeps the
+// stored tangents even where a compile generates the same ones (for tests of
+// how the tangent stream is read; omitGeneratedTangents leaves those out).
+func mustDecompileStored(t *testing.T, data []byte) *Model {
+	t.Helper()
+	m, err := DecompileWithOptions(bytes.NewReader(data), int64(len(data)), DecompileOptions{KeepVertexSplits: true})
+	if err != nil {
+		t.Fatalf("Decompile: %v", err)
+	}
+	return m
+}
+
 func readU32LE(b []byte) uint32 {
 	return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24
 }

@@ -44,7 +44,7 @@ func TestZeroLengthTangents(t *testing.T) {
 	if err := Compile(m, &buf); err != nil {
 		t.Fatal(err)
 	}
-	got := mustDecompile(t, buf.Bytes()).FindNode("m").Mesh
+	got := mustDecompileStored(t, buf.Bytes()).FindNode("m").Mesh
 	if len(got.Tangents) == 0 || ZeroLengthTangents(got) != 0 {
 		t.Errorf("computed tangents %v", got.Tangents)
 	}

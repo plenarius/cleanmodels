@@ -101,9 +101,12 @@ class _NodeXform:
     __slots__ = ("s", "m", "px", "py", "pz")
 
     def __init__(self, n):
+        # The axis-angle the decompiler writes for the stored quaternion
+        # (transforms.go modelBounds).
+        from .binary import quaternion_to_angle_axis
         s = n.scale
         self.s = 1.0 if s == 0 else s
-        self.m = rotation_matrix(n.orientation)
+        self.m = rotation_matrix(quaternion_to_angle_axis(list(axis_angle_to_quat(n.orientation))))
         self.px, self.py, self.pz = n.position
 
 

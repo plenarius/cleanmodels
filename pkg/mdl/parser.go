@@ -1501,6 +1501,16 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 				p.readVec3List(&an.Mesh.TVerts, int(count))
 			}
 		}
+	case "normals":
+		if len(tokens) >= 2 {
+			if an.Mesh == nil {
+				an.Mesh = NewMeshData()
+			}
+			count, ok := p.countParam(tokens)
+			if ok {
+				p.readVec3List(&an.Mesh.Normals, int(count))
+			}
+		}
 	case "sampleperiod":
 		if len(tokens) >= 2 {
 			if an.AnimMesh == nil {

@@ -19,7 +19,11 @@ def omit_generated_tangents(d, material_dirs):
             continue
         rl = d.render_lists.get(n) if d.render_lists else None
         ok, clones = _regenerable_tangents(n, rl or [], material_dirs)
-        if ok:
+        if ok and clones == 0:
+            d.note(WARN_GENERAL, 0, n.name,
+                   "mesh %s: tangents left out: a compile generates the same ones (the mesh is normal-mapped)"
+                   % quote(n.name))
+        elif ok:
             d.note(WARN_GENERAL, 0, n.name,
                    "mesh %s: tangents left out: a compile generates the same ones (the mesh is normal-mapped), and only "
                    "a generating compile keeps their %d cloned vertices at the end of the vertex list"
@@ -53,17 +57,8 @@ def _regenerable_tangents(n, rl, material_dirs):
             or len(m.tex_indices0) + len(m.tex_indices1) + len(m.tex_indices2) + len(m.tex_indices3)
             + len(m.mirror_list) + len(m.corner_normals) > 0):
         return False, 0
-    seen = [False] * nv
-    nxt, in_order = 0, True
-    for v in rl:
-        if v >= nv:
-            return False, 0
-        if not seen[v]:
-            seen[v] = True
-            if v != nxt:
-                in_order = False
-            nxt += 1
-    if in_order and nxt == nv:
+    # Even a list in first-use vertex order is taken (see the Go file).
+    if any(v >= nv for v in rl):
         return False, 0
     if (_nan3(m.verts) or _nan3(m.tverts) or _nan3(m.tverts1) or _nan3(m.tverts2) or _nan3(m.tverts3)
             or _nan3(m.normals) or _nan3(m.colors) or _nan3(m.tangents)

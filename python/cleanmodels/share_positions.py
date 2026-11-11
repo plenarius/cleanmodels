@@ -4,6 +4,7 @@
 import math
 
 from .gostr import go_lower
+from .share_neighbours import stored_neighbours
 
 
 def _feq(a, b):
@@ -85,9 +86,10 @@ def share_positions(n):
             parent[ra] = rb
 
     faces = m.faces
+    adj = stored_neighbours(m)
     for fi, f in enumerate(faces):
         for k in range(3):
-            j = m.stored_adjacency[fi][k]
+            j = adj[fi][k]
             if j < 0 or j >= len(faces) or j == fi:
                 continue
             a, c = f.verts[k], f.verts[(k + 1) % 3]

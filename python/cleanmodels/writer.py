@@ -291,10 +291,6 @@ class _Writer:
             ind(4, "flarecolorshifts %d" % len(l.flare_color_shifts))
             for c in l.flare_color_shifts:
                 ind(6, fmt_vec3(c))
-        if l.shadow_radius != 0:
-            ind(4, "shadowradius %s" % fmt_float(l.shadow_radius))
-        if l.vertical_displacement != 0:
-            ind(4, "verticaldisplacement %s" % fmt_float(l.vertical_displacement))
 
     def write_emitter_data(self, n, e):
         ind = self.indent
@@ -379,6 +375,7 @@ class _Writer:
             self.vec3_list(6, "verts", an.mesh.verts)
             self.write_faces(6, an.mesh.faces)
             self.vec3_list(6, "tverts", an.mesh.tverts)
+            self.vec3_list(6, "normals", an.mesh.normals)
         if an.anim_mesh is not None:
             am = an.anim_mesh
             if am.clip_u != 0 or am.clip_v != 0 or am.clip_w != 0 or am.clip_h != 0:

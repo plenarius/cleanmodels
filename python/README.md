@@ -37,7 +37,7 @@ for file:
 | Python | Go |
 |---|---|
 | `binary.py` | `binary.go` (decompiler), `binary_merged.go` (merged render lists), `binary_tangents.go` (bad tangents filled) |
-| `share_positions.py` | `share_positions.go` (positions shared again along stored neighbour links) |
+| `share_positions.py`, `share_neighbours.py` | `share_positions.go` (positions shared again along stored neighbour links), `share_neighbours.go` (the links renumbered after a compile dropped faces) |
 | `gen_tangents.py` | `binary_gentangents.go` (generated tangents and their clones left out when a compile makes them again) |
 | `binary_order.py` | `binary_order.go` (the order the decompiled nodes are declared in) |
 | `writer.py` | `writer.go` (ASCII writer, `write_walkmesh` for the .wok) |
@@ -88,6 +88,10 @@ CI also runs `python/merged_test.py`, unit tests of the merged render lists
 
 Each requires identical output and warnings, or both refusing the file.
 `python/internal/foldorbits` prints the case-folding table in `gostr.py`.
+
+`python/decompile_fixes_test.py` (also in CI) runs the round-trip cases of
+`pkg/mdl/roundtrip_fixes_test.go` through the port's own parser, compiler and
+decompiler: no fixture has them.
 
 Before a release, also run them on the game's models:
 
