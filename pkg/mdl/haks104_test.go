@@ -102,7 +102,7 @@ donemodel sg
 		t.Errorf("animations %+v, want opened2, which the game reads", m.Animations)
 	}
 	a := m.AfterDoneModel
-	if a == nil || a.Line != 24 || a.Ignored != 5 || len(a.Nodes) != 1 || a.Nodes[0] != "sgimpc" ||
+	if a == nil || a.Line != 24 || a.Ignored != 5 || a.Read != 8 || len(a.Nodes) != 1 || a.Nodes[0] != "sgimpc" ||
 		len(a.Animations) != 1 || a.Animations[0] != "opened2" {
 		t.Errorf("AfterDoneModel = %+v", a)
 	}

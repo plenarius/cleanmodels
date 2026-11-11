@@ -440,6 +440,8 @@ class _Parser:
             a = self.model.after_done_model = AfterDoneModel(self.line)
         a.lines += 1
         if self.current_anim is not None or self.geom_after_done or kw in _TOP_LEVEL:
+            if kw != "donemodel":
+                a.read += 1
             return True
         a.ignored += 1
         if kw == "node" and len(tokens) >= 3:

@@ -433,6 +433,9 @@ func (p *parser) afterDoneModel(keyword string, tokens []string) bool {
 	}
 	a.Lines++
 	if p.currentAnim != nil || p.geomAfterDone || topLevelKeywords[keyword] {
+		if keyword != "donemodel" {
+			a.Read++
+		}
 		return true
 	}
 	a.Ignored++

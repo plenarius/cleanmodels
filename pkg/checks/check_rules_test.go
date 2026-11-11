@@ -2,6 +2,7 @@ package checks
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -253,5 +254,62 @@ func TestTextAfterDoneModel(t *testing.T) {
 	clean := parseASCII(t, meshModel("box", dummyRoot("box"), "mesh", "box", "    bitmap box\n"))
 	if r := findCheck(RunAll(clean, "box.mdl", false), "text_after_donemodel"); r != nil {
 		t.Errorf("a model that ends at donemodel: %+v", r)
+	}
+}
+
+// zspec_animdup (nwn-mdl-spec MDL-ASCII-062): swing (1 s), idle, swing (2 s),
+// SWING (3 s). The game keeps all four but plays only the first swing. The
+// rule warns and names that copy; its fix keeps it unchanged and drops the
+// later ones, never merging them into it.
+func TestDuplicateAnimationsKeepsTheFirst(t *testing.T) {
+	pr, err := mdl.ParseFile("../../tests/fixtures/engine/zspec_animdup.ascii.mdl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := pr.Model
+	if len(m.Animations) != 4 {
+		t.Fatalf("%d animations in the probe", len(m.Animations))
+	}
+	first := m.Animations[0]
+	firstNodes := append([]mdl.AnimNode(nil), first.Nodes...)
+
+	res := checkDuplicateAnimations(m, "zspec_animdup.mdl", false)
+	if len(res) != 1 || res[0].Severity != mdl.SevWarning || res[0].Fixed {
+		t.Fatalf("without fix: %+v", res)
+	}
+	for _, want := range []string{`animation "swing" (animation 1 of 4)`, `"swing", "SWING" (animation 3, 4)`, "plays only the first", "would be dropped"} {
+		if !strings.Contains(res[0].Message, want) {
+			t.Errorf("message lacks %q: %q", want, res[0].Message)
+		}
+	}
+	if len(m.Animations) != 4 {
+		t.Fatal("check without fix changed the animations")
+	}
+
+	res = checkDuplicateAnimations(m, "zspec_animdup.mdl", true)
+	if len(res) != 1 || !res[0].Fixed {
+		t.Fatalf("with fix: %+v", res)
+	}
+	var names []string
+	for _, a := range m.Animations {
+		names = append(names, a.Name)
+	}
+	if strings.Join(names, " ") != "swing idle" {
+		t.Fatalf("animations after the fix: %v", names)
+	}
+	kept := m.Animations[0]
+	if kept.Length != first.Length || kept.TransTime != first.TransTime || len(kept.Events) != len(first.Events) ||
+		!reflect.DeepEqual(kept.Nodes, firstNodes) {
+		t.Errorf("the first swing changed: length %g (was %g), %d events (was %d)", kept.Length, first.Length, len(kept.Events), len(first.Events))
+	}
+}
+
+// Junk after donemodel that the game ignores entirely is information.
+func TestTextAfterDoneModelJunkIsInfo(t *testing.T) {
+	src := meshModel("c_1b_hu_fem01", dummyRoot("c_1b_hu_fem01"), "mesh", "c_1b_hu_fem01", "    bitmap m\n") +
+		"</snoopstart>\n</snoopend>\ndonemodel c_1b_hu_fem01\n"
+	r := findCheck(RunAll(parseASCII(t, src), "c_1b_hu_fem01.mdl", false), "text_after_donemodel")
+	if r == nil || r.Severity != mdl.SevInfo || !strings.Contains(r.Message, "none of which the game reads") {
+		t.Fatalf("result = %+v", r)
 	}
 }

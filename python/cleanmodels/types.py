@@ -365,6 +365,7 @@ class AfterDoneModel:
         self.line = line
         self.lines = 0
         self.ignored = 0
+        self.read = 0
         self.nodes = []
         self.animations = []
 

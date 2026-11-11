@@ -14,24 +14,34 @@ func init() {
 	Register("missing_parents", "structural", true, "Reparent orphaned nodes to the model root", checkMissingParents)
 	Register("base_dummy_wrong_type", "structural", false, "Detect a root node that is not a dummy (a warning: the compiler and the game take a mesh root)", checkBaseDummyWrongType)
 	Register("base_dummy_parent_null", "structural", true, "Detect a model with no root node (none has parent NULL); the fix makes the node named after the model the root", checkBaseDummyParentNull)
-	Register("duplicate_animations", "structural", true, "Merge duplicate animation blocks", checkDuplicateAnimations)
+	Register("duplicate_animations", "structural", true, "Detect animations that share a name (the game plays only the first); the fix drops the later copies", checkDuplicateAnimations)
 	Register("aabb_has_child_nodes", "structural", false, "Detect child nodes under AABB nodes", checkAabbHasChildNodes)
 	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
 	Register("too_many_walkmeshes", "structural", false, "Detect multiple AABB walkmesh nodes", checkTooManyWalkmeshes)
 	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
-	Register("text_after_donemodel", "structural", false, "Detect lines after donemodel (the game reads only animations and other top-level keywords there; nodes there are not read)", checkTextAfterDoneModel)
+	Register("text_after_donemodel", "structural", false, "Detect lines after donemodel: a warning for animations or nodes there (the game reads the animations, not the nodes), info for junk the game ignores", checkTextAfterDoneModel)
 }
 
 // checkTextAfterDoneModel reports lines after an ASCII model's donemodel. The
 // game reads on to the end of the file, but outside a block it runs only the
 // top-level keywords: an animation there is read, a node block or anything
-// else is not (mdl.AfterDoneModel). Such lines are usually a pasted tail or
-// junk left by a tool, so what the game makes of them is rarely what was meant.
+// else is not (mdl.AfterDoneModel). Lines the game reads there (an animation,
+// a second newmodel or geometry block) or node blocks it drops are a warning:
+// what the game makes of them is rarely what was meant. Junk the game ignores
+// entirely (a stray byte or tag left by a tool) is information.
 func checkTextAfterDoneModel(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil || model.AfterDoneModel == nil {
 		return nil
 	}
 	a := model.AfterDoneModel
+	if a.Read == 0 && len(a.Nodes) == 0 {
+		return []mdl.CheckResult{{
+			Check:    "text_after_donemodel",
+			Severity: mdl.SevInfo,
+			Message: fmt.Sprintf("%s: %d line(s) after donemodel, from line %d, none of which the game reads",
+				file, a.Lines, a.Line),
+		}}
+	}
 	msg := fmt.Sprintf("%s: %d line(s) after donemodel, from line %d; the game reads on but runs only top-level keywords there", file, a.Lines, a.Line)
 	if len(a.Animations) > 0 {
 		msg += fmt.Sprintf("; animations read: %s", nameList(a.Animations))
@@ -284,39 +294,59 @@ func checkBaseDummyParentNull(model *mdl.Model, file string, fix bool) []mdl.Che
 	}}
 }
 
+// checkDuplicateAnimations reports animations that share a name, compared
+// case-insensitively. The game's compiler keeps every copy in file order, but
+// the engine finds an animation by name in list order (strcasecmp) and takes
+// the first, so only the first copy ever plays (nwn-mdl-spec MDL-ASCII-062,
+// E70). The fix keeps that first copy as it is and drops the later ones,
+// which never play; it never merges them, which would change what plays.
 func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
-	seen := make(map[string]bool)
-	var dupes []string
-	for _, a := range model.Animations {
-		key := strings.ToLower(a.Name)
-		if seen[key] {
-			if len(dupes) == 0 || !strings.EqualFold(dupes[len(dupes)-1], a.Name) {
-				dupes = append(dupes, a.Name)
-			}
-		}
-		seen[key] = true
+	type dup struct {
+		first     int      // index of the copy that plays
+		positions []string // 1-based positions of the later copies
+		names     []string // their names as written
 	}
-
-	if len(dupes) == 0 {
+	byName := map[string]*dup{}
+	var order []string
+	for i, a := range model.Animations {
+		key := strings.ToLower(a.Name)
+		d, ok := byName[key]
+		if !ok {
+			byName[key] = &dup{first: i}
+			continue
+		}
+		if len(d.positions) == 0 {
+			order = append(order, key)
+		}
+		d.positions = append(d.positions, fmt.Sprint(i+1))
+		d.names = append(d.names, fmt.Sprintf("%q", a.Name))
+	}
+	if len(order) == 0 {
 		return nil
 	}
 
+	var out []mdl.CheckResult
+	for _, key := range order {
+		d := byName[key]
+		first := model.Animations[d.first]
+		out = append(out, mdl.CheckResult{
+			Check:    "duplicate_animations",
+			Node:     first.Name,
+			Severity: mdl.SevWarning,
+			Fixed:    fix,
+			Message: fmt.Sprintf(
+				"%s: animation %q (animation %d of %d) is repeated as %s (animation %s); the game plays only the first; the later copies %s",
+				file, first.Name, d.first+1, len(model.Animations), strings.Join(d.names, ", "), strings.Join(d.positions, ", "),
+				fixVerb(fix, "were dropped", "would be dropped"),
+			),
+		})
+	}
 	if fix {
-		firstIdx2 := make(map[string]int)
-		for i, a := range model.Animations {
-			key := strings.ToLower(a.Name)
-			if fi, ok := firstIdx2[key]; ok {
-				first := &model.Animations[fi]
-				mergeAnimNodes(first, &model.Animations[i])
-			} else {
-				firstIdx2[key] = i
-			}
-		}
+		seen := map[string]bool{}
 		kept := model.Animations[:0]
-		seen := make(map[string]bool)
 		for _, a := range model.Animations {
 			key := strings.ToLower(a.Name)
 			if seen[key] {
@@ -327,108 +357,7 @@ func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.Che
 		}
 		model.Animations = kept
 	}
-
-	var out []mdl.CheckResult
-	for _, name := range dupes {
-		out = append(out, mdl.CheckResult{
-			Check:    "duplicate_animations",
-			Severity: mdl.SevError,
-			Fixed:    fix,
-			Message: fmt.Sprintf(
-				"%s: duplicate animation %q %s",
-				file, name, fixVerb(fix, "merged", "would be merged"),
-			),
-		})
-	}
 	return out
-}
-
-func mergeAnimNodes(dst, src *mdl.Animation) {
-	if src.Length > dst.Length {
-		dst.Length = src.Length
-	}
-	dst.Events = append(dst.Events, src.Events...)
-
-	existing := make(map[string]int)
-	for i, n := range dst.Nodes {
-		existing[strings.ToLower(n.Name)] = i
-	}
-	for _, sn := range src.Nodes {
-		if idx, ok := existing[strings.ToLower(sn.Name)]; ok {
-			mergeAnimNodeKeys(&dst.Nodes[idx], &sn)
-		} else {
-			dst.Nodes = append(dst.Nodes, sn)
-		}
-	}
-}
-
-func mergeAnimNodeKeys(dst, src *mdl.AnimNode) {
-	if dst.Type == "" {
-		dst.Type = src.Type
-	}
-	if len(dst.PositionKeys) == 0 {
-		dst.PositionKeys = src.PositionKeys
-		dst.PositionBezier = src.PositionBezier
-	}
-	if len(dst.OrientationKeys) == 0 {
-		dst.OrientationKeys = src.OrientationKeys
-	}
-	if len(dst.ScaleKeys) == 0 {
-		dst.ScaleKeys = src.ScaleKeys
-		takeBezier(dst, src, "scale")
-	}
-	if len(dst.AlphaKeys) == 0 {
-		dst.AlphaKeys = src.AlphaKeys
-		takeBezier(dst, src, "alpha")
-	}
-	if len(dst.SelfIllumColorKeys) == 0 {
-		dst.SelfIllumColorKeys = src.SelfIllumColorKeys
-		takeBezier(dst, src, "selfillumcolor")
-	}
-	if len(dst.ColorKeys) == 0 {
-		dst.ColorKeys = src.ColorKeys
-		takeBezier(dst, src, "color")
-	}
-	if len(dst.RadiusKeys) == 0 {
-		dst.RadiusKeys = src.RadiusKeys
-		takeBezier(dst, src, "radius")
-	}
-	if len(dst.MultiplierKeys) == 0 {
-		dst.MultiplierKeys = src.MultiplierKeys
-		takeBezier(dst, src, "multiplier")
-	}
-	if len(dst.ShadowRadiusKeys) == 0 {
-		dst.ShadowRadiusKeys = src.ShadowRadiusKeys
-		takeBezier(dst, src, "shadowradius")
-	}
-	if len(dst.VerticalDisplacementKeys) == 0 {
-		dst.VerticalDisplacementKeys = src.VerticalDisplacementKeys
-		takeBezier(dst, src, "verticaldisplacement")
-	}
-	if len(dst.BirthRateKeys) == 0 {
-		dst.BirthRateKeys = src.BirthRateKeys
-		takeBezier(dst, src, "birthrate")
-	}
-	if len(dst.DetonateKeys) == 0 {
-		dst.DetonateKeys = src.DetonateKeys
-	}
-	if dst.Mesh == nil && src.Mesh != nil {
-		dst.Mesh = src.Mesh
-	}
-	if dst.AnimMesh == nil && src.AnimMesh != nil {
-		dst.AnimMesh = src.AnimMesh
-	}
-}
-
-// takeBezier carries a controller's bezier mark with the keys taken from src.
-func takeBezier(dst, src *mdl.AnimNode, name string) {
-	if !src.Bezier[name] {
-		return
-	}
-	if dst.Bezier == nil {
-		dst.Bezier = make(map[string]bool)
-	}
-	dst.Bezier[name] = true
 }
 
 func checkChildlessNodeType(checkName, nodeType string) mdl.CheckFunc {

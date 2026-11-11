@@ -573,6 +573,7 @@ type AfterDoneModel struct {
 	Line       int      // the first line after donemodel that is not blank or a comment
 	Lines      int      // lines after donemodel that are not blank or comments
 	Ignored    int      // of those, the lines the game does not read
+	Read       int      // of those, the lines the game reads, other than a repeated donemodel
 	Nodes      []string // names of the node blocks there that are not read
 	Animations []string // names of the animations there that are read
 }

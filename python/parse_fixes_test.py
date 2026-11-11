@@ -71,7 +71,7 @@ class ParseFixes(unittest.TestCase):
         self.assertEqual(len(m.nodes), 2)
         self.assertEqual([a.name for a in m.animations], ["opened2"])
         a = m.after_done_model
-        self.assertEqual((a.line, a.lines, a.ignored, a.nodes, a.animations), (24, 14, 5, ["sgimpc"], ["opened2"]))
+        self.assertEqual((a.line, a.lines, a.ignored, a.read, a.nodes, a.animations), (24, 14, 5, 8, ["sgimpc"], ["opened2"]))
         self.assertEqual(r.errors, [])
         self.assertEqual(len(decompile(compile(m)).nodes), 2)
         self.assertIsNone(parse((SMOOTH_GROUP + "\n# comment\n\n").encode("latin-1")).model.after_done_model)
