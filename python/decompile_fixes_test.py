@@ -216,6 +216,15 @@ class RoundTripFixes(unittest.TestCase):
         self.assertEqual(match("ROOTDUMMY", names, parents), (False, False))
         self.assertEqual(match("a_ogre", names, parents), (True, False))
 
+    def test_latin1_node_names_kept(self):
+        """zspec_namelat (MDL-BIN-007), as TestDecompileKeepsLatin1NodeNames."""
+        _, golden = _engine("zspec_namelat")
+        m = decompile(golden)
+        self.assertIsNotNone(m.find_node("pesta\xf1as"), [n.name for n in m.nodes])
+        self.assertIn("node dummy pesta\xf1as\n", write(m))
+        self.assertEqual(_binary.written_anim_root("pesta\xf1as", False, False, [m.find_node("pesta\xf1as")]),
+                         "PESTA\xf1AS")
+
     def test_duplicate_animations_kept_in_order(self):
         """zspec_animdup (MDL-ASCII-062), as TestCompileKeepsDuplicateAnimationsInOrder."""
         src, golden = _engine("zspec_animdup")

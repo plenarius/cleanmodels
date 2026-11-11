@@ -110,6 +110,12 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
     return d.model
 
 
+def _ascii_case(s, f):
+    """asciiCase: change the case of ASCII letters only (bytes.lower/upper),
+    leaving Latin-1 letters as they are, as Go does."""
+    return f(s.encode("latin-1")).decode("latin-1")
+
+
 def stored_anim_root_match(root, names, parents):
     """storedAnimRootMatch: (whether the stored animroot names a stored node case
     for case, whether the stored tree is wider than the game's cut leaves it)."""
@@ -139,7 +145,7 @@ def written_anim_root(stored, matched, wide, nodes):
     cuts the tree (MDL-NODE-045) to what the binary holds: one matching the
     node the stored one matched, or none when it matched none or the stored
     tree is wider than that cut leaves it."""
-    lower = stored.lower()
+    lower = _ascii_case(stored, bytes.lower)
     if not stored or equal_fold(stored, "NULL"):
         return lower
     names = set(n.name for n in nodes)
@@ -149,7 +155,7 @@ def written_anim_root(stored, matched, wide, nodes):
                 if equal_fold(n.name, stored):
                     return n.name
         return lower
-    for s in (lower, stored, stored.upper()):
+    for s in (lower, stored, _ascii_case(stored, bytes.upper)):
         if s not in names:
             return s
     return stored
@@ -319,10 +325,18 @@ class _Decompiler:
         s, junk, ok = self.read_fixed_text_case(n)
         return s.lower(), junk, ok
 
-    def read_fixed_string_case(self, n):
-        """readFixedStringCase: read_fixed_string with the letters' case kept."""
-        s, _, ok = self.read_fixed_text_case(n)
-        return s, ok
+    def read_node_name(self, n):
+        """readNodeName: (stored, name with ASCII letters lowered). Bytes above
+        0x7F are kept as Latin-1 (MDL-BIN-007); control bytes are dropped."""
+        at = self._take(n)
+        if at is None:
+            return "", ""
+        buf = self.data[at:at + n]
+        end = buf.find(b"\0")
+        if end >= 0:
+            buf = buf[:end]
+        clean = bytes(c for c in buf if c >= 0x20 and c != 0x7F)
+        return clean.decode("latin-1"), clean.lower().decode("latin-1")
 
     def read_fixed_text_case(self, n):
         """readFixedTextCase: read_fixed_text with the letters' case kept."""
@@ -462,7 +476,7 @@ class _Decompiler:
         self.skip(24)
         inherit_color = self.read_i32()
         node_number = self.read_i32()
-        node_name, _ = self.read_fixed_string(32)
+        _, node_name = self.read_node_name(32)
         self.where = ("", node_name, "the node header")
         self.skip(8)
         children_def, _ = self.read_array_def()
@@ -1224,7 +1238,7 @@ class _Decompiler:
         self.skip(4 + 12 + 12 + 4 + 4)
         length = self.read_f32()[0]
         trans_time = self.read_f32()[0]
-        root, _ = self.read_fixed_string_case(64)  # in its case until the nodes are read
+        root, _ = self.read_node_name(64)  # in its case until the nodes are read
         events_def, _ = self.read_array_def()
         anim = Animation(name, length, trans_time, root)
         if events_def[1] > 0 and events_def[0] != 0:
@@ -1259,11 +1273,10 @@ class _Decompiler:
             return
 
         self.skip(24 + 4 + 4)
-        stored_name, _ = self.read_fixed_string_case(32)
+        stored_name, node_name = self.read_node_name(32)
         stored_index = len(self.anim_stored_names)
         self.anim_stored_names.append(stored_name)
         self.anim_stored_parent.append(self.anim_stored_cur)
-        node_name = stored_name.lower()
         self.where = (anim.name, node_name, "the node header")
         self.skip(8)
         children_def, _ = self.read_array_def()

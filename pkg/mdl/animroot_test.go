@@ -166,3 +166,36 @@ func TestStoredAnimRootMatch(t *testing.T) {
 		t.Errorf("wide tree: animroot written %q, want one that matches no node", got)
 	}
 }
+
+// zspec_namelat (nwn-mdl-spec MDL-BIN-007): the game stores a node name's
+// bytes above 0x7F as written, and a reader should keep them. The decompiler
+// dropped pestañas' 0xF1 and wrote pestaas.
+func TestDecompileKeepsLatin1NodeNames(t *testing.T) {
+	m, golden := engineProbe(t, "zspec_namelat")
+	if m.FindNode("pesta\xf1as") == nil {
+		t.Fatal("the probe's ASCII lost the name")
+	}
+	dm := mustDecompile(t, golden)
+	if dm.FindNode("pesta\xf1as") == nil {
+		var names []string
+		for _, n := range dm.Nodes {
+			names = append(names, n.Name)
+		}
+		t.Fatalf("decompiled node names %q, want pesta\\xf1as", names)
+	}
+	var out bytes.Buffer
+	if err := Write(dm, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("node dummy pesta\xf1as\n")) {
+		t.Errorf("written:\n%s", out.String())
+	}
+	// Names are lowered by their ASCII letters only: a Latin-1 byte is no
+	// UTF-8, and strings.ToLower would write U+FFFD for it.
+	if got := asciiCase("PESTA\xd1AS", 'A', 'Z', 'a'-'A'); got != "pesta\xd1as" {
+		t.Errorf("asciiCase lower = %q", got)
+	}
+	if got := writtenAnimRoot("pesta\xf1as", false, false, []AnimNode{{Name: "pesta\xf1as"}}); got != "PESTA\xf1AS" {
+		t.Errorf("writtenAnimRoot = %q", got)
+	}
+}

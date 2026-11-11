@@ -410,10 +410,41 @@ func (d *decompiler) readFixedText(n int) (s string, junk []byte, err error) {
 	return strings.ToLower(s), junk, err
 }
 
-// readFixedStringCase is readFixedString with the letters' case kept.
-func (d *decompiler) readFixedStringCase(n int) (string, error) {
-	s, _, err := d.readFixedTextCase(n)
-	return s, err
+// readNodeName reads a node name field (or an animroot, which names a node).
+// The game stores bytes above 0x7F as written (nwn-mdl-spec MDL-BIN-007:
+// zspec_namelat's pestañas keeps its 0xF1), so they are kept, as Latin-1
+// bytes, where readFixedText drops them; control bytes are still dropped.
+// stored is the name in its stored case; name has its ASCII letters in lower
+// case, as the decompiler writes node names (strings.ToLower would turn a lone
+// Latin-1 byte, which is not UTF-8, into U+FFFD).
+func (d *decompiler) readNodeName(n int) (stored, name string, err error) {
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(d.r, buf); err != nil {
+		return "", "", err
+	}
+	clean := make([]byte, 0, n)
+	for _, c := range buf {
+		if c == 0 {
+			break
+		}
+		if c >= 0x20 && c != 0x7F {
+			clean = append(clean, c)
+		}
+	}
+	stored = string(clean)
+	return stored, asciiCase(stored, 'A', 'Z', 'a'-'A'), nil
+}
+
+// asciiCase shifts the bytes of s between lo and hi by delta: ASCII letters
+// only, leaving Latin-1 bytes as they are.
+func asciiCase(s string, lo, hi byte, delta int) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= lo && c <= hi {
+			b[i] = byte(int(c) + delta)
+		}
+	}
+	return string(b)
 }
 
 // readFixedTextCase is readFixedText with the letters' case kept.
@@ -677,7 +708,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 	nodeNumber, _ := d.readI32()
 
 	// char node_name[32]
-	nodeName, _ := d.readFixedString(32)
+	_, nodeName, _ := d.readNodeName(32)
 	d.where = readPlace{node: nodeName, list: "the node header"}
 
 	// uint32 p_geometry, p_parent_node (2 * 4 = 8)
@@ -2239,7 +2270,7 @@ func (d *decompiler) readAnimation(ptr uint32) error {
 	animLength, _ := d.readF32()
 	transTime, _ := d.readF32()
 	// Kept in its case until the nodes are read (writtenAnimRoot).
-	animRoot, _ := d.readFixedStringCase(64)
+	animRoot, _, _ := d.readNodeName(64)
 
 	// array_definition events
 	eventsDef, _ := d.readArrayDef()
@@ -2333,7 +2364,7 @@ func storedAnimRootMatch(root string, names []string, parents []int) (matched, w
 // "rootdummy", whose cut would drop the nodes beside it), and then as stored,
 // or in upper case.
 func writtenAnimRoot(stored string, matched, wide bool, nodes []AnimNode) string {
-	lower := strings.ToLower(stored)
+	lower := asciiCase(stored, 'A', 'Z', 'a'-'A')
 	if stored == "" || strings.EqualFold(stored, "NULL") {
 		return lower
 	}
@@ -2355,7 +2386,7 @@ func writtenAnimRoot(stored string, matched, wide bool, nodes []AnimNode) string
 		}
 		return lower
 	}
-	for _, s := range []string{lower, stored, strings.ToUpper(stored)} {
+	for _, s := range []string{lower, stored, asciiCase(stored, 'a', 'z', 'A'-'a')} {
 		if !has(s) {
 			return s
 		}
@@ -2392,11 +2423,10 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	d.skip(24) // p_func1..6
 	d.skip(4)  // inheritColor
 	d.skip(4)  // nodeNumber
-	storedName, _ := d.readFixedStringCase(32)
+	storedName, nodeName, _ := d.readNodeName(32)
 	storedIndex := len(d.animStoredNames)
 	d.animStoredNames = append(d.animStoredNames, storedName)
 	d.animStoredParent = append(d.animStoredParent, d.animStoredCur)
-	nodeName := strings.ToLower(storedName)
 	d.where = readPlace{anim: anim.Name, node: nodeName, list: "the node header"}
 	d.skip(8) // p_geometry, p_parent_node
 
