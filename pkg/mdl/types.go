@@ -558,6 +558,23 @@ type Model struct {
 	// RenderMerges are the meshes of a binary whose render index list draws
 	// more than their own faces (binary_merged.go).
 	RenderMerges []RenderMerge
+	// AfterDoneModel is what an ASCII model has after its first donemodel
+	// line, or nil when it has nothing there.
+	AfterDoneModel *AfterDoneModel
+}
+
+// AfterDoneModel describes the lines an ASCII model has after its first
+// donemodel. The game does not stop at donemodel: it reads the file to its end
+// line by line and, outside a geometry or animation block, runs only the
+// top-level keywords (newanim, beginmodelgeom, ...; nwn-mdl-spec
+// MDL-ASCII-020) and ignores every other line. An animation there is read; a
+// node block there is not. The parser does the same.
+type AfterDoneModel struct {
+	Line       int      // the first line after donemodel that is not blank or a comment
+	Lines      int      // lines after donemodel that are not blank or comments
+	Ignored    int      // of those, the lines the game does not read
+	Nodes      []string // names of the node blocks there that are not read
+	Animations []string // names of the animations there that are read
 }
 
 // FindNode returns the first node with the given name, or nil.

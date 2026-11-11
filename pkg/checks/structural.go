@@ -19,6 +19,48 @@ func init() {
 	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
 	Register("too_many_walkmeshes", "structural", false, "Detect multiple AABB walkmesh nodes", checkTooManyWalkmeshes)
 	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
+	Register("text_after_donemodel", "structural", false, "Detect lines after donemodel (the game reads only animations and other top-level keywords there; nodes there are not read)", checkTextAfterDoneModel)
+}
+
+// checkTextAfterDoneModel reports lines after an ASCII model's donemodel. The
+// game reads on to the end of the file, but outside a block it runs only the
+// top-level keywords: an animation there is read, a node block or anything
+// else is not (mdl.AfterDoneModel). Such lines are usually a pasted tail or
+// junk left by a tool, so what the game makes of them is rarely what was meant.
+func checkTextAfterDoneModel(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil || model.AfterDoneModel == nil {
+		return nil
+	}
+	a := model.AfterDoneModel
+	msg := fmt.Sprintf("%s: %d line(s) after donemodel, from line %d; the game reads on but runs only top-level keywords there", file, a.Lines, a.Line)
+	if len(a.Animations) > 0 {
+		msg += fmt.Sprintf("; animations read: %s", nameList(a.Animations))
+	}
+	if len(a.Nodes) > 0 {
+		msg += fmt.Sprintf("; nodes not read: %s", nameList(a.Nodes))
+	}
+	if a.Ignored > 0 {
+		msg += fmt.Sprintf("; %d line(s) not read", a.Ignored)
+	}
+	return []mdl.CheckResult{{
+		Check:    "text_after_donemodel",
+		Severity: mdl.SevWarning,
+		Message:  msg,
+	}}
+}
+
+// nameList quotes up to five names and counts the rest.
+func nameList(names []string) string {
+	const show = 5
+	var q []string
+	for i, n := range names {
+		if i == show {
+			q = append(q, fmt.Sprintf("and %d more", len(names)-show))
+			break
+		}
+		q = append(q, fmt.Sprintf("%q", n))
+	}
+	return strings.Join(q, ", ")
 }
 
 // checkDuplicateNodeNames gives every node a unique name by suffixing the

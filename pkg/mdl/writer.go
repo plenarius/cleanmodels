@@ -157,7 +157,11 @@ func (w *writer) writeFaceLine(level int, f Face) {
 	b = append(b, ' ')
 	b = strconv.AppendInt(b, int64(f.Verts[2]), 10)
 	b = append(b, ' ')
-	b = strconv.AppendUint(b, uint64(f.SmoothGroup), 10)
+	// Signed, as the game's sscanf("%d") reads it back (nwn-mdl-spec
+	// MDL-ASCII-041, MDL-ASCII-052): group 32 is the sign bit. Written as an
+	// unsigned 64-bit number, a negative group (-2147483647) became
+	// 18446744071562067969, which no reader gives back: glibc reads -1.
+	b = strconv.AppendInt(b, int64(f.SmoothGroup), 10)
 	b = append(b, ' ')
 	b = strconv.AppendInt(b, int64(f.UVs[0]), 10)
 	b = append(b, ' ')

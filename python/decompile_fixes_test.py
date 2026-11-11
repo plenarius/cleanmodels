@@ -171,6 +171,8 @@ class RoundTripFixes(unittest.TestCase):
         m = decompile(first)
         fold = m.find_node("fold").mesh
         self.assertEqual(len(fold.tangents), 0, "tangents written: a compile generates the same ones")
+        self.assertTrue(fold.tangents_omitted, "the mesh should say its stored tangents were left out")
+        self.assertFalse(decompile(first, keep_vertex_splits=True).find_node("fold").mesh.tangents_omitted)
         self.assertEqual(len(fold.verts), 4, "the seam's positions not shared")
         self.assertEqual(compile_text(write(m)), first)
 

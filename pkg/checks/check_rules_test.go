@@ -233,3 +233,25 @@ func TestFixableMessagesWithoutFix(t *testing.T) {
 		}
 	}
 }
+
+// layonara/nwn-haks#104: four tps01 doors had a pasted tail after donemodel.
+// check reports it, naming the nodes the game does not read and the
+// animations it does.
+func TestTextAfterDoneModel(t *testing.T) {
+	src := meshModel("tps01_gdoor_01", dummyRoot("tps01_gdoor_01"), "door", "tps01_gdoor_01", "    bitmap door\n") +
+		"e\nnode dummy tps01_gdoor_01impc\n  parent tps01_gdoor_01\nendnode\n" +
+		"newanim opened2 tps01_gdoor_01\n  length 1\n  node dummy tps01_gdoor_01\n    parent NULL\n  endnode\ndoneanim opened2 tps01_gdoor_01\n"
+	r := findCheck(RunAll(parseASCII(t, src), "tps01_gdoor_01.mdl", false), "text_after_donemodel")
+	if r == nil || r.Severity != mdl.SevWarning || r.Fixed {
+		t.Fatalf("result = %+v", r)
+	}
+	for _, want := range []string{`nodes not read: "tps01_gdoor_01impc"`, `animations read: "opened2"`} {
+		if !strings.Contains(r.Message, want) {
+			t.Errorf("message lacks %q: %q", want, r.Message)
+		}
+	}
+	clean := parseASCII(t, meshModel("box", dummyRoot("box"), "mesh", "box", "    bitmap box\n"))
+	if r := findCheck(RunAll(clean, "box.mdl", false), "text_after_donemodel"); r != nil {
+		t.Errorf("a model that ends at donemodel: %+v", r)
+	}
+}

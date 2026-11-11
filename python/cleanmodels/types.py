@@ -341,6 +341,7 @@ class Model:
         self.warnings = []
         self.notes = []  # Model.Notes: dropped data that is known and harmless (info)
         self.render_merges = []  # Model.RenderMerges: (receiver, donors, lost, folded)
+        self.after_done_model = None  # Model.AfterDoneModel: the lines after the first donemodel
 
     def find_node(self, name):
         for n in self.nodes:
@@ -353,6 +354,19 @@ class Model:
             if equal_fold(n.parent, "NULL"):
                 return n
         return None
+
+
+class AfterDoneModel:
+    """AfterDoneModel: an ASCII model's lines after its first donemodel. The game
+    reads on to the end, but outside a block runs only the top-level keywords:
+    an animation there is read, a node block or anything else is not."""
+
+    def __init__(self, line):
+        self.line = line
+        self.lines = 0
+        self.ignored = 0
+        self.nodes = []
+        self.animations = []
 
 
 def classification_from_code(code):

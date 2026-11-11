@@ -93,6 +93,10 @@ Each requires identical output and warnings, or both refusing the file.
 `pkg/mdl/roundtrip_fixes_test.go` through the port's own parser, compiler and
 decompiler: no fixture has them.
 
+`python/parse_fixes_test.py` (also in CI) does the same for
+`pkg/mdl/haks104_test.go`: negative smoothing groups written signed, and the
+lines after `donemodel` read as the game reads them.
+
 Before a release, also run them on the game's models:
 
 ```sh

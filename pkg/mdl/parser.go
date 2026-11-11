@@ -124,6 +124,10 @@ type parser struct {
 	model                *Model
 	errors               []ParseError
 
+	// doneModel is set at the first donemodel line, and geomAfterDone while a
+	// beginmodelgeom block after it is read (Model.AfterDoneModel).
+	doneModel, geomAfterDone bool
+
 	currentNode     *Node
 	currentAnim     *Animation
 	currentAnimNode *AnimNode
@@ -354,6 +358,9 @@ func (p *parser) parse() {
 		case "newmodel", "donemodel", "beginmodelgeom", "endmodelgeom", "node", "newanim", "setsupermodel":
 			p.sawModel = true
 		}
+		if p.doneModel && !p.afterDoneModel(keyword, tokens) {
+			continue
+		}
 		if caseSensitiveWords[keyword] && tokens[0] != keyword {
 			p.errorf("%q: the game reads only lower-case %q and does not read this line; cleanmodels does", tokens[0], keyword)
 		}
@@ -362,7 +369,8 @@ func (p *parser) parse() {
 		case keyword == "newmodel":
 			p.parseNewModel(tokens)
 		case keyword == "donemodel":
-			// End of model
+			// The game does not stop here (afterDoneModel).
+			p.doneModel = true
 		case keyword == "setsupermodel":
 			p.parseSuperModel(tokens)
 		case keyword == "setanimationscale":
@@ -376,9 +384,9 @@ func (p *parser) parse() {
 				p.model.FileDependancy = tokens[1]
 			}
 		case keyword == "beginmodelgeom":
-			// Start of geometry section
+			p.geomAfterDone = p.doneModel
 		case keyword == "endmodelgeom":
-			// End of geometry section
+			p.geomAfterDone = false
 		case keyword == "node":
 			p.parseNodeStart(tokens)
 		case keyword == "endnode":
@@ -399,6 +407,39 @@ func (p *parser) parse() {
 			p.parseParameter(tokens)
 		}
 	}
+}
+
+// topLevelKeywords are the words the game runs outside a geometry or
+// animation block (nwn-mdl-spec MDL-ASCII-020): the keyword filter at 0x446330
+// that FindModel gives FuncInterp while dofile (0x434930) reads the file.
+var topLevelKeywords = map[string]bool{
+	"filedependancy": true, "setsupermodel": true, "setanimationscale": true,
+	"classification": true, "newmodel": true, "newanim": true,
+	"beginmodelgeom": true, "donemodel": true, "ignorefog": true,
+}
+
+// afterDoneModel records a line after the first donemodel in
+// Model.AfterDoneModel and reports whether to read it. The game does not stop
+// at donemodel (its donemodel does nothing): dofile reads every line to the
+// end, and outside a block runs only the top-level keywords. So an animation
+// after donemodel is read, and a node block or anything else there is not.
+// Four Layonara doors had a pasted tail after donemodel whose two node blocks
+// cleanmodels used to add to the geometry.
+func (p *parser) afterDoneModel(keyword string, tokens []string) bool {
+	a := p.model.AfterDoneModel
+	if a == nil {
+		a = &AfterDoneModel{Line: p.line}
+		p.model.AfterDoneModel = a
+	}
+	a.Lines++
+	if p.currentAnim != nil || p.geomAfterDone || topLevelKeywords[keyword] {
+		return true
+	}
+	a.Ignored++
+	if keyword == "node" && len(tokens) >= 3 {
+		a.Nodes = append(a.Nodes, tokens[2])
+	}
+	return false
 }
 
 // caseSensitiveWords are the structural words the game matches case-
@@ -582,6 +623,9 @@ func (p *parser) parseNewAnim(tokens []string) {
 	}
 	p.currentAnim = &Animation{
 		Name: tokens[1],
+	}
+	if p.doneModel {
+		p.model.AfterDoneModel.Animations = append(p.model.AfterDoneModel.Animations, tokens[1])
 	}
 }
 

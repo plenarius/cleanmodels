@@ -47,10 +47,11 @@ selectable items — same registry on both sides, no separate wiring.
 
 ## What runs in the registry
 
-56 checks live in [pkg/checks/](pkg/checks/), grouped by file:
+57 checks live in [pkg/checks/](pkg/checks/), grouped by file:
 
-- **structural.go** (9 checks) — root/dummy invariants, parent links, name
-uniqueness, name length, supermodel reference, classification.
+- **structural.go** (10 checks) — root/dummy invariants, parent links, name
+uniqueness, name length, supermodel reference, classification, lines after
+`donemodel`.
 - **geometry.go** (10 checks) — vertex/face counts, degenerate faces,
 multi-edges, normals, AABB tree shape, walkmesh material clamping.
 - **parameters.go** (9 checks) — alpha/diffuse/specular ranges, tex slot
@@ -89,6 +90,7 @@ of 94,719 Layonara models showed these rules reporting valid models:
 | `base_dummy_parent_null` | error | No node has parent `NULL`, so the model has no root. The root is found by its `NULL` parent, not by the model's name, so a mesh that shares the model's name under a dummy root is not reported (`duplicate_node_names` reports the shared name). The fix makes the node named after the model the root. |
 | `renderhint_consistency` | info | A mesh with a `renderhint` and no `materialname`, or the reverse. Both are valid: the mesh's own hint is used (MDL-MESH-040), and a mesh with none takes its material's (MDL-MESH-041). It has no fix; up to 4.17.5 it was a warning whose fix cleared both and stripped normal mapping. |
 | `tangent_validation` | warning | Tangents of zero length (drawn as white streaks; the fix drops them so the compiler computes them), and, for binary input only, a normal-mapped mesh that stores no tangents. An ASCII model needs none: the compiler generates them for hints 2 and 3 (MDL-MESH-042). |
+| `text_after_donemodel` | warning | Lines after the first `donemodel`. The game does not stop there: it reads to the end of the file, but outside a block it runs only the top-level keywords (MDL-ASCII-020), so an animation there is read and a node block or anything else is not. The parser reads them the same way; the finding names the nodes not read and the animations read. Up to 4.17.5 the parser added such nodes to the geometry (four `tps01` doors got two stray nodes from a pasted tail). |
 | `null_bitmaps` | warning | A trimesh or skin drawn with no bitmap; the fix sets `render 0`. Armour parts (`p<gender><race><phenotype>_<slot><number>`, such as `pfb0_legl081`) are skipped: the game textures them from the part's PLT whatever their bitmap (E30), so `render 0` would hide them. |
 
 ## What `repair` does on top of the checks

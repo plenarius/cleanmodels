@@ -15,7 +15,7 @@ from .f32 import fmt_float
 from .gostr import parse_float32, quote, scan_float, scan_int
 from .nearmatch import near_match_param
 from .binary import set_static_controller
-from .types import (ANIM_COLOR_CONTROLLERS, ANIM_FLOAT_CONTROLLERS, EMITTER_COLOR_FIELDS, EMITTER_FLOAT_FIELDS, AabbData, AabbEntry, AnimMeshData, AnimNode,
+from .types import (ANIM_COLOR_CONTROLLERS, ANIM_FLOAT_CONTROLLERS, EMITTER_COLOR_FIELDS, EMITTER_FLOAT_FIELDS, AabbData, AabbEntry, AfterDoneModel, AnimMeshData, AnimNode,
                     Animation, DanglyData, EmitterData, Face, LightData, MeshData, Model, Node, ReferenceData,
                     SkinData, VertexWeight)
 
@@ -40,6 +40,11 @@ _COLOR_CTRL = frozenset(ANIM_COLOR_KEYS)
 _EMITTER_FLOATS = frozenset(EMITTER_FLOAT_FIELDS)
 _EMITTER_COLORS = frozenset(EMITTER_COLOR_FIELDS)
 _LIGHT_DECLARED = frozenset(("color", "radius", "multiplier", "shadowradius", "verticaldisplacement"))
+
+# The words the game runs outside a geometry or animation block (MDL-ASCII-020;
+# Go: topLevelKeywords).
+_TOP_LEVEL = frozenset(("filedependancy", "setsupermodel", "setanimationscale", "classification", "newmodel",
+                        "newanim", "beginmodelgeom", "donemodel", "ignorefog"))
 
 _STRUCTURE = frozenset(("newmodel", "donemodel", "beginmodelgeom", "endmodelgeom", "node", "newanim",
                         "setsupermodel"))
@@ -277,6 +282,8 @@ class _Parser:
         self.saw_model = False
         self.model = Model()
         self.errors = []
+        self.done_model = False  # Go: doneModel, geomAfterDone
+        self.geom_after_done = False
         self.current_node = None
         self.current_anim = None
         self.current_anim_node = None
@@ -426,6 +433,19 @@ class _Parser:
 
     # --- top level ---
 
+    def after_done_model(self, kw, tokens):
+        """afterDoneModel: record a line after the first donemodel; whether to read it."""
+        a = self.model.after_done_model
+        if a is None:
+            a = self.model.after_done_model = AfterDoneModel(self.line)
+        a.lines += 1
+        if self.current_anim is not None or self.geom_after_done or kw in _TOP_LEVEL:
+            return True
+        a.ignored += 1
+        if kw == "node" and len(tokens) >= 3:
+            a.nodes.append(tokens[2])
+        return False
+
     def parse(self):
         m = self.model
         while True:
@@ -439,6 +459,8 @@ class _Parser:
             kw = gostr.go_lower(tokens[0])
             if kw in _STRUCTURE:
                 self.saw_model = True
+            if self.done_model and not self.after_done_model(kw, tokens):
+                continue
             if kw in _CASE_SENSITIVE and tokens[0] != kw:
                 self.errorf("%s: the game reads only lower-case %s and does not read this line; cleanmodels does"
                             % (quote(tokens[0]), quote(kw)))
@@ -447,7 +469,7 @@ class _Parser:
                     m.name = tokens[1]
                 m.file_type = "ascii"
             elif kw == "donemodel":
-                pass
+                self.done_model = True
             elif kw == "setsupermodel":
                 if len(tokens) >= 3:
                     m.super_model = tokens[2]
@@ -465,8 +487,10 @@ class _Parser:
             elif kw == "filedependancy" or kw == "filedependency":
                 if len(tokens) >= 2:
                     m.file_dependancy = tokens[1]
-            elif kw == "beginmodelgeom" or kw == "endmodelgeom":
-                pass
+            elif kw == "beginmodelgeom":
+                self.geom_after_done = self.done_model
+            elif kw == "endmodelgeom":
+                self.geom_after_done = False
             elif kw == "node":
                 self.parse_node_start(tokens)
             elif kw == "endnode":
@@ -476,6 +500,8 @@ class _Parser:
                     self.errorf("newanim requires name and model name")
                 else:
                     self.current_anim = Animation(name=tokens[1])
+                    if self.done_model:
+                        m.after_done_model.animations.append(self.current_anim.name)
             elif kw == "doneanim":
                 if self.current_anim is not None:
                     m.animations.append(self.current_anim)
