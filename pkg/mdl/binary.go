@@ -2382,9 +2382,14 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 		Name:   nodeName,
 		Parent: parentName,
 	}
-	// The mesh flag, for a node the geometry lacks: its alpha and
-	// selfillumcolor keys are mesh controllers (AnimNode.Type).
-	if nodeFlag&0x20 != 0 {
+	// The type the flags give, for a node the geometry lacks: a compile of
+	// the type word gets the flags back (nwn-mdl-spec MDL-NODE-044).
+	switch nodeFlag {
+	case 3:
+		animNode.Type = "light"
+	case 5:
+		animNode.Type = "emitter"
+	case 33:
 		animNode.Type = "trimesh"
 	}
 

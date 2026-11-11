@@ -388,6 +388,38 @@ class RoundTripFixes(unittest.TestCase):
         self.assertIn("node trimesh wg_closed", text)
         self.assertIn("node dummy gone", text)
 
+    def test_anim_nodes_without_geometry_follow_type_word(self):
+        # MDL-NODE-044, the game's compile of zspec_animnogeo
+        with open(os.path.join(ENGINE, "zspec_animnogeo.mdl"), "rb") as f:
+            golden = f.read()
+        with open(os.path.join(ENGINE, "zspec_animnogeo.ascii.mdl"), "rb") as f:
+            ours = compile(parse(f.read()).model)
+        wants = {
+            "x": ("trimesh", ["alpha", "orientation", "position"]),
+            "y": ("light", ["color", "position", "radius"]),
+            "z": ("trimesh", ["scale", "selfillumcolor"]),
+            "w": ("", ["position"]),
+            "v": ("trimesh", ["position"]),
+            "u": ("emitter", ["birthrate", "position"]),
+            "t": ("", []),
+        }
+
+        def ctrls(an):
+            out = [k for k, v in an.float_keys.items() if v] + [k for k, v in an.color_keys.items() if v]
+            if an.position_keys:
+                out.append("position")
+            if an.orientation_keys:
+                out.append("orientation")
+            return sorted(out)
+
+        for label, data in (("game", golden), ("ours", ours)):
+            got = {an.name: (an.type, ctrls(an)) for an in decompile(data).animations[0].nodes if an.name in wants}
+            self.assertEqual(got, wants, label)
+        text = write(decompile(golden))
+        for line in ("node trimesh x", "node light y", "node trimesh v", "node emitter u", "node dummy t"):
+            self.assertIn(line, text)
+        self.assertEqual(compile_text(write(decompile(ours))), ours)
+
 
 DUP_LEAF = """newmodel pdl
 setsupermodel pdl NULL

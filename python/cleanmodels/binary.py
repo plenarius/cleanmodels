@@ -1269,9 +1269,8 @@ class _Decompiler:
             self.skip(4)
 
         an = AnimNode(node_name, parent_name)
-        # the mesh flag, for a node the geometry lacks (AnimNode.type)
-        if node_flag & 0x20:
-            an.type = "trimesh"
+        # the type the flags give, for a node the geometry lacks (MDL-NODE-044)
+        an.type = {3: "light", 5: "emitter", 33: "trimesh"}.get(node_flag, "")
 
         if has_mesh and has_anim and anim_mesh_verts > 0:
             header_end = self.p

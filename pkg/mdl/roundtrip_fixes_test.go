@@ -715,3 +715,84 @@ donemodel wdp
 	again := recompile(t, mustDecompile(t, first), nil)
 	sameTree(t, storedTree(t, first), storedTree(t, again), true)
 }
+
+// Animation nodes the geometry lacks (nwn-mdl-spec MDL-NODE-044, the game's
+// compile of zspec_animnogeo): each takes the type its type word names,
+// whatever keys it has, and keeps only the keys that type reads. Our compile
+// gives each node the game's type and controllers, the decompile of either
+// writes the type word back, and that compiles to the same binary.
+func TestAnimNodesWithoutGeometryFollowTypeWord(t *testing.T) {
+	dir := filepath.Join("..", "..", "tests", "fixtures", "engine")
+	golden, err := os.ReadFile(filepath.Join(dir, "zspec_animnogeo.mdl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join(dir, "zspec_animnogeo.ascii.mdl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ours := mustCompile(t, mustParseASCII(t, string(src)))
+	type want struct {
+		typ   string
+		ctrls []string
+	}
+	wants := map[string]want{
+		"x": {"trimesh", []string{"position", "orientation", "alpha"}},
+		"y": {"light", []string{"position", "color", "radius"}},
+		"z": {"trimesh", []string{"scale", "selfillumcolor"}},
+		"w": {"", []string{"position"}},
+		"v": {"trimesh", []string{"position"}},
+		"u": {"emitter", []string{"position", "birthrate"}},
+		"t": {"", nil},
+	}
+	ctrls := func(an AnimNode) []string {
+		var out []string
+		if len(an.PositionKeys) > 0 {
+			out = append(out, "position")
+		}
+		if len(an.OrientationKeys) > 0 {
+			out = append(out, "orientation")
+		}
+		for _, e := range animControllerFloatList {
+			if len(*e.Getter(&an)) > 0 {
+				out = append(out, e.Name)
+			}
+		}
+		for _, e := range animControllerColorList {
+			if len(*e.Getter(&an)) > 0 {
+				out = append(out, e.Name)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	for label, data := range map[string][]byte{"game": golden, "ours": ours} {
+		m := mustDecompile(t, data)
+		seen := 0
+		for _, an := range m.Animations[0].Nodes {
+			w, ok := wants[an.Name]
+			if !ok {
+				continue
+			}
+			seen++
+			wc := slices.Clone(w.ctrls)
+			slices.Sort(wc)
+			if an.Type != w.typ || !slices.Equal(ctrls(an), wc) {
+				t.Errorf("%s %s: type %q, controllers %v; want %q, %v", label, an.Name, an.Type, ctrls(an), w.typ, wc)
+			}
+		}
+		if seen != len(wants) {
+			t.Errorf("%s: %d of the %d nodes", label, seen, len(wants))
+		}
+	}
+	var text bytes.Buffer
+	if err := Write(mustDecompile(t, golden), &text); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"node trimesh x", "node light y", "node trimesh v", "node emitter u", "node dummy t"} {
+		if !strings.Contains(text.String(), line) {
+			t.Errorf("the decompile of the game's compile has no %q", line)
+		}
+	}
+	recompileStable(t, ours)
+}

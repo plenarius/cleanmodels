@@ -415,10 +415,12 @@ holds one key list per controller, so the last one's keys are written; they
 were appended to the first one's before, which made one controller of both.
 
 An animation node takes its geometry node's type. A node the geometry has no
-node of that name for is written as a dummy, unless it was stored with the
-mesh flag: then it is written as a `trimesh` (`AnimNode.Type`), so that its
-`alphakey` and `selfillumcolorkey` rows, mesh controllers, are read back
-(`tvd_udoor_09`'s `09_DWK_wg_closed`).
+node of that name for is written with the type word its stored flags give
+(`AnimNode.Type`): `trimesh` for 0x21, `light` for 0x3, `emitter` for 0x5,
+`dummy` otherwise. The game's compiler gives such a node the type of its type
+word (nwn-mdl-spec MDL-NODE-044), so a compile gets the flags back, and with
+them the keys only that type reads (`tvd_udoor_09`'s `09_DWK_wg_closed` and
+its `alphakey` rows).
 
 Emitter IDs 464 and 468 mean different controllers to BioWare's compiler
 (percentstart, sizemid) and to nwnmdlcomp (alphamid, colormid). The compiler is

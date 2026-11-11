@@ -514,6 +514,7 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	hasDangly := false
 	hasAABB := false
 	meshCtrlOnly := false
+	var declared *Node // a geometry-less node's stand-in, for its light or emitter header
 	if geomNode != nil {
 		gf := geomNode.NodeTypeFlag()
 		if gf&0x02 != 0 {
@@ -565,15 +566,30 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 			contentBits |= 0x20
 			meshCtrlOnly = true
 		}
-	} else if isMeshNodeType(an.Type) && (len(an.AlphaKeys) > 0 || len(an.SelfIllumColorKeys) > 0) {
-		// A node the geometry lacks, declared a mesh, with mesh controllers:
-		// the same mesh bit and empty mesh header, so its keys are kept
-		// (a dummy would drop them). Nothing else of the declared type is
-		// written: what the game's compiler does with such a node is not
-		// known (nwn-mdl-spec MDL-NODE-041 covers only nodes the geometry
-		// has).
-		contentBits |= 0x20
-		meshCtrlOnly = true
+	} else {
+		// A node the geometry lacks takes the type its own type word names,
+		// whatever keys it has (nwn-mdl-spec MDL-NODE-044, probe
+		// zspec_animnogeo): trimesh 0x21 with an empty mesh header, light
+		// 0x3 and emitter 0x5 with the header of one declared with no
+		// fields, dummy 0x1. Its controllers are the keys that type reads;
+		// the rest are dropped (encodeAnimNodeControllers). The other mesh
+		// words are not probed: they get the mesh flag and header, which
+		// keeps their mesh controllers; reference and camera stay dummies.
+		switch strings.ToLower(an.Type) {
+		case "light":
+			hasLight = true
+			contentBits |= 0x02
+			declared = &Node{Name: an.Name, Light: newParsedLightData()}
+		case "emitter":
+			hasEmitter = true
+			contentBits |= 0x04
+			declared = &Node{Name: an.Name, Emitter: &EmitterData{}}
+		default:
+			if isMeshNodeType(an.Type) {
+				contentBits |= 0x20
+				meshCtrlOnly = true
+			}
+		}
 	}
 
 	nodeOff := int32(c.core.len())
@@ -605,13 +621,17 @@ func (c *compiler) writeAnimNode(an *AnimNode, animChildren map[*AnimNode][]*Ani
 	c.core.u32le(contentBits) // content_node
 
 	// Type-specific headers (same order as readAnimNodeDepth).
-	if hasLight && geomNode != nil {
-		c.writeLightHeader(geomNode)
+	headerNode := geomNode
+	if headerNode == nil {
+		headerNode = declared
+	}
+	if hasLight && headerNode != nil {
+		c.writeLightHeader(headerNode)
 	} else if hasLight {
 		c.core.zeros(92)
 	}
-	if hasEmitter && geomNode != nil {
-		c.writeEmitterHeader(geomNode)
+	if hasEmitter && headerNode != nil {
+		c.writeEmitterHeader(headerNode)
 	} else if hasEmitter {
 		c.core.zeros(216)
 	}

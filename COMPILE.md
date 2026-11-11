@@ -74,12 +74,18 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
    that geometry node's number; a node the geometry lacks gets -1 under a
    matched parent and otherwise its declaration index in the animation.
    An animation node takes its geometry node's type (MDL-NODE-041). A node
-   the geometry lacks is a dummy, except that one declared as a mesh with
-   `alphakey` or `selfillumcolorkey` rows gets the mesh flag and an empty mesh
-   header, as a trimesh animation node with only those keys does: a mesh
-   controller is read only on a node with the mesh flag, so as a dummy its
-   keys were lost (`tvd_udoor_09`). Nothing else of the declared type is
-   written. What the game's compiler does with such a node is not probed.
+   the geometry lacks takes the type its own type word names, whatever keys
+   it has, as the game's compiler does (nwn-mdl-spec MDL-NODE-044, engine
+   fixture `zspec_animnogeo`): `trimesh` gets flags 0x21 and an empty mesh
+   header, `light` 0x3 and `emitter` 0x5 with the header of one declared with
+   no fields, `dummy` 0x1. It keeps the keys that type reads and drops the
+   rest (an `alphakey` on a dummy). As a dummy, `tvd_udoor_09`'s
+   `09_DWK_wg_closed` lost its alpha keys. The other mesh words (`skin`,
+   `danglymesh`, `aabb`, `animmesh`) are not probed: they get the mesh flag
+   and header, which keeps their mesh controllers; `reference` and `camera`
+   stay dummies. The game writes the controllers in the order of their lines
+   and leaves heap bytes in the empty mesh header and the emitter header; ours
+   are in the fixed order and zeroed, which reads the same.
 5. **File header** — `{0, core_len, mdx_len}` is written last with the final
   buffer sizes, then `core` and `vol` are appended.
 
