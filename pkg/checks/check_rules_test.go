@@ -313,3 +313,239 @@ func TestTextAfterDoneModelJunkIsInfo(t *testing.T) {
 		t.Fatalf("result = %+v", r)
 	}
 }
+
+// The spec's probe zspec_animroot (MDL-NODE-045): the engine prunes an
+// animation only to a node it has of exactly the animroot's name. An animroot
+// that matches none (nowhere, another case, a node only the geometry has)
+// plays the whole animation: a warning, never fixed, since any other animroot
+// would make a compile prune. c_wraith_b1, wbwsh_t_011, wbwxh_t_011 and
+// wwhip_t_001 were reported as errors, with a fix that pruned them. The name
+// in another case is information: the decompiler writes one on purpose (the
+// 9 wider-tree Layonara binaries such as a_ogre).
+func TestAnimationRootMatchingNoNodeIsAWarning(t *testing.T) {
+	pr, err := mdl.ParseFile("../../tests/fixtures/engine/zspec_animroot.ascii.mdl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := pr.Model
+	sev := map[string]mdl.Severity{"missing": mdl.SevWarning, "case": mdl.SevInfo, "geomonly": mdl.SevWarning}
+	want := map[string]string{
+		"missing":  `animroot "nosuchnode", which matches no node`,
+		"case":     `animroot "ARM", which names node "arm" only in another case`,
+		"geomonly": `animroot "leg", which names node "leg", which the animation does not have`,
+	}
+	roots := map[string]string{}
+	for _, a := range m.Animations {
+		roots[a.Name] = a.Root
+	}
+	for _, fix := range []bool{false, true} {
+		res := checkAnimationRoot(m, "zspec_animroot.mdl", fix)
+		if len(res) != len(want) {
+			t.Fatalf("fix=%v: %d findings, want %d: %+v", fix, len(res), len(want), res)
+		}
+		for _, r := range res {
+			w, ok := want[r.Node]
+			if !ok {
+				t.Errorf("fix=%v: finding on animation %q, which has a node of its animroot's exact name: %s", fix, r.Node, r.Message)
+				continue
+			}
+			if r.Severity != sev[r.Node] || r.Fixed {
+				t.Errorf("fix=%v %s: severity %v fixed %v, want %v not fixed", fix, r.Node, r.Severity, r.Fixed, sev[r.Node])
+			}
+			for _, s := range []string{w, "the whole animation plays", "left as written"} {
+				if !strings.Contains(r.Message, s) {
+					t.Errorf("fix=%v %s: message lacks %q: %q", fix, r.Node, s, r.Message)
+				}
+			}
+		}
+		for _, a := range m.Animations {
+			if a.Root != roots[a.Name] {
+				t.Errorf("fix=%v changed the animroot of %s from %q to %q", fix, a.Name, roots[a.Name], a.Root)
+			}
+		}
+	}
+	// The full fix run leaves every animation's tree and animroot alone.
+	before := append([]mdl.Animation(nil), m.Animations...)
+	RunAll(m, "zspec_animroot.mdl", true)
+	for i, a := range m.Animations {
+		if a.Root != before[i].Root || len(a.Nodes) != len(before[i].Nodes) {
+			t.Errorf("RunAll with fix changed %s: animroot %q (was %q), %d nodes (was %d)", a.Name, a.Root, before[i].Root, len(a.Nodes), len(before[i].Nodes))
+		}
+	}
+}
+
+// NULL, in any case, and the model's own name prune nothing: no finding.
+func TestAnimationRootNullAndModelName(t *testing.T) {
+	src := meshModel("c_test", dummyRoot("c_test"), "body", "c_test", "    bitmap b\n") +
+		"newanim a c_test\n  length 1\n  animroot null\n  node dummy c_test\n    parent NULL\n  endnode\ndoneanim a c_test\n" +
+		"newanim b c_test\n  length 1\n  animroot C_TEST\n  node dummy c_test\n    parent NULL\n  endnode\ndoneanim b c_test\n" +
+		"donemodel c_test\n"
+	m := parseASCII(t, src)
+	if len(m.Animations) != 2 {
+		t.Fatalf("%d animations", len(m.Animations))
+	}
+	if res := checkAnimationRoot(m, "c_test.mdl", true); len(res) != 0 {
+		t.Fatalf("findings: %+v", res)
+	}
+	if m.Animations[0].Root != "null" || m.Animations[1].Root != "C_TEST" {
+		t.Fatalf("animroots changed: %q %q", m.Animations[0].Root, m.Animations[1].Root)
+	}
+}
+
+func nameModel(names ...string) string {
+	var b strings.Builder
+	b.WriteString(dummyRoot("c_test"))
+	for _, n := range names {
+		b.WriteString("  node dummy " + n + "\n    parent c_test\n  endnode\n")
+	}
+	return "newmodel c_test\nsetsupermodel c_test NULL\nclassification CHARACTER\nbeginmodelgeom c_test\n" +
+		b.String() + "endmodelgeom c_test\ndonemodel c_test\n"
+}
+
+func nodeNames(m *mdl.Model) []string {
+	var out []string
+	for _, n := range m.Nodes {
+		out = append(out, n.Name)
+	}
+	return out
+}
+
+// MDL-BIN-007: the engine keeps the first 31 characters of a node name. A
+// 32-character name whose cut no other node has (29 names in 19 Layonara
+// heads, approved in Phase 2 as name-cut-31) finds the same node: a warning,
+// and the fix cuts it as the engine does.
+func TestNodeNameLengthUniqueCutIsAWarning(t *testing.T) {
+	long := "model001_25_mamiyahead_0_5_0_001" // 32
+	cut := long[:31]
+	// The same name twice is no new collision (pfh0_head073, pmh0_head216).
+	m := parseASCII(t, nameModel(long, "short", strings.ToUpper(long)))
+	res := checkNodeNameLength(m, "pfh0_head058.mdl", false)
+	if len(res) != 2 {
+		t.Fatalf("%d findings: %+v", len(res), res)
+	}
+	for _, r := range res {
+		if r.Severity != mdl.SevWarning || r.Fixed {
+			t.Errorf("severity %v fixed %v, want an unfixed warning: %s", r.Severity, r.Fixed, r.Message)
+		}
+		for _, s := range []string{"is 32 characters", "keeps the first 31", `"` + cut + `"`, "would be cut"} {
+			if !strings.Contains(strings.ToLower(r.Message), s) {
+				t.Errorf("message lacks %q: %q", s, r.Message)
+			}
+		}
+	}
+	if nodeNames(m)[1] != long {
+		t.Fatal("check without fix renamed the node")
+	}
+
+	res = checkNodeNameLength(m, "pfh0_head058.mdl", true)
+	if len(res) == 0 || res[0].Severity != mdl.SevWarning || !res[0].Fixed {
+		t.Fatalf("with fix: %+v", res)
+	}
+	if got := strings.Join(nodeNames(m), " "); got != "c_test "+cut+" short "+cut {
+		t.Fatalf("names after the fix: %s", got)
+	}
+
+	// 31 characters is within the limit.
+	m = parseASCII(t, nameModel(cut))
+	if res := checkNodeNameLength(m, "x.mdl", false); len(res) != 0 {
+		t.Fatalf("31 characters: %+v", res)
+	}
+}
+
+// Two names that are equal once cut (case aside) can make the engine find the
+// wrong node: an error, and the fix gives the long name a unique short form.
+func TestNodeNameLengthCollisionIsAnError(t *testing.T) {
+	a := "model001_5_unknownmaterial_5__00" // 32
+	for _, other := range []string{
+		"model001_5_unknownmaterial_5__01",   // another 32-character name, the same cut
+		"model001_5_unknownmaterial_5__0",    // the cut itself
+		"MODEL001_5_UNKNOWNMATERIAL_5__0XYZ", // the cut in another case
+	} {
+		m := parseASCII(t, nameModel(a, other))
+		res := checkNodeNameLength(m, "pmh0_head088.mdl", false)
+		var errs int
+		for _, r := range res {
+			if r.Severity == mdl.SevError {
+				errs++
+				if !strings.Contains(r.Message, "can find the wrong node") {
+					t.Errorf("message: %q", r.Message)
+				}
+			}
+		}
+		if wantErrs := 1 + boolInt(len(other) > 31); errs != wantErrs || len(res) != wantErrs {
+			t.Fatalf("%s: %d errors in %d findings, want %d: %+v", other, errs, len(res), wantErrs, res)
+		}
+
+		checkNodeNameLength(m, "pmh0_head088.mdl", true)
+		seen := map[string]bool{}
+		for _, n := range nodeNames(m) {
+			if len(n) > 31 {
+				t.Errorf("%s: %q still over 31 after the fix", other, n)
+			}
+			if seen[strings.ToLower(cutNodeName(n))] {
+				t.Errorf("%s: names still collide after the fix: %v", other, nodeNames(m))
+			}
+			seen[strings.ToLower(cutNodeName(n))] = true
+		}
+	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// An animation with no animroot prunes nothing (MDL-NODE-045). The fix used
+// to set it to rootdummy, so a compile dropped every animated node outside
+// rootdummy (here fx, under the model's root). It is now left as it is, and
+// a compile after RunAll with fix still writes fx in the animation.
+func TestAnimationRootEmptyKeepsNodesOutsideRootdummy(t *testing.T) {
+	src := "newmodel c_test\nsetsupermodel c_test NULL\nclassification CHARACTER\nbeginmodelgeom c_test\n" +
+		dummyRoot("c_test") +
+		"  node dummy rootdummy\n    parent c_test\n  endnode\n" +
+		"  node dummy torso\n    parent rootdummy\n  endnode\n" +
+		"  node dummy fx\n    parent c_test\n  endnode\n" +
+		"endmodelgeom c_test\n" +
+		"newanim spin c_test\n  length 1\n  transtime 0.25\n" +
+		"  node dummy c_test\n    parent NULL\n  endnode\n" +
+		"  node dummy rootdummy\n    parent c_test\n  endnode\n" +
+		"  node dummy torso\n    parent rootdummy\n    positionkey 2\n      0 0 0 1\n      1 0 0 2\n  endnode\n" +
+		"  node dummy fx\n    parent c_test\n    positionkey 2\n      0 0 1 0\n      1 0 2 0\n  endnode\n" +
+		"doneanim spin c_test\ndonemodel c_test\n"
+	m := parseASCII(t, src)
+	if len(m.Animations) != 1 || m.Animations[0].Root != "" {
+		t.Fatalf("animations: %+v", m.Animations)
+	}
+
+	res := checkAnimationRoot(m, "c_test.mdl", true)
+	if len(res) != 1 || res[0].Severity != mdl.SevInfo || res[0].Fixed {
+		t.Fatalf("findings: %+v", res)
+	}
+	if !strings.Contains(res[0].Message, "the whole animation plays") {
+		t.Errorf("message: %q", res[0].Message)
+	}
+	RunAll(m, "c_test.mdl", true)
+	if m.Animations[0].Root != "" {
+		t.Fatalf("animroot set to %q", m.Animations[0].Root)
+	}
+
+	var bin bytes.Buffer
+	if err := mdl.Compile(m, &bin); err != nil {
+		t.Fatal(err)
+	}
+	back, err := mdl.Decompile(bytes.NewReader(bin.Bytes()), int64(bin.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, an := range back.Animations[0].Nodes {
+		names = append(names, an.Name)
+	}
+	for _, want := range []string{"torso", "fx"} {
+		if !strings.Contains(" "+strings.Join(names, " ")+" ", " "+want+" ") {
+			t.Errorf("compiled animation lost %s: %v", want, names)
+		}
+	}
+}

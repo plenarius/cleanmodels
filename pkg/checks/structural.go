@@ -18,7 +18,7 @@ func init() {
 	Register("aabb_has_child_nodes", "structural", false, "Detect child nodes under AABB nodes", checkAabbHasChildNodes)
 	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
 	Register("too_many_walkmeshes", "structural", false, "Detect multiple AABB walkmesh nodes", checkTooManyWalkmeshes)
-	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
+	Register("node_name_length", "structural", true, "Detect node names over 31 characters, which the engine cuts to 31: a warning, an error when the cut makes two names equal; the fix cuts them as the engine does, or gives colliding ones unique names", checkNodeNameLength)
 	Register("text_after_donemodel", "structural", false, "Detect lines after donemodel: a warning for animations or nodes there (the game reads the animations, not the nodes), info for junk the game ignores", checkTextAfterDoneModel)
 }
 
@@ -420,43 +420,100 @@ func checkTooManyWalkmeshes(model *mdl.Model, file string, _ bool) []mdl.CheckRe
 	}}
 }
 
+// maxNodeNameLen is how much of a node name the game's compiler keeps: a
+// longer name is stored as its first 31 characters (nwn-mdl-spec MDL-BIN-007).
+const maxNodeNameLen = 31
+
+// checkNodeNameLength reports node names longer than maxNodeNameLen. The
+// engine keeps the first 31 characters, so a name whose cut is still unique
+// finds the same node and is only a warning; the fix cuts it the same way.
+// When the cut equals another node's name (or cut name), case aside, the
+// engine can find the wrong node: that is an error, and the fix gives the name
+// a unique short form instead. A name the model already uses more than once
+// collides with nothing new (duplicate_node_names reports it).
 func checkNodeNameLength(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
 
-	allNames := make(map[string]bool)
+	// The distinct names (lower case) behind each cut name (lower case).
+	byCut := make(map[string]map[string]string)
+	isParent := make(map[string]bool)
 	for _, n := range model.Nodes {
-		if n != nil {
-			allNames[strings.ToLower(n.Name)] = true
+		if n == nil {
+			continue
+		}
+		cut := strings.ToLower(cutNodeName(n.Name))
+		if byCut[cut] == nil {
+			byCut[cut] = make(map[string]string)
+		}
+		if _, ok := byCut[cut][strings.ToLower(n.Name)]; !ok {
+			byCut[cut][strings.ToLower(n.Name)] = n.Name
+		}
+		if n.Parent != "" {
+			isParent[strings.ToLower(n.Parent)] = true
 		}
 	}
 
 	var out []mdl.CheckResult
 	for _, n := range model.Nodes {
-		if n == nil || len(n.Name) <= 31 {
+		if n == nil || len(n.Name) <= maxNodeNameLen {
 			continue
 		}
 		oldName := n.Name
-		newName := shortenNodeName(oldName)
-
-		if fix {
-			allNames[strings.ToLower(newName)] = true
-			renameNodeEverywhere(model, oldName, newName)
+		cut := cutNodeName(oldName)
+		var other string
+		for low, name := range byCut[strings.ToLower(cut)] {
+			if low != strings.ToLower(oldName) && (other == "" || name < other) {
+				other = name
+			}
 		}
 
+		if other == "" {
+			if fix {
+				renameNodeEverywhere(model, oldName, cut)
+			}
+			msg := fmt.Sprintf(
+				"%s: node name %q is %d characters; the engine keeps the first %d, %q, which no node of another name has; %s",
+				file, oldName, len(oldName), maxNodeNameLen, cut, fixVerb(fix, "cut to that", "would be cut to that"),
+			)
+			if isParent[strings.ToLower(oldName)] {
+				msg += " (the game's own compiler hangs on a parent name this long)"
+			}
+			out = append(out, mdl.CheckResult{
+				Check:    "node_name_length",
+				Node:     cut,
+				Severity: mdl.SevWarning,
+				Fixed:    fix,
+				Message:  msg,
+			})
+			continue
+		}
+
+		newName := shortenNodeName(oldName)
+		if fix {
+			renameNodeEverywhere(model, oldName, newName)
+		}
 		out = append(out, mdl.CheckResult{
 			Check:    "node_name_length",
 			Node:     newName,
 			Severity: mdl.SevError,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: node name %q is %d chars (max 31); %s %q",
-				file, oldName, len(oldName), fixVerb(fix, "truncated to", "would be truncated to"), newName,
+				"%s: node name %q is %d characters; the engine keeps the first %d, %q, which node %q also gives, so the engine can find the wrong node; %s %q",
+				file, oldName, len(oldName), maxNodeNameLen, cut, other, fixVerb(fix, "renamed to", "would be renamed to"), newName,
 			),
 		})
 	}
 	return out
+}
+
+// cutNodeName is the name the engine keeps (MDL-BIN-007).
+func cutNodeName(name string) string {
+	if len(name) > maxNodeNameLen {
+		return name[:maxNodeNameLen]
+	}
+	return name
 }
 
 // shortenNodeName produces a deterministic <=31 char name by keeping as much

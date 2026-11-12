@@ -112,9 +112,15 @@ func TestAnimationRootEmpty(t *testing.T) {
 	if len(checks) == 0 {
 		t.Fatal("expected animation_root check result for empty animroot")
 	}
+	// No animroot prunes nothing (MDL-NODE-045): information, left as it is.
 	for _, r := range checks {
-		if !r.Fixed {
-			t.Errorf("animation_root should be auto-fixed, got: %s", r.Message)
+		if r.Fixed || r.Severity != mdl.SevInfo {
+			t.Errorf("an empty animroot should be unfixed information, got %v fixed %v: %s", r.Severity, r.Fixed, r.Message)
+		}
+	}
+	for _, a := range model.Animations {
+		if a.Root != "" {
+			t.Errorf("animation %q: animroot set to %q", a.Name, a.Root)
 		}
 	}
 }
