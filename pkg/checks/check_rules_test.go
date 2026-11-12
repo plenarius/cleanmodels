@@ -319,13 +319,16 @@ func TestTextAfterDoneModelJunkIsInfo(t *testing.T) {
 // that matches none (nowhere, another case, a node only the geometry has)
 // plays the whole animation: a warning, never fixed, since any other animroot
 // would make a compile prune. c_wraith_b1, wbwsh_t_011, wbwxh_t_011 and
-// wwhip_t_001 were reported as errors, with a fix that pruned them.
+// wwhip_t_001 were reported as errors, with a fix that pruned them. The name
+// in another case is information: the decompiler writes one on purpose (the
+// 9 wider-tree Layonara binaries such as a_ogre).
 func TestAnimationRootMatchingNoNodeIsAWarning(t *testing.T) {
 	pr, err := mdl.ParseFile("../../tests/fixtures/engine/zspec_animroot.ascii.mdl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := pr.Model
+	sev := map[string]mdl.Severity{"missing": mdl.SevWarning, "case": mdl.SevInfo, "geomonly": mdl.SevWarning}
 	want := map[string]string{
 		"missing":  `animroot "nosuchnode", which matches no node`,
 		"case":     `animroot "ARM", which names node "arm" only in another case`,
@@ -346,8 +349,8 @@ func TestAnimationRootMatchingNoNodeIsAWarning(t *testing.T) {
 				t.Errorf("fix=%v: finding on animation %q, which has a node of its animroot's exact name: %s", fix, r.Node, r.Message)
 				continue
 			}
-			if r.Severity != mdl.SevWarning || r.Fixed {
-				t.Errorf("fix=%v %s: severity %v fixed %v, want a warning not fixed", fix, r.Node, r.Severity, r.Fixed)
+			if r.Severity != sev[r.Node] || r.Fixed {
+				t.Errorf("fix=%v %s: severity %v fixed %v, want %v not fixed", fix, r.Node, r.Severity, r.Fixed, sev[r.Node])
 			}
 			for _, s := range []string{w, "the whole animation plays", "left as written"} {
 				if !strings.Contains(r.Message, s) {
@@ -492,4 +495,57 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// An animation with no animroot prunes nothing (MDL-NODE-045). The fix used
+// to set it to rootdummy, so a compile dropped every animated node outside
+// rootdummy (here fx, under the model's root). It is now left as it is, and
+// a compile after RunAll with fix still writes fx in the animation.
+func TestAnimationRootEmptyKeepsNodesOutsideRootdummy(t *testing.T) {
+	src := "newmodel c_test\nsetsupermodel c_test NULL\nclassification CHARACTER\nbeginmodelgeom c_test\n" +
+		dummyRoot("c_test") +
+		"  node dummy rootdummy\n    parent c_test\n  endnode\n" +
+		"  node dummy torso\n    parent rootdummy\n  endnode\n" +
+		"  node dummy fx\n    parent c_test\n  endnode\n" +
+		"endmodelgeom c_test\n" +
+		"newanim spin c_test\n  length 1\n  transtime 0.25\n" +
+		"  node dummy c_test\n    parent NULL\n  endnode\n" +
+		"  node dummy rootdummy\n    parent c_test\n  endnode\n" +
+		"  node dummy torso\n    parent rootdummy\n    positionkey 2\n      0 0 0 1\n      1 0 0 2\n  endnode\n" +
+		"  node dummy fx\n    parent c_test\n    positionkey 2\n      0 0 1 0\n      1 0 2 0\n  endnode\n" +
+		"doneanim spin c_test\ndonemodel c_test\n"
+	m := parseASCII(t, src)
+	if len(m.Animations) != 1 || m.Animations[0].Root != "" {
+		t.Fatalf("animations: %+v", m.Animations)
+	}
+
+	res := checkAnimationRoot(m, "c_test.mdl", true)
+	if len(res) != 1 || res[0].Severity != mdl.SevInfo || res[0].Fixed {
+		t.Fatalf("findings: %+v", res)
+	}
+	if !strings.Contains(res[0].Message, "the whole animation plays") {
+		t.Errorf("message: %q", res[0].Message)
+	}
+	RunAll(m, "c_test.mdl", true)
+	if m.Animations[0].Root != "" {
+		t.Fatalf("animroot set to %q", m.Animations[0].Root)
+	}
+
+	var bin bytes.Buffer
+	if err := mdl.Compile(m, &bin); err != nil {
+		t.Fatal(err)
+	}
+	back, err := mdl.Decompile(bytes.NewReader(bin.Bytes()), int64(bin.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, an := range back.Animations[0].Nodes {
+		names = append(names, an.Name)
+	}
+	for _, want := range []string{"torso", "fx"} {
+		if !strings.Contains(" "+strings.Join(names, " ")+" ", " "+want+" ") {
+			t.Errorf("compiled animation lost %s: %v", want, names)
+		}
+	}
 }
