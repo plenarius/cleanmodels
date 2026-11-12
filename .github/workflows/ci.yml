@@ -103,6 +103,12 @@ jobs:
             goarch: amd64
     steps:
       - uses: actions/checkout@v6
+      - name: Python port names this release
+        # python/cleanmodels/__init__.py's PORTED_FROM tells NeverBlender (which
+        # vendors the port) which release it matches; v4.18.0 went out with the old one.
+        run: |
+          grep -qx "PORTED_FROM = \"${GITHUB_REF_NAME}\"" python/cleanmodels/__init__.py || {
+            echo "::error file=python/cleanmodels/__init__.py::PORTED_FROM must be \"${GITHUB_REF_NAME}\" for this release"; exit 1; }
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
