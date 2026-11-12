@@ -31,7 +31,14 @@ func refFile(ref *resourceRef) string {
 // rewritten or removed since is seen.
 func TestFindResourceDirListing(t *testing.T) {
 	own, res := t.TempDir(), t.TempDir()
-	writeFiles(t, own, map[string]string{"PART.mdl": "upper", "part.mdl": "lower", "only.MDL": "x"})
+	writeFiles(t, own, map[string]string{"PART.mdl": "upper", "only.MDL": "x"})
+	// Two names differing only in case are two files only where the file
+	// system tells case apart (not on macOS or Windows by default).
+	_, err := os.Stat(filepath.Join(own, "part.mdl"))
+	caseSensitive := err != nil
+	if caseSensitive {
+		writeFiles(t, own, map[string]string{"part.mdl": "lower"})
+	}
 	writeFiles(t, res, map[string]string{"sub.mdl": "res", "only.mdl": "res", "capart.2da": "2DA"})
 	if err := os.Mkdir(filepath.Join(own, "sub.mdl"), 0o755); err != nil {
 		t.Fatal(err)
@@ -76,8 +83,12 @@ func TestFindResourceDirListing(t *testing.T) {
 	if err := os.Remove(filepath.Join(own, "PART.mdl")); err != nil {
 		t.Fatal(err)
 	}
-	if got := refFile(findModelResource("part", locs)); got != "part.mdl" {
-		t.Errorf("after removing PART.mdl: part = %q, want part.mdl", got)
+	want := ""
+	if caseSensitive {
+		want = "part.mdl"
+	}
+	if got := refFile(findModelResource("part", locs)); got != want {
+		t.Errorf("after removing PART.mdl: part = %q, want %q", got, want)
 	}
 }
 
