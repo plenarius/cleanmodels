@@ -58,7 +58,7 @@ for file:
 | `gomath.py` | Go's `math.Sin` / `Cos`, `sort.SliceStable`, amd64 float-to-int conversion |
 
 float32 arithmetic is rounded after every operation, as Go does on amd64.
-`PORTED_FROM` in `__init__.py` names the release it matches.
+`PORTED_FROM` in `__init__.py` names the release it matches. Set it to the new tag before tagging a release: the release job fails when it differs.
 
 ## Parity
 
