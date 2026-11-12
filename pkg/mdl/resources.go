@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Supermodels and materials are looked up in a list of locations. A location is
@@ -246,6 +247,67 @@ func resolveCase(root, rel string) string {
 	return cur
 }
 
+// dirListing is one directory's file names, as of its modification time.
+type dirListing struct {
+	mtime time.Time
+	names map[string]string // lower-case file name -> file name
+}
+
+// dirListings indexes each directory findResource searches: listing a model's
+// own folder and the resource folders again for every lookup cost a batch
+// compile most of its time on cache hits (a parts folder holds thousands of
+// files). A listing is reused while the directory's modification time is
+// unchanged, which the file system updates when a name is added, removed or
+// renamed there; that costs one stat a lookup instead of a full listing. Inputs
+// normally don't change during a run, but a run can add files to a folder it
+// searches (variants writes beside its source, an in-place compile replaces
+// each model through a temporary file), and a lookup must find what a fresh
+// listing would.
+var dirListings sync.Map // directory -> *dirListing
+
+// dirNames returns loc's file names (not subdirectories) by lower-case name,
+// or false when loc can't be listed. When names differ only in case, the
+// first in os.ReadDir's order wins, as when the listing was scanned for each
+// lookup.
+func dirNames(loc string) (map[string]string, bool) {
+	st, err := os.Stat(loc)
+	if err != nil || !st.IsDir() {
+		return nil, false
+	}
+	if v, ok := dirListings.Load(loc); ok {
+		if l := v.(*dirListing); l.mtime.Equal(st.ModTime()) {
+			return l.names, true
+		}
+	}
+	entries, err := os.ReadDir(loc)
+	if err != nil {
+		return nil, false
+	}
+	names := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		k := strings.ToLower(e.Name())
+		if _, dup := names[k]; !dup {
+			names[k] = e.Name()
+		}
+	}
+	// Kept with the time read before listing, so a change during the listing
+	// moves the time on and the next lookup lists the folder again. A folder
+	// changed in the last few seconds is not kept at all: a file system's
+	// clock is coarse (from a few milliseconds to 2 seconds on FAT), so a
+	// second change that soon could leave the time as it was.
+	if time.Since(st.ModTime()) >= dirListingSettle {
+		dirListings.Store(loc, &dirListing{mtime: st.ModTime(), names: names})
+	}
+	return names, true
+}
+
+// dirListingSettle is how long a directory must have gone unchanged before
+// its listing is reused.
+const dirListingSettle = 3 * time.Second
+
 // findModelResource looks for <name>.mdl in locs, first match wins.
 func findModelResource(name string, locs []string) *resourceRef {
 	return findResource(name, resTypeMDL, ".mdl", locs)
@@ -261,19 +323,21 @@ func findResource(name string, typ uint16, ext string, locs []string) *resourceR
 			}
 			continue
 		}
-		entries, err := os.ReadDir(loc)
-		if err != nil {
+		names, ok := dirNames(loc)
+		if !ok {
 			continue
 		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.ToLower(e.Name()) == name+ext {
-				p := filepath.Join(loc, e.Name())
-				stamp := ""
-				if info, err := e.Info(); err == nil {
-					stamp = fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
-				}
-				return &resourceRef{id: p, stamp: stamp, read: func() ([]byte, error) { return os.ReadFile(p) }}
+		if file, ok := names[name+ext]; ok {
+			p := filepath.Join(loc, file)
+			// The file itself is stat'ed for every lookup, as before: a
+			// file rewritten in place (an in-place compile) gets a new
+			// stamp, so the stamp-keyed caches (supermodelCache,
+			// contentHashes) don't hand out what it held before.
+			stamp := ""
+			if info, err := os.Lstat(p); err == nil {
+				stamp = fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())
 			}
+			return &resourceRef{id: p, stamp: stamp, read: func() ([]byte, error) { return os.ReadFile(p) }}
 		}
 	}
 	return nil

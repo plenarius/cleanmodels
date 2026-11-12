@@ -320,6 +320,15 @@ in step: a new lookup in the compiler reports itself once it goes through
 `c.record`. Decompiling binary input looks up skeletons outside the compiler,
 so binary input is not cached.
 
+A hit has to stay cheap next to a compile, so resolving its dependencies
+doesn't list folders: `dirNames` (`pkg/mdl/resources.go`) lists each folder
+searched once per process and reuses the listing while the folder's
+modification time is unchanged, which costs a stat per folder and lookup.
+A folder changed in the last few seconds is listed again on every lookup, as
+a coarse file-system clock could leave its time unchanged through a second
+change. The file found is still stat'ed each time for its size and time, so a
+file rewritten in place is noticed too.
+
 ## Same output everywhere
 
 The compiled bytes depend only on the model and the files found next to it or
