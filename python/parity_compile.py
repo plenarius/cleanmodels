@@ -49,7 +49,9 @@ def go_build(out_dir):
 
 def go_compile(exe, paths):
     """{path: (error or None, warnings, sha256)} from the Go reference."""
-    r = subprocess.run([exe, "-game", GAME], input="\n".join(paths) + "\n", capture_output=True, text=True,
+    # compileref writes UTF-8 JSON. Decode it as such, not with the locale's
+    # encoding (cp1252 on Windows), which turned a warning's ñ into Ã±.
+    r =subprocess.run([exe, "-game", GAME], input="\n".join(paths) + "\n", capture_output=True, encoding="utf-8",
                        check=True)
     out = {}
     for line in r.stdout.splitlines():
@@ -96,7 +98,7 @@ def cli_compile(cli, paths):
     # Since 4.13 the CLI refuses to write a model whose binary lost triangles
     # (a damaged render list, as the mutations make); --force writes it, as
     # the library does. Older CLIs have no such flag.
-    help_text = subprocess.run([cli, "compile", "--help"], capture_output=True, text=True)
+    help_text = subprocess.run([cli, "compile", "--help"], capture_output=True, encoding="utf-8")
     force = ["--force"] if "-force" in help_text.stdout + help_text.stderr else []
     d = tempfile.mkdtemp(prefix="cmparity_cli")
     try:

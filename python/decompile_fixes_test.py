@@ -165,12 +165,81 @@ def stored_tree(data):
     return m
 
 
+def _engine(name):
+    with open(os.path.join(ENGINE, name + ".ascii.mdl"), "rb") as f:
+        src = f.read()
+    with open(os.path.join(ENGINE, name + ".mdl"), "rb") as f:
+        golden = f.read()
+    return src, golden
+
+
+def _anim_count_nodes(data, name):
+    """An animation's stored count_nodes, found by its 64-byte name field."""
+    i = data.find(name.encode("ascii").ljust(64, b"\0"))
+    return int.from_bytes(data[i + 68:i + 72], "little")
+
+
+def _anim_nodes(m):
+    return [(a.name, [n.name for n in a.nodes]) for a in m.animations]
+
+
 class RoundTripFixes(unittest.TestCase):
+    def test_animroot_prunes_as_the_engine(self):
+        """zspec_animroot (MDL-NODE-045), as TestCompileAnimRootPrunesAsTheEngine."""
+        src, golden = _engine("zspec_animroot")
+        ours = compile(parse(src).model)
+        self.assertEqual(_anim_nodes(decompile(ours)), _anim_nodes(decompile(golden)))
+        for a in decompile(golden).animations:
+            self.assertEqual(_anim_count_nodes(ours, a.name), _anim_count_nodes(golden, a.name), a.name)
+
+    def test_decompile_animroot_keeps_what_it_matches(self):
+        """As TestDecompileAnimRootKeepsWhatItMatches."""
+        _, golden = _engine("zspec_animroot")
+        m = decompile(golden)
+        self.assertEqual([(a.name, a.root) for a in m.animations],
+                         [("prune", "arm"), ("missing", "nosuchnode"), ("case", "ARM"), ("geomonly", "leg")])
+        self.assertEqual(_anim_nodes(decompile(compile(m))), _anim_nodes(m))
+        nodes = [Node(), Node()]
+        nodes[0].name, nodes[1].name = "root", "arm"
+        for stored, matched, wide, want in (("Arm", True, False, "arm"), ("arm", False, False, "ARM"),
+                                            ("arm", True, True, "ARM"), ("nosuchnode", False, False, "nosuchnode"),
+                                            ("NULL", False, False, "null"), ("", False, False, "")):
+            self.assertEqual(_binary.written_anim_root(stored, matched, wide, nodes), want, stored)
+
+    def test_stored_anim_root_match(self):
+        """As TestStoredAnimRootMatch: a_ogre's animroot rootdummy beside headconjure, handconjure."""
+        names = ["a_ogre", "rootdummy", "pelvis_g", "headconjure", "handconjure"]
+        parents = [-1, 0, 1, 0, 0]
+        match = _binary.stored_anim_root_match
+        self.assertEqual(match("rootdummy", names, parents), (True, True))
+        self.assertEqual(match("rootdummy", names[:3], parents[:3]), (True, False))
+        self.assertEqual(match("ROOTDUMMY", names, parents), (False, False))
+        self.assertEqual(match("a_ogre", names, parents), (True, False))
+
+    def test_latin1_node_names_kept(self):
+        """zspec_namelat (MDL-BIN-007), as TestDecompileKeepsLatin1NodeNames."""
+        _, golden = _engine("zspec_namelat")
+        m = decompile(golden)
+        self.assertIsNotNone(m.find_node("pesta\xf1as"), [n.name for n in m.nodes])
+        self.assertIn("node dummy pesta\xf1as\n", write(m))
+        self.assertEqual(_binary.written_anim_root("pesta\xf1as", False, False, [m.find_node("pesta\xf1as")]),
+                         "PESTA\xf1AS")
+
+    def test_duplicate_animations_kept_in_order(self):
+        """zspec_animdup (MDL-ASCII-062), as TestCompileKeepsDuplicateAnimationsInOrder."""
+        src, golden = _engine("zspec_animdup")
+        describe = lambda m: [(a.name.lower(), a.length) for a in m.animations]  # noqa: E731
+        want = describe(decompile(golden))
+        self.assertEqual(describe(decompile(compile(parse(src).model))), want)
+        self.assertEqual([n for n, _ in want][:2], ["swing", "idle"])
+
     def test_in_order_generated_tangents(self):
         first = compile_text(IN_ORDER_SEAM)
         m = decompile(first)
         fold = m.find_node("fold").mesh
         self.assertEqual(len(fold.tangents), 0, "tangents written: a compile generates the same ones")
+        self.assertTrue(fold.tangents_omitted, "the mesh should say its stored tangents were left out")
+        self.assertFalse(decompile(first, keep_vertex_splits=True).find_node("fold").mesh.tangents_omitted)
         self.assertEqual(len(fold.verts), 4, "the seam's positions not shared")
         self.assertEqual(compile_text(write(m)), first)
 

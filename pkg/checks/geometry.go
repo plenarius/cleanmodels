@@ -73,8 +73,8 @@ func checkVertexFaceConsistency(model *mdl.Model, file string, fix bool) []mdl.C
 						Severity: mdl.SevError,
 						Fixed:    fixed,
 						Message: fmt.Sprintf(
-							"%s: face %d vertex index %d out of range [0, %d), clamped to %d",
-							file, fi, old, nv, nv-1,
+							"%s: face %d vertex index %d out of range [0, %d); %s %d",
+							file, fi, old, nv, fixVerb(fix, "clamped to", "would be clamped to"), nv-1,
 						),
 					})
 				}
@@ -110,8 +110,8 @@ func checkTvertConsistency(model *mdl.Model, file string, fix bool) []mdl.CheckR
 						Severity: mdl.SevError,
 						Fixed:    fixed,
 						Message: fmt.Sprintf(
-							"%s: face %d UV index %d out of range [0, %d), clamped to %d",
-							file, fi, old, nt, nt-1,
+							"%s: face %d UV index %d out of range [0, %d); %s %d",
+							file, fi, old, nt, fixVerb(fix, "clamped to", "would be clamped to"), nt-1,
 						),
 					})
 				}
@@ -241,14 +241,18 @@ func checkUnnormalizedWeights(model *mdl.Model, file string, fix bool) []mdl.Che
 						fixed = true
 					}
 				}
+				action := fixVerb(fix, "renormalized to 1.0", "would be renormalized to 1.0")
+				if fix && !fixed {
+					action = "has no weights to renormalize"
+				}
 				out = append(out, mdl.CheckResult{
 					Check:    "unnormalized_weights",
 					Node:     n.Name,
 					Severity: mdl.SevWarning,
 					Fixed:    fixed,
 					Message: fmt.Sprintf(
-						"%s: vertex weight %d summed to %g, renormalized to 1.0",
-						file, vi, oldSum,
+						"%s: vertex weight %d sums to %g; %s",
+						file, vi, oldSum, action,
 					),
 				})
 			}
@@ -272,9 +276,9 @@ func checkConstraintCount(model *mdl.Model, file string, fix bool) []mdl.CheckRe
 			continue
 		}
 		fixed := false
-		action := "padded with zeros"
+		action := fixVerb(fix, "padded with zeros", "would be padded with zeros")
 		if cc > vc {
-			action = "truncated"
+			action = fixVerb(fix, "truncated", "would be truncated")
 		}
 		if fix {
 			if cc < vc {
@@ -292,7 +296,7 @@ func checkConstraintCount(model *mdl.Model, file string, fix bool) []mdl.CheckRe
 			Severity: mdl.SevError,
 			Fixed:    fixed,
 			Message: fmt.Sprintf(
-				"%s: danglymesh had %d constraints but %d vertices, %s",
+				"%s: danglymesh has %d constraints but %d vertices; %s",
 				file, cc, vc, action,
 			),
 		})
@@ -326,8 +330,8 @@ func checkFacelessTrimesh(model *mdl.Model, file string, fix bool) []mdl.CheckRe
 			Severity: mdl.SevWarning,
 			Fixed:    fixed,
 			Message: fmt.Sprintf(
-				"%s: %s node %q had no faces but render=1, set render=0",
-				file, n.NodeType(), n.Name,
+				"%s: %s node %q has no faces but render=1; %s",
+				file, n.NodeType(), n.Name, fixVerb(fix, "set render=0", "would set render=0"),
 			),
 		})
 	}

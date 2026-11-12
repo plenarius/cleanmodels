@@ -131,3 +131,50 @@ def anim_node_numbers(nodes, root, geom_root, children_of, node_ids):
         for n in reversed(chain):
             number_one(n)
     return out
+
+
+def _reachable(root, children):
+    """orderedReachable: the nodes reachable from root, depth first, each once."""
+    out = []
+    seen = set()
+    stack = [root]
+    while stack:
+        an = stack.pop()
+        if an in seen:
+            continue
+        seen.add(an)
+        out.append(an)
+        stack.extend(reversed(children.get(an, ())))
+    return out
+
+
+def prune_anim_tree(root, children, anim_root):
+    """pruneAnimTree: cut an animation's tree to its animroot as the game's
+    compiler does (MDL-NODE-045). Returns (children to write with, pruned)."""
+    if root is None or not anim_root or equal_fold(anim_root, "NULL"):
+        return children, []
+    parent = {}
+    seen = set()
+    found = None
+    stack = [root]
+    while stack:
+        an = stack.pop()
+        if an in seen:
+            continue
+        seen.add(an)
+        if an.name == anim_root:
+            found = an
+            break
+        for ch in reversed(children.get(an, ())):
+            if ch not in seen:
+                parent[ch] = an
+                stack.append(ch)
+    if found is None or found is root:
+        return children, []
+    kept = dict(children)
+    n = found
+    while n is not root:
+        kept[parent[n]] = [n]
+        n = parent[n]
+    in_kept = set(_reachable(root, kept))
+    return kept, [an for an in _reachable(root, children) if an not in in_kept]

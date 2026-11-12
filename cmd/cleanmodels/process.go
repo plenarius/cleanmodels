@@ -120,18 +120,23 @@ type tileOpts struct {
 
 type procOpts struct {
 	check, forceBin, jsonOut, jsonLines, verbose, quiet, recursive bool
-	decompileOnly, dryRun                                          bool
-	keepVertexSplits                                               bool // decompile with one position per binary vertex
-	compile                                                        bool
-	overwrite                                                      bool // replace an existing output file
-	force                                                          bool // write even when reading the model lost triangles
-	workers                                                        int
-	include, exclude                                               map[string]bool
-	colorMode                                                      string // "auto", "always", "never"
-	supermodelDirs                                                 []string
-	resourceDirs                                                   []string
-	gameDir                                                        string
-	cacheDir                                                       string // compile --cache-dir
+	// checkFix lets the fixable checks change the model (check --fix,
+	// repair --check, the flat-flag mode). Without it, check reports on the
+	// model as written: a fix applied in memory would change what the later
+	// checks see and hide their findings.
+	checkFix              bool
+	decompileOnly, dryRun bool
+	keepVertexSplits      bool // decompile with one position per binary vertex
+	compile               bool
+	overwrite             bool // replace an existing output file
+	force                 bool // write even when reading the model lost triangles
+	workers               int
+	include, exclude      map[string]bool
+	colorMode             string // "auto", "always", "never"
+	supermodelDirs        []string
+	resourceDirs          []string
+	gameDir               string
+	cacheDir              string // compile --cache-dir
 
 	repairOpts
 	tileOpts
@@ -780,7 +785,7 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 	}
 
 	if o.check && !o.decompileOnly && model != nil {
-		fix := !o.dryRun
+		fix := o.checkFix && !o.dryRun
 		res.Checks = runChecks(model, path, o, o.include, o.exclude, fix)
 	}
 

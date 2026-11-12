@@ -86,6 +86,17 @@ back into the right slot. Every read in `binary.go` mirrors a write here.
    stay dummies. The game writes the controllers in the order of their lines
    and leaves heap bytes in the empty mesh header and the emitter header; ours
    are in the fixed order and zeroed, which reads the same.
+   The `animroot` cuts the tree as the game's compiler does (`pruneAnimTree`,
+   nwn-mdl-spec MDL-NODE-045, engine fixture `zspec_animroot`): it is looked
+   up among the animation's own nodes, depth first, by exact name (case
+   counts; the geometry is not searched). On a match only the path from the
+   root to that node and its subtree are written, while `count_nodes` keeps
+   the ASCII's count; with no match (a missing name, another case, a node only
+   the geometry has), or `NULL`, the whole tree is written. The animroot is
+   stored as written. Up to 4.17.5 the whole tree was always written, so an
+   animation with a matching animroot moved nodes the game's compile drops.
+   Animations that share a name are all written, in file order (MDL-ASCII-062,
+   `zspec_animdup`); the game plays the first.
 5. **File header** — `{0, core_len, mdx_len}` is written last with the final
   buffer sizes, then `core` and `vol` are appended.
 

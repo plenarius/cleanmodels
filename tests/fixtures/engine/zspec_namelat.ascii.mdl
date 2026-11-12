@@ -1,0 +1,14 @@
+# nwn-mdl-spec conformance probe zspec_namelat (CC0-1.0)
+# a node name with a Latin-1 byte (0xF1, n with tilde): what the game's compiler stores for it.
+newmodel zspec_namelat
+setsupermodel zspec_namelat NULL
+classification character
+beginmodelgeom zspec_namelat
+node dummy zspec_namelat
+  parent NULL
+endnode
+node dummy pestañas
+  parent zspec_namelat
+endnode
+endmodelgeom zspec_namelat
+donemodel zspec_namelat

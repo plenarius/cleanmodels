@@ -1,0 +1,128 @@
+# nwn-mdl-spec conformance probe zspec_animroot (CC0-1.0)
+# The animroot line against the animation's own nodes. Geometry: the root
+# with two children, arm (with child hand) and leg. Every animation lists
+# and keys arm, hand and leg except `geomonly`. `prune`: animroot arm (the
+# control, a node the animation has). `missing`: animroot nosuchnode, a node
+# that exists nowhere. `case`: animroot ARM, the name in another case.
+# `geomonly`: animroot leg, which the geometry has but the animation does
+# not list. Which nodes the game's compiler writes for each, and the
+# animroot string it stores, show what an animroot that matches no node does.
+newmodel zspec_animroot
+setsupermodel zspec_animroot NULL
+classification character
+beginmodelgeom zspec_animroot
+node dummy zspec_animroot
+  parent NULL
+endnode
+node dummy arm
+  parent zspec_animroot
+  position 0 0 1
+endnode
+node dummy hand
+  parent arm
+  position 0 1 0
+endnode
+node dummy leg
+  parent zspec_animroot
+  position 0 0 -1
+endnode
+endmodelgeom zspec_animroot
+newanim prune zspec_animroot
+  length 1
+  transtime 0.25
+  animroot arm
+  node dummy zspec_animroot
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 1
+      1 0 0 2
+  endnode
+  node dummy hand
+    parent arm
+    positionkey 2
+      0 0 1 0
+      1 0 2 0
+  endnode
+  node dummy leg
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 -1
+      1 0 0 -2
+  endnode
+doneanim prune zspec_animroot
+newanim missing zspec_animroot
+  length 1
+  transtime 0.25
+  animroot nosuchnode
+  node dummy zspec_animroot
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 1
+      1 0 0 2
+  endnode
+  node dummy hand
+    parent arm
+    positionkey 2
+      0 0 1 0
+      1 0 2 0
+  endnode
+  node dummy leg
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 -1
+      1 0 0 -2
+  endnode
+doneanim missing zspec_animroot
+newanim case zspec_animroot
+  length 1
+  transtime 0.25
+  animroot ARM
+  node dummy zspec_animroot
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 1
+      1 0 0 2
+  endnode
+  node dummy hand
+    parent arm
+    positionkey 2
+      0 0 1 0
+      1 0 2 0
+  endnode
+  node dummy leg
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 -1
+      1 0 0 -2
+  endnode
+doneanim case zspec_animroot
+newanim geomonly zspec_animroot
+  length 1
+  transtime 0.25
+  animroot leg
+  node dummy zspec_animroot
+    parent NULL
+  endnode
+  node dummy arm
+    parent zspec_animroot
+    positionkey 2
+      0 0 0 1
+      1 0 0 2
+  endnode
+  node dummy hand
+    parent arm
+    positionkey 2
+      0 0 1 0
+      1 0 2 0
+  endnode
+doneanim geomonly zspec_animroot
+donemodel zspec_animroot

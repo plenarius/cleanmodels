@@ -62,10 +62,6 @@ def write_file(model, path):
         f.write(write(model))
 
 
-def _uint64(v):
-    return v + (1 << 64) if v < 0 else v
-
-
 class _Writer:
     def __init__(self, use_texture0):
         self.out = []
@@ -464,7 +460,7 @@ class _Writer:
         self.indent(level, "faces %d" % len(faces))
         pre = "  " * (level + 2)
         self.out.extend("%s%d %d %d %d %d %d %d %d\n" % (pre, f.verts[0], f.verts[1], f.verts[2],
-                                                          _uint64(f.smooth_group), f.uvs[0], f.uvs[1], f.uvs[2],
+                                                          f.smooth_group, f.uvs[0], f.uvs[1], f.uvs[2],
                                                           f.material) for f in faces)
 
     def vec3_lines(self, level, vecs):

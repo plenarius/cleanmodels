@@ -421,6 +421,32 @@ stored order, each overwriting the field (nwn-mdl-spec MDL-CTRL-036). ASCII
 holds one key list per controller, so the last one's keys are written; they
 were appended to the first one's before, which made one controller of both.
 
+Node names keep their bytes above 0x7F, which the game stores as written
+(nwn-mdl-spec MDL-BIN-007, engine fixture `zspec_namelat`: `pestañas` keeps
+its 0xF1, written as that Latin-1 byte); only control bytes are dropped. Up to
+4.17.5 every byte outside printable ASCII was dropped, so `pestañas` came out
+as `pestaas`. Node names are written with their ASCII letters in lower case;
+Latin-1 letters keep their case.
+
+The animroot is written so that it matches, case for case, the node the stored
+one matched, or none when it matched none (`writtenAnimRoot`, nwn-mdl-spec
+MDL-NODE-045): the game's compiler cut the tree to the node the animroot named
+by exact name, and a compile of the ASCII cuts it again by the same rule.
+Node names are written in lower case, so a matching animroot is too, and one
+that matched nothing is written in lower case unless that would now match a
+node: `zspec_animroot`'s `ARM` over a node `arm` stays `ARM` (it was written
+`arm` up to 4.17.5, and a recompile then dropped `leg`).
+
+A binary not compiled by the game can hold a tree wider than its animroot's
+cut: Layonara's `a_ogre`, `a_skeleton`, `c_bugbeara`, `c_goblina` and
+`c_nasher` name `rootdummy` or `torso_g` and also keep `headconjure`,
+`handconjure` or a leg chain beside it (`storedAnimRootMatch`). The game plays
+a binary's tree as stored, so their animroot is written to match no node (in
+upper case, `ROOTDUMMY`), and a compile keeps the whole tree. Nothing at run
+time reads the animroot string (E71). nwn-mdl-spec#31's runner, which wants
+the written animroot to match a node exactly when the stored one does, fails
+these models on that alone.
+
 An animation node takes its geometry node's type. A node the geometry has no
 node of that name for is written with the type word its stored flags give
 (`AnimNode.Type`): `trimesh` for 0x21, `light` for 0x3, `emitter` for 0x5,

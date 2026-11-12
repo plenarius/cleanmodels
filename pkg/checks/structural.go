@@ -12,13 +12,65 @@ import (
 func init() {
 	Register("duplicate_node_names", "structural", true, "Fix duplicate node names by appending a unique suffix", checkDuplicateNodeNames)
 	Register("missing_parents", "structural", true, "Reparent orphaned nodes to the model root", checkMissingParents)
-	Register("base_dummy_wrong_type", "structural", false, "Detect root node with non-dummy type", checkBaseDummyWrongType)
-	Register("base_dummy_parent_null", "structural", true, "Set root node parent to NULL if incorrect", checkBaseDummyParentNull)
-	Register("duplicate_animations", "structural", true, "Merge duplicate animation blocks", checkDuplicateAnimations)
+	Register("base_dummy_wrong_type", "structural", false, "Detect a root node that is not a dummy (a warning: the compiler and the game take a mesh root)", checkBaseDummyWrongType)
+	Register("base_dummy_parent_null", "structural", true, "Detect a model with no root node (none has parent NULL); the fix makes the node named after the model the root", checkBaseDummyParentNull)
+	Register("duplicate_animations", "structural", true, "Detect animations that share a name (the game plays only the first); the fix drops the later copies", checkDuplicateAnimations)
 	Register("aabb_has_child_nodes", "structural", false, "Detect child nodes under AABB nodes", checkAabbHasChildNodes)
 	Register("light_has_child_nodes", "structural", false, "Detect child nodes under light nodes", checkLightHasChildNodes)
 	Register("too_many_walkmeshes", "structural", false, "Detect multiple AABB walkmesh nodes", checkTooManyWalkmeshes)
 	Register("node_name_length", "structural", true, "Truncate node names exceeding 31 characters", checkNodeNameLength)
+	Register("text_after_donemodel", "structural", false, "Detect lines after donemodel: a warning for animations or nodes there (the game reads the animations, not the nodes), info for junk the game ignores", checkTextAfterDoneModel)
+}
+
+// checkTextAfterDoneModel reports lines after an ASCII model's donemodel. The
+// game reads on to the end of the file, but outside a block it runs only the
+// top-level keywords: an animation there is read, a node block or anything
+// else is not (mdl.AfterDoneModel). Lines the game reads there (an animation,
+// a second newmodel or geometry block) or node blocks it drops are a warning:
+// what the game makes of them is rarely what was meant. Junk the game ignores
+// entirely (a stray byte or tag left by a tool) is information.
+func checkTextAfterDoneModel(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
+	if model == nil || model.AfterDoneModel == nil {
+		return nil
+	}
+	a := model.AfterDoneModel
+	if a.Read == 0 && len(a.Nodes) == 0 {
+		return []mdl.CheckResult{{
+			Check:    "text_after_donemodel",
+			Severity: mdl.SevInfo,
+			Message: fmt.Sprintf("%s: %d line(s) after donemodel, from line %d, none of which the game reads",
+				file, a.Lines, a.Line),
+		}}
+	}
+	msg := fmt.Sprintf("%s: %d line(s) after donemodel, from line %d; the game reads on but runs only top-level keywords there", file, a.Lines, a.Line)
+	if len(a.Animations) > 0 {
+		msg += fmt.Sprintf("; animations read: %s", nameList(a.Animations))
+	}
+	if len(a.Nodes) > 0 {
+		msg += fmt.Sprintf("; nodes not read: %s", nameList(a.Nodes))
+	}
+	if a.Ignored > 0 {
+		msg += fmt.Sprintf("; %d line(s) not read", a.Ignored)
+	}
+	return []mdl.CheckResult{{
+		Check:    "text_after_donemodel",
+		Severity: mdl.SevWarning,
+		Message:  msg,
+	}}
+}
+
+// nameList quotes up to five names and counts the rest.
+func nameList(names []string) string {
+	const show = 5
+	var q []string
+	for i, n := range names {
+		if i == show {
+			q = append(q, fmt.Sprintf("and %d more", len(names)-show))
+			break
+		}
+		q = append(q, fmt.Sprintf("%q", n))
+	}
+	return strings.Join(q, ", ")
 }
 
 // checkDuplicateNodeNames gives every node a unique name by suffixing the
@@ -123,8 +175,8 @@ func checkDuplicateNodeNames(model *mdl.Model, file string, fix bool) []mdl.Chec
 			Severity: mdl.SevWarning,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: duplicate node %q renamed to %q",
-				file, old, newName,
+				"%s: duplicate node %q %s %q",
+				file, old, fixVerb(fix, "renamed to", "would be renamed to"), newName,
 			),
 		})
 	}
@@ -161,8 +213,8 @@ func checkMissingParents(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 				Severity: mdl.SevError,
 				Fixed:    fix,
 				Message: fmt.Sprintf(
-					"%s: node %q referenced missing parent %q, reparented to %q",
-					file, n.Name, oldParent, model.Name,
+					"%s: node %q references missing parent %q; %s %q",
+					file, n.Name, oldParent, fixVerb(fix, "reparented to", "would be reparented to"), model.Name,
 				),
 			})
 		}
@@ -170,6 +222,12 @@ func checkMissingParents(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 	return out
 }
 
+// checkBaseDummyWrongType reports a root node (parent NULL, named after the
+// model) that is not a dummy. The usual export puts a dummy above the meshes,
+// but nothing requires it: the engine takes as root whichever node has parent
+// NULL (nwn-mdl-spec MDL-NODE-001), the compiler handles a mesh root, and the
+// 2002 armour parts pmh0_chest201 and pmh0_head154, whose root is their mesh,
+// draw correctly in game (checked 2026-11-11). So it is a warning, not fatal.
 func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -183,9 +241,9 @@ func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckR
 			out = append(out, mdl.CheckResult{
 				Check:    "base_dummy_wrong_type",
 				Node:     n.Name,
-				Severity: mdl.SevFatal,
+				Severity: mdl.SevWarning,
 				Message: fmt.Sprintf(
-					"%s: root node %q (parent NULL) has type %q, expected dummy (use --wrap-root to insert dummy wrapper)",
+					"%s: root node %q (parent NULL) has type %q, not dummy; the compiler and the game accept a mesh root, but --wrap-root can put a dummy above it",
 					file, n.Name, n.NodeType(),
 				),
 				Fixed: false,
@@ -195,68 +253,100 @@ func checkBaseDummyWrongType(model *mdl.Model, file string, _ bool) []mdl.CheckR
 	return out
 }
 
+// checkBaseDummyParentNull reports a model with no root: no node whose parent
+// is NULL (nwn-mdl-spec MDL-NODE-001). The fix makes the node named after the
+// model the root. The root is found by its NULL parent, not by its name: a
+// model whose root is a dummy and whose mesh shares the model's name has a
+// root, and the mesh must stay under it (duplicate_node_names reports the
+// shared name).
 func checkBaseDummyParentNull(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil || model.Name == "" {
 		return nil
 	}
-	var out []mdl.CheckResult
+	var named *mdl.Node
 	for _, n := range model.Nodes {
-		if n == nil || !strings.EqualFold(n.Name, model.Name) {
+		if n == nil {
 			continue
 		}
-		if !strings.EqualFold(n.Parent, "NULL") {
-			old := n.Parent
-			if fix {
-				n.Parent = "NULL"
-			}
-			out = append(out, mdl.CheckResult{
-				Check:    "base_dummy_parent_null",
-				Node:     n.Name,
-				Severity: mdl.SevError,
-				Fixed:    fix,
-				Message: fmt.Sprintf(
-					"%s: model root node %q had parent %q, set to NULL",
-					file, n.Name, old,
-				),
-			})
+		if strings.EqualFold(n.Parent, "NULL") {
+			return nil
+		}
+		if named == nil && strings.EqualFold(n.Name, model.Name) {
+			named = n
 		}
 	}
-	return out
+	if named == nil {
+		return nil
+	}
+	old := named.Parent
+	if fix {
+		named.Parent = "NULL"
+	}
+	return []mdl.CheckResult{{
+		Check:    "base_dummy_parent_null",
+		Node:     named.Name,
+		Severity: mdl.SevError,
+		Fixed:    fix,
+		Message: fmt.Sprintf(
+			"%s: no node has parent NULL, so the model has no root; node %q, named after the model, has parent %q, %s NULL",
+			file, named.Name, old, fixVerb(fix, "set to", "would be set to"),
+		),
+	}}
 }
 
+// checkDuplicateAnimations reports animations that share a name, compared
+// case-insensitively. The game's compiler keeps every copy in file order, but
+// the engine finds an animation by name in list order (strcasecmp) and takes
+// the first, so only the first copy ever plays (nwn-mdl-spec MDL-ASCII-062,
+// E70). The fix keeps that first copy as it is and drops the later ones,
+// which never play; it never merges them, which would change what plays.
 func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
 	}
-	seen := make(map[string]bool)
-	var dupes []string
-	for _, a := range model.Animations {
-		key := strings.ToLower(a.Name)
-		if seen[key] {
-			if len(dupes) == 0 || !strings.EqualFold(dupes[len(dupes)-1], a.Name) {
-				dupes = append(dupes, a.Name)
-			}
-		}
-		seen[key] = true
+	type dup struct {
+		first     int      // index of the copy that plays
+		positions []string // 1-based positions of the later copies
+		names     []string // their names as written
 	}
-
-	if len(dupes) == 0 {
+	byName := map[string]*dup{}
+	var order []string
+	for i, a := range model.Animations {
+		key := strings.ToLower(a.Name)
+		d, ok := byName[key]
+		if !ok {
+			byName[key] = &dup{first: i}
+			continue
+		}
+		if len(d.positions) == 0 {
+			order = append(order, key)
+		}
+		d.positions = append(d.positions, fmt.Sprint(i+1))
+		d.names = append(d.names, fmt.Sprintf("%q", a.Name))
+	}
+	if len(order) == 0 {
 		return nil
 	}
 
+	var out []mdl.CheckResult
+	for _, key := range order {
+		d := byName[key]
+		first := model.Animations[d.first]
+		out = append(out, mdl.CheckResult{
+			Check:    "duplicate_animations",
+			Node:     first.Name,
+			Severity: mdl.SevWarning,
+			Fixed:    fix,
+			Message: fmt.Sprintf(
+				"%s: animation %q (animation %d of %d) is repeated as %s (animation %s); the game plays only the first; the later copies %s",
+				file, first.Name, d.first+1, len(model.Animations), strings.Join(d.names, ", "), strings.Join(d.positions, ", "),
+				fixVerb(fix, "were dropped", "would be dropped"),
+			),
+		})
+	}
 	if fix {
-		firstIdx2 := make(map[string]int)
-		for i, a := range model.Animations {
-			key := strings.ToLower(a.Name)
-			if fi, ok := firstIdx2[key]; ok {
-				first := &model.Animations[fi]
-				mergeAnimNodes(first, &model.Animations[i])
-			} else {
-				firstIdx2[key] = i
-			}
-		}
+		seen := map[string]bool{}
 		kept := model.Animations[:0]
-		seen := make(map[string]bool)
 		for _, a := range model.Animations {
 			key := strings.ToLower(a.Name)
 			if seen[key] {
@@ -267,108 +357,7 @@ func checkDuplicateAnimations(model *mdl.Model, file string, fix bool) []mdl.Che
 		}
 		model.Animations = kept
 	}
-
-	var out []mdl.CheckResult
-	for _, name := range dupes {
-		out = append(out, mdl.CheckResult{
-			Check:    "duplicate_animations",
-			Severity: mdl.SevError,
-			Fixed:    fix,
-			Message: fmt.Sprintf(
-				"%s: duplicate animation %q merged",
-				file, name,
-			),
-		})
-	}
 	return out
-}
-
-func mergeAnimNodes(dst, src *mdl.Animation) {
-	if src.Length > dst.Length {
-		dst.Length = src.Length
-	}
-	dst.Events = append(dst.Events, src.Events...)
-
-	existing := make(map[string]int)
-	for i, n := range dst.Nodes {
-		existing[strings.ToLower(n.Name)] = i
-	}
-	for _, sn := range src.Nodes {
-		if idx, ok := existing[strings.ToLower(sn.Name)]; ok {
-			mergeAnimNodeKeys(&dst.Nodes[idx], &sn)
-		} else {
-			dst.Nodes = append(dst.Nodes, sn)
-		}
-	}
-}
-
-func mergeAnimNodeKeys(dst, src *mdl.AnimNode) {
-	if dst.Type == "" {
-		dst.Type = src.Type
-	}
-	if len(dst.PositionKeys) == 0 {
-		dst.PositionKeys = src.PositionKeys
-		dst.PositionBezier = src.PositionBezier
-	}
-	if len(dst.OrientationKeys) == 0 {
-		dst.OrientationKeys = src.OrientationKeys
-	}
-	if len(dst.ScaleKeys) == 0 {
-		dst.ScaleKeys = src.ScaleKeys
-		takeBezier(dst, src, "scale")
-	}
-	if len(dst.AlphaKeys) == 0 {
-		dst.AlphaKeys = src.AlphaKeys
-		takeBezier(dst, src, "alpha")
-	}
-	if len(dst.SelfIllumColorKeys) == 0 {
-		dst.SelfIllumColorKeys = src.SelfIllumColorKeys
-		takeBezier(dst, src, "selfillumcolor")
-	}
-	if len(dst.ColorKeys) == 0 {
-		dst.ColorKeys = src.ColorKeys
-		takeBezier(dst, src, "color")
-	}
-	if len(dst.RadiusKeys) == 0 {
-		dst.RadiusKeys = src.RadiusKeys
-		takeBezier(dst, src, "radius")
-	}
-	if len(dst.MultiplierKeys) == 0 {
-		dst.MultiplierKeys = src.MultiplierKeys
-		takeBezier(dst, src, "multiplier")
-	}
-	if len(dst.ShadowRadiusKeys) == 0 {
-		dst.ShadowRadiusKeys = src.ShadowRadiusKeys
-		takeBezier(dst, src, "shadowradius")
-	}
-	if len(dst.VerticalDisplacementKeys) == 0 {
-		dst.VerticalDisplacementKeys = src.VerticalDisplacementKeys
-		takeBezier(dst, src, "verticaldisplacement")
-	}
-	if len(dst.BirthRateKeys) == 0 {
-		dst.BirthRateKeys = src.BirthRateKeys
-		takeBezier(dst, src, "birthrate")
-	}
-	if len(dst.DetonateKeys) == 0 {
-		dst.DetonateKeys = src.DetonateKeys
-	}
-	if dst.Mesh == nil && src.Mesh != nil {
-		dst.Mesh = src.Mesh
-	}
-	if dst.AnimMesh == nil && src.AnimMesh != nil {
-		dst.AnimMesh = src.AnimMesh
-	}
-}
-
-// takeBezier carries a controller's bezier mark with the keys taken from src.
-func takeBezier(dst, src *mdl.AnimNode, name string) {
-	if !src.Bezier[name] {
-		return
-	}
-	if dst.Bezier == nil {
-		dst.Bezier = make(map[string]bool)
-	}
-	dst.Bezier[name] = true
 }
 
 func checkChildlessNodeType(checkName, nodeType string) mdl.CheckFunc {
@@ -462,8 +451,8 @@ func checkNodeNameLength(model *mdl.Model, file string, fix bool) []mdl.CheckRes
 			Severity: mdl.SevError,
 			Fixed:    fix,
 			Message: fmt.Sprintf(
-				"%s: node name %q was %d chars (max 31), truncated to %q",
-				file, oldName, len(oldName), newName,
+				"%s: node name %q is %d chars (max 31); %s %q",
+				file, oldName, len(oldName), fixVerb(fix, "truncated to", "would be truncated to"), newName,
 			),
 		})
 	}

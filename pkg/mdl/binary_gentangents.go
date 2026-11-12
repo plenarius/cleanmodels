@@ -32,6 +32,7 @@ func (d *decompiler) omitGeneratedTangents() {
 			continue
 		}
 		if clones, ok := regenerableTangents(n, d.renderLists[n], d.opts.MaterialDirs); ok {
+			n.Mesh.TangentsOmitted = true
 			if clones == 0 {
 				d.note(WarnGeneral, 0, n.Name,
 					"mesh %q: tangents left out: a compile generates the same ones (the mesh is normal-mapped)", n.Name)

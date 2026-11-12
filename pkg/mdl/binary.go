@@ -157,6 +157,13 @@ type decompiler struct {
 
 	rootNodePtr uint32
 	animPtrs    []uint32
+	// animStoredNames are the node names of the animation being read, in
+	// their stored case and stored (depth-first) order, animStoredParent the
+	// index of each one's parent there (-1 for the root), and
+	// animStoredCur the node whose children are being read (writtenAnimRoot).
+	animStoredNames  []string
+	animStoredParent []int
+	animStoredCur    int
 
 	nodeOrder    []nodeInfo
 	pendingSkins []pendingSkin
@@ -399,6 +406,49 @@ func (d *decompiler) readFixedString(n int) (string, error) {
 // readFixedText is readFixedString that also returns the bytes before the
 // first NUL when any of them is not printable ASCII (and is dropped from s).
 func (d *decompiler) readFixedText(n int) (s string, junk []byte, err error) {
+	s, junk, err = d.readFixedTextCase(n)
+	return strings.ToLower(s), junk, err
+}
+
+// readNodeName reads a node name field (or an animroot, which names a node).
+// The game stores bytes above 0x7F as written (nwn-mdl-spec MDL-BIN-007:
+// zspec_namelat's pestañas keeps its 0xF1), so they are kept, as Latin-1
+// bytes, where readFixedText drops them; control bytes are still dropped.
+// stored is the name in its stored case; name has its ASCII letters in lower
+// case, as the decompiler writes node names (strings.ToLower would turn a lone
+// Latin-1 byte, which is not UTF-8, into U+FFFD).
+func (d *decompiler) readNodeName(n int) (stored, name string, err error) {
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(d.r, buf); err != nil {
+		return "", "", err
+	}
+	clean := make([]byte, 0, n)
+	for _, c := range buf {
+		if c == 0 {
+			break
+		}
+		if c >= 0x20 && c != 0x7F {
+			clean = append(clean, c)
+		}
+	}
+	stored = string(clean)
+	return stored, asciiCase(stored, 'A', 'Z', 'a'-'A'), nil
+}
+
+// asciiCase shifts the bytes of s between lo and hi by delta: ASCII letters
+// only, leaving Latin-1 bytes as they are.
+func asciiCase(s string, lo, hi byte, delta int) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= lo && c <= hi {
+			b[i] = byte(int(c) + delta)
+		}
+	}
+	return string(b)
+}
+
+// readFixedTextCase is readFixedText with the letters' case kept.
+func (d *decompiler) readFixedTextCase(n int) (s string, junk []byte, err error) {
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(d.r, buf); err != nil {
 		return "", nil, err
@@ -416,7 +466,7 @@ func (d *decompiler) readFixedText(n int) (s string, junk []byte, err error) {
 	if len(clean) < end {
 		junk = buf[:end]
 	}
-	return strings.ToLower(string(clean)), junk, nil
+	return string(clean), junk, nil
 }
 
 // readArrayDef reads a 12-byte array_definition {p_array_start, nr_used, nr_alloc}.
@@ -658,7 +708,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 	nodeNumber, _ := d.readI32()
 
 	// char node_name[32]
-	nodeName, _ := d.readFixedString(32)
+	_, nodeName, _ := d.readNodeName(32)
 	d.where = readPlace{node: nodeName, list: "the node header"}
 
 	// uint32 p_geometry, p_parent_node (2 * 4 = 8)
@@ -2219,7 +2269,8 @@ func (d *decompiler) readAnimation(ptr uint32) error {
 	// header_animation fields after geometry
 	animLength, _ := d.readF32()
 	transTime, _ := d.readF32()
-	animRoot, _ := d.readFixedString(64)
+	// Kept in its case until the nodes are read (writtenAnimRoot).
+	animRoot, _, _ := d.readNodeName(64)
 
 	// array_definition events
 	eventsDef, _ := d.readArrayDef()
@@ -2247,12 +2298,100 @@ func (d *decompiler) readAnimation(ptr uint32) error {
 	}
 
 	// Read animation nodes from root
+	d.animStoredNames, d.animStoredParent, d.animStoredCur = d.animStoredNames[:0], d.animStoredParent[:0], -1
 	if rootNodePtr != 0 {
 		d.readAnimNode(&anim, rootNodePtr, "NULL")
 	}
+	matched, wide := storedAnimRootMatch(animRoot, d.animStoredNames, d.animStoredParent)
+	anim.Root = writtenAnimRoot(animRoot, matched, wide, anim.Nodes)
 
 	d.model.Animations = append(d.model.Animations, anim)
 	return nil
+}
+
+// storedAnimRootMatch reports whether an animation's stored animroot names
+// one of its stored nodes, case for case, as the game's findnode looks
+// (depth first, strcmp; nwn-mdl-spec MDL-NODE-045), and whether the stored tree
+// is then wider than the game's compiler leaves it: a node off the path from
+// the root to the match and outside the match's subtree. The game's compile
+// never leaves such a node, but other compilers did (Layonara's a_ogre,
+// a_skeleton, c_nasher: animroot rootdummy with headconjure, handconjure or
+// a leg chain beside it), and the game plays a binary's tree as stored.
+// names and parents are the stored nodes in depth-first order.
+func storedAnimRootMatch(root string, names []string, parents []int) (matched, wide bool) {
+	if root == "" || strings.EqualFold(root, "NULL") {
+		return false, false
+	}
+	m := -1
+	for i, s := range names {
+		if s == root {
+			m = i
+			break
+		}
+	}
+	if m < 0 {
+		return false, false
+	}
+	kept := make([]bool, len(names))
+	for i := m; i >= 0; i = parents[i] {
+		kept[i] = true
+	}
+	for i := range names {
+		for j := i; j >= 0 && !kept[i]; j = parents[j] {
+			if j == m {
+				kept[i] = true
+			}
+		}
+		if !kept[i] {
+			return true, true
+		}
+	}
+	return true, false
+}
+
+// writtenAnimRoot is the animroot to write for an animation whose stored
+// animroot is stored, so that a compile of the ASCII, which cuts the tree to
+// the node the animroot names case for case (nwn-mdl-spec MDL-NODE-045),
+// writes the tree the binary holds. The animroot string itself is read by
+// nothing at run time (E71), only by that compile.
+//
+// When the stored one matched a node (matched) and the stored tree is no
+// wider than that cut leaves it (!wide, as the game's compiler stores it), the
+// written one matches the same node: node names are written in lower case, so
+// it is too. Otherwise it must match none, so that the compile keeps the whole
+// tree: it is written in lower case as before unless that would match a node
+// ("ARM" over a node "arm", which the game did not match; or a wide tree's
+// "rootdummy", whose cut would drop the nodes beside it), and then as stored,
+// or in upper case.
+func writtenAnimRoot(stored string, matched, wide bool, nodes []AnimNode) string {
+	lower := asciiCase(stored, 'A', 'Z', 'a'-'A')
+	if stored == "" || strings.EqualFold(stored, "NULL") {
+		return lower
+	}
+	has := func(s string) bool {
+		for i := range nodes {
+			if nodes[i].Name == s {
+				return true
+			}
+		}
+		return false
+	}
+	if matched && !wide {
+		if !has(lower) {
+			for i := range nodes {
+				if strings.EqualFold(nodes[i].Name, stored) {
+					return nodes[i].Name
+				}
+			}
+		}
+		return lower
+	}
+	for _, s := range []string{lower, stored, asciiCase(stored, 'a', 'z', 'A'-'a')} {
+		if !has(s) {
+			return s
+		}
+	}
+	return stored
 }
 
 func (d *decompiler) readAnimNode(anim *Animation, nodePtr uint32, parentName string) {
@@ -2284,7 +2423,10 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 	d.skip(24) // p_func1..6
 	d.skip(4)  // inheritColor
 	d.skip(4)  // nodeNumber
-	nodeName, _ := d.readFixedString(32)
+	storedName, nodeName, _ := d.readNodeName(32)
+	storedIndex := len(d.animStoredNames)
+	d.animStoredNames = append(d.animStoredNames, storedName)
+	d.animStoredParent = append(d.animStoredParent, d.animStoredCur)
 	d.where = readPlace{anim: anim.Name, node: nodeName, list: "the node header"}
 	d.skip(8) // p_geometry, p_parent_node
 
@@ -2432,11 +2574,14 @@ func (d *decompiler) readAnimNodeDepth(anim *Animation, nodePtr uint32, parentNa
 
 	// Read children
 	childPtrs, _ := d.readPointerArray(childrenDef)
+	prevCur := d.animStoredCur
+	d.animStoredCur = storedIndex
 	for _, cp := range childPtrs {
 		if cp != 0 {
 			d.readAnimNodeDepth(anim, cp, nodeName, depth+1)
 		}
 	}
+	d.animStoredCur = prevCur
 }
 
 func (d *decompiler) readAnimControllers(animNode *AnimNode, nodeFlag uint32, keysDef, dataDef binArrayDef) {

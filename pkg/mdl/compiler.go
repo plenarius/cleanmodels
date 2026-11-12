@@ -474,8 +474,15 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 	}
 	c.animNumbers = c.animNodeNumbers(anim.Nodes, rootAnimNode)
 	if rootAnimNode != nil {
+		// The game cuts the tree to its animroot (MDL-NODE-045) but counts
+		// the nodes it cut (MDL-NODE-042).
+		children, pruned := pruneAnimTree(rootAnimNode, animChildIdx, anim.Root)
 		visited := make(map[*AnimNode]bool, len(anim.Nodes))
-		rootAnimOff = c.writeAnimNode(rootAnimNode, animChildIdx, 0, &animNodeCount, visited)
+		for _, an := range pruned {
+			visited[an] = true
+		}
+		rootAnimOff = c.writeAnimNode(rootAnimNode, children, 0, &animNodeCount, visited)
+		animNodeCount += int32(len(pruned))
 		c.warnDroppedAnim(anim, visited)
 	}
 

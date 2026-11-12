@@ -70,6 +70,16 @@ func ListAll() []CheckEntry {
 	return out
 }
 
+// fixVerb returns what a finding's message says about its fix: done when the
+// check was asked to fix the model, else would. A check run without fix
+// leaves the model as written, so its message must not say it changed it.
+func fixVerb(fix bool, done, would string) string {
+	if fix {
+		return done
+	}
+	return would
+}
+
 // RunAll runs all registered checks on a model, without a Context.
 func RunAll(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	return RunFilteredContext(model, file, nil, nil, fix, Context{})
