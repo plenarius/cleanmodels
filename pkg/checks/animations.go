@@ -10,7 +10,7 @@ import (
 
 func init() {
 	Register("animation_length", "animations", false, "Detect negative or too-short animation lengths", checkAnimationLength)
-	Register("animation_root", "animations", true, "Fix missing or invalid animation root references", checkAnimationRoot)
+	Register("animation_root", "animations", true, "Fix an empty or TILE animroot; warn about an animroot that matches no node of its animation (the whole animation plays)", checkAnimationRoot)
 	Register("missing_end_keys", "animations", false, "Detect animations missing end-time keyframes", checkMissingEndKeys)
 	Register("animation_transtime", "animations", true, "Clamp negative animation transition times to 0", checkAnimationTransTime)
 }
@@ -52,6 +52,15 @@ func checkAnimationLength(model *mdl.Model, file string, _ bool) []mdl.CheckResu
 	return out
 }
 
+// checkAnimationRoot reports animroots. The engine looks an animroot up among
+// the animation's own nodes by exact name, case included, and prunes the
+// animation to the path to that node and its subtree; when no node matches
+// (a name that exists nowhere, another case, a node only the geometry has) it
+// keeps the whole tree, so the animation plays on every node (nwn-mdl-spec
+// MDL-NODE-045). Such an animroot is a warning and never fixed: whatever it
+// were changed to, a compile would then prune. NULL (any case) and the model's
+// own name prune nothing either way and are not reported. An empty animroot
+// and a TILE animation's animroot that names one of its nodes are fixed.
 func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResult {
 	if model == nil {
 		return nil
@@ -90,21 +99,21 @@ func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResu
 			})
 			continue
 		}
-		if !strings.EqualFold(a.Root, model.Name) && !nodeNames[strings.ToLower(a.Root)] {
-			old := a.Root
-			if fix {
-				a.Root = bestRoot
+		if !strings.EqualFold(a.Root, model.Name) && !strings.EqualFold(a.Root, "NULL") {
+			if why := animRootMismatch(a, model.Nodes); why != "" {
+				// Left as written: any other animroot would make a compile
+				// prune the animation, which changes what plays.
+				out = append(out, mdl.CheckResult{
+					Check:    "animation_root",
+					Node:     a.Name,
+					Severity: mdl.SevWarning,
+					Message: fmt.Sprintf(
+						"%s: animation %q has animroot %q, which %s; the engine prunes nothing, so the whole animation plays (left as written)",
+						file, a.Name, a.Root, why,
+					),
+				})
+				continue
 			}
-			out = append(out, mdl.CheckResult{
-				Check:    "animation_root",
-				Node:     a.Name,
-				Severity: mdl.SevError,
-				Fixed:    fix,
-				Message: fmt.Sprintf(
-					"%s: animation %q has animroot %q which does not exist; %s %q",
-					file, a.Name, old, fixVerb(fix, "set to", "would be set to"), bestRoot,
-				),
-			})
 		}
 		if isTile && !strings.EqualFold(a.Root, model.Name) {
 			old := a.Root
@@ -124,6 +133,27 @@ func checkAnimationRoot(model *mdl.Model, file string, fix bool) []mdl.CheckResu
 		}
 	}
 	return out
+}
+
+// animRootMismatch says why the animroot of a matches none of its nodes, or
+// returns "" when a node has exactly that name (MDL-NODE-045).
+func animRootMismatch(a *mdl.Animation, geometry []*mdl.Node) string {
+	for _, n := range a.Nodes {
+		if n.Name == a.Root {
+			return ""
+		}
+	}
+	for _, n := range a.Nodes {
+		if strings.EqualFold(n.Name, a.Root) {
+			return fmt.Sprintf("names node %q only in another case (the engine compares case)", n.Name)
+		}
+	}
+	for _, n := range geometry {
+		if n != nil && strings.EqualFold(n.Name, a.Root) {
+			return fmt.Sprintf("names node %q, which the animation does not have", n.Name)
+		}
+	}
+	return "matches no node"
 }
 
 func checkMissingEndKeys(model *mdl.Model, file string, _ bool) []mdl.CheckResult {
