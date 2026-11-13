@@ -540,6 +540,12 @@ type Animation struct {
 // Model represents a complete parsed MDL model.
 // Ref: load_binary.pl get_model_header (line 113)
 type Model struct {
+	// storedParent is set by the decompiler: each geometry node's parent in
+	// the binary's stored tree, which a name used twice does not identify
+	// (nwn-mdl-spec MDL-NODE-002). Only the decompile uses it, to choose a
+	// declaration order; it is cleared before the model is returned.
+	storedParent map[*Node]*Node
+
 	Name           string
 	SuperModel     string
 	Classification string
@@ -588,14 +594,19 @@ func (m *Model) FindNode(name string) *Node {
 	return nil
 }
 
-// RootNode returns the first node whose parent is "NULL", or nil.
+// RootNode returns the node whose parent is "NULL", or nil.
+//
+// Of several nodes with parent NULL it is the last: the engine makes each one
+// the root in turn, and only the last root's tree is written (nwn-mdl-spec
+// MDL-NODE-003).
 func (m *Model) RootNode() *Node {
+	var root *Node
 	for _, n := range m.Nodes {
-		if strings.EqualFold(n.Parent, "NULL") {
-			return n
+		if n != nil && strings.EqualFold(n.Parent, "NULL") {
+			root = n
 		}
 	}
-	return nil
+	return root
 }
 
 // Severity represents the severity level of a check result.

@@ -87,6 +87,7 @@ func DecompileWithOptions(r io.ReadSeeker, fileSize int64, opts DecompileOptions
 		return nil, err
 	}
 	declarationOrder(m, hints)
+	m.storedParent = nil
 	return m, nil
 }
 
@@ -142,6 +143,7 @@ func decompileStored(r io.ReadSeeker, fileSize int64, opts DecompileOptions) (*M
 		}
 	}
 
+	d.model.storedParent = d.storedParent
 	return d.model, d.storedHints, nil
 }
 
@@ -157,6 +159,11 @@ type decompiler struct {
 
 	rootNodePtr uint32
 	animPtrs    []uint32
+	// storedParent is each geometry node's parent in the stored tree. Names
+	// can repeat, so the parent's name does not say which node it is
+	// (nwn-mdl-spec MDL-NODE-002); the decompile's own passes and the
+	// declaration order work from this.
+	storedParent map[*Node]*Node
 	// animStoredNames are the node names of the animation being read, in
 	// their stored case and stored (depth-first) order, animStoredParent the
 	// index of each one's parent there (-1 for the root), and
@@ -672,10 +679,10 @@ func (d *decompiler) tryRecoverName(standardName string) string {
 const maxReadNodeDepth = 256
 
 func (d *decompiler) readNode(nodePtr uint32, parentName string) error {
-	return d.readNodeDepth(nodePtr, parentName, 0)
+	return d.readNodeDepth(nodePtr, parentName, nil, 0)
 }
 
-func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int) error {
+func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, parent *Node, depth int) error {
 	if nodePtr == 0 {
 		return nil
 	}
@@ -812,6 +819,12 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 	}
 
 	d.model.Nodes = append(d.model.Nodes, node)
+	if parent != nil {
+		if d.storedParent == nil {
+			d.storedParent = make(map[*Node]*Node)
+		}
+		d.storedParent[node] = parent
+	}
 
 	// Read controllers
 	if ctrlKeysDef.Count > 0 {
@@ -822,7 +835,7 @@ func (d *decompiler) readNodeDepth(nodePtr uint32, parentName string, depth int)
 	childPtrs, _ := d.readPointerArray(childrenDef)
 	for _, cp := range childPtrs {
 		if cp != 0 {
-			if err := d.readNodeDepth(cp, nodeName, depth+1); err != nil {
+			if err := d.readNodeDepth(cp, nodeName, node, depth+1); err != nil {
 				d.warn(WarnTruncatedData, int64(cp), nodeName, "child read: %v", err)
 			}
 		}

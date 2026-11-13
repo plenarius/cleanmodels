@@ -342,6 +342,9 @@ class Model:
         self.notes = []  # Model.Notes: dropped data that is known and harmless (info)
         self.render_merges = []  # Model.RenderMerges: (receiver, donors, lost, folded)
         self.after_done_model = None  # Model.AfterDoneModel: the lines after the first donemodel
+        # Model.storedParent: a decompile's own tree (node -> its stored
+        # parent), used to choose the declaration order and then cleared
+        self.stored_parent = None
 
     def find_node(self, name):
         for n in self.nodes:
@@ -350,10 +353,13 @@ class Model:
         return None
 
     def root_node(self):
+        """The last node with parent NULL: only the last root's tree is
+        written (nwn-mdl-spec MDL-NODE-003)."""
+        root = None
         for n in self.nodes:
-            if equal_fold(n.parent, "NULL"):
-                return n
-        return None
+            if n is not None and equal_fold(n.parent, "NULL"):
+                root = n
+        return root
 
 
 class AfterDoneModel:

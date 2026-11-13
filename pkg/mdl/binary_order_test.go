@@ -28,17 +28,26 @@ func recompile(t *testing.T, model *Model, dirs []string) []byte {
 	return out.Bytes()
 }
 
-// storedTree lists a binary's geometry nodes as stored: name, parent and
-// part number, depth first.
+// storedTree lists a binary's geometry nodes as stored: name, parent (with
+// its place in the list, which a name used twice needs) and part number,
+// depth first.
 func storedTree(t *testing.T, data []byte) []string {
 	t.Helper()
 	m, _, err := decompileStored(bytes.NewReader(data), int64(len(data)), DecompileOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	at := make(map[*Node]int, len(m.Nodes))
+	for i, n := range m.Nodes {
+		at[n] = i
+	}
 	var out []string
 	for _, n := range m.Nodes {
-		out = append(out, n.Parent+"/"+n.Name+"#"+strconv.Itoa(int(n.PartNumber)))
+		p := n.Parent
+		if sp := m.storedParent[n]; sp != nil {
+			p += "@" + strconv.Itoa(at[sp])
+		}
+		out = append(out, p+"/"+n.Name+"#"+strconv.Itoa(int(n.PartNumber)))
 	}
 	return out
 }
@@ -64,6 +73,7 @@ func sameTree(t *testing.T, want, got []string, numbers bool) {
 var decompileRenumbers = map[string]string{
 	"zcm_kidx":      "numbered against a supermodel from a declaration order the binary does not record",
 	"zspec_numbers": "a node left out of the tree took a number (gaps)",
+	"zspec_root2":   "the nodes of an earlier root took numbers 0 and 1, and are not in the binary (MDL-NODE-003)",
 }
 
 // TestDecompileOrderRebuildsEngineGoldens decompiles each of the game's own

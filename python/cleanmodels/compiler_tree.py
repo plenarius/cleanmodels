@@ -1,12 +1,14 @@
 """Node-identity tree resolution: a port of pkg/mdl/compiler_tree.go.
 
 MDL stores parentage by name, but names are not unique (two "hand" dummies, a
-mesh with a same-named hook child). A node's parent is the nearest preceding
-node whose name matches its Parent field (nodes are in DFS pre-order), else any
-node of that name. Results are keyed by node identity, not name.
+mesh with a same-named hook child). A node's parent is found the game's way
+(nwn-mdl-spec MDL-NODE-002): the first node of its parent's name in a depth-
+first walk of the tree built so far, children in the order they were added.
+`parent NULL` makes a node the root, a later one replacing it (MDL-NODE-003).
+A parent the walk does not find (the game's compiler crashes) falls back to
+the nearest node of that name declared before, then to any. Results are keyed
+by node identity, not name.
 """
-
-from bisect import bisect_left
 
 from .gostr import equal_fold, fold_key
 from .gomath import go_lower
@@ -18,35 +20,58 @@ def is_root_parent(parent):
 
 def _resolve(nodes, name_of, parent_of):
     """Shared by the geometry and animation trees: (parent_of, children_of) by identity."""
-    by_name = {}
-    for i, n in enumerate(nodes):
-        if n is not None:
-            by_name.setdefault(fold_key(name_of(n)), []).append(i)
     parents = {}
     children = {}
+    attached = {}  # fold key -> nodes of that name added so far
+    root = None
+    moved = False
+
+    def attach(n):
+        attached.setdefault(fold_key(name_of(n)), []).append(n)
+
+    def find(name):
+        if root is None:
+            return None
+        cands = attached.get(fold_key(name))
+        if not cands:
+            return None
+        if len(cands) == 1 and not moved:
+            return cands[0]
+        stack = [root]
+        while stack:
+            x = stack.pop()
+            if equal_fold(name_of(x), name):
+                return x
+            stack.extend(reversed(children.get(x, ())))
+        return None
+
     for i, n in enumerate(nodes):
-        if n is None or is_root_parent(parent_of(n)):
+        if n is None or parent_of(n) == "":
             continue
-        idxs = by_name.get(fold_key(parent_of(n)))
-        if not idxs:
+        if is_root_parent(parent_of(n)):
+            if root is not None:
+                moved = True
+            root = n
+            attach(n)
             continue
-        parent = None
-        k = bisect_left(idxs, i) - 1
-        while k >= 0:
-            cand = nodes[idxs[k]]
-            if cand is not n:
-                parent = cand
-                break
-            k -= 1
+        want = parent_of(n)
+        parent = find(want)
         if parent is None:
-            for j in idxs:
-                if nodes[j] is not n:
-                    parent = nodes[j]
+            for j in range(i - 1, -1, -1):
+                cand = nodes[j]
+                if cand is not None and cand is not n and equal_fold(name_of(cand), want):
+                    parent = cand
+                    break
+        if parent is None:
+            for cand in nodes:
+                if cand is not None and cand is not n and equal_fold(name_of(cand), want):
+                    parent = cand
                     break
         if parent is None:
             continue
         parents[n] = parent
         children.setdefault(parent, []).append(n)
+        attach(n)
     return parents, children
 
 

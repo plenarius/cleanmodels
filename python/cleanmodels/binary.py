@@ -106,7 +106,9 @@ def decompile(data, skeleton_dirs=(), keep_vertex_splits=False, material_dirs=()
         omit_generated_tangents(d, list(material_dirs))
         for n in d.model.nodes:
             share_positions(n)
+    d.model.stored_parent = d.stored_parent
     declaration_order(d.model, d.stored_hints)
+    d.model.stored_parent = None
     return d.model
 
 
@@ -210,6 +212,9 @@ class _Decompiler:
         # node -> stored transparencyhint of a mesh unmerge_render_lists gave
         # another (declaration_order plans with it)
         self.stored_hints = {}
+        # storedParent: each geometry node's parent in the stored tree, which a
+        # name used twice does not identify (MDL-NODE-002)
+        self.stored_parent = {}
         self.tangent_fills = []  # meshes whose tangent stream holds bad vectors
 
     # --- low-level reads (bytes.Reader + encoding/binary semantics) ---
@@ -456,8 +461,9 @@ class _Decompiler:
 
     # --- geometry nodes ---
 
-    def read_node(self, node_ptr, parent_name, depth):
-        """Returns an error message or None."""
+    def read_node(self, node_ptr, parent_name, depth, parent=None):
+        """Returns an error message or None. parent is the stored parent node,
+        recorded in stored_parent (readNodeDepth)."""
         if node_ptr == 0:
             return None
         if depth > MAX_READ_NODE_DEPTH:
@@ -529,6 +535,8 @@ class _Decompiler:
             self.read_err = False
 
         self.model.nodes.append(node)
+        if parent is not None:
+            self.stored_parent[node] = parent
 
         if ctrl_keys_def[1] > 0:
             self.read_controllers(node, ctrl_keys_def, ctrl_data_def)
@@ -536,7 +544,7 @@ class _Decompiler:
         child_ptrs, _ = self.read_pointer_array(children_def)
         for cp in child_ptrs:
             if cp != 0:
-                err = self.read_node(cp, node_name, depth + 1)
+                err = self.read_node(cp, node_name, depth + 1, node)
                 if err:
                     self.warn(WARN_TRUNCATED_DATA, cp, node_name, "child read: %s" % err)
         return None
@@ -1901,7 +1909,9 @@ def unmerge_render_lists(d):
         if extra.n == 0 and unreadable == 0:
             continue
         if parent_of is None:
-            parent_of = resolve_geom_tree(d.model.nodes)[0]
+            # the stored tree: by name, a node under the second of two nodes of
+            # one name would take the first one's transform
+            parent_of = d.stored_parent if d.stored_parent else resolve_geom_tree(d.model.nodes)[0]
         recs.append([r, rl, extra, unreadable, world_of(r), []])
     if not recs:
         return

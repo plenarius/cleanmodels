@@ -11,6 +11,9 @@ setsupermodel drp NULL
 classification CHARACTER
 setanimationscale 1.0
 beginmodelgeom drp
+  node dummy other_root
+    parent NULL
+  endnode
   node dummy drp
     parent NULL
   endnode
@@ -19,9 +22,6 @@ beginmodelgeom drp
   endnode
   node dummy orphan
     parent nosuchnode
-  endnode
-  node dummy other_root
-    parent NULL
   endnode
   node dummy under_orphan
     parent orphan
@@ -55,8 +55,9 @@ func compileWarnings(t *testing.T, src string) ([]string, []byte) {
 	return warns, buf.Bytes()
 }
 
-// TestDroppedNodesAreReported: a node whose parent does not exist, a second
-// root, and anything below them never reaches the binary. That used to be
+// TestDroppedNodesAreReported: a node whose parent does not exist, an earlier
+// root (the last one is the root, MDL-NODE-003), and anything below them
+// never reaches the binary. That used to be
 // silent. The compile still succeeds and the output is unchanged, but each
 // kind is now named with its reason.
 func TestDroppedNodesAreReported(t *testing.T) {
@@ -64,7 +65,7 @@ func TestDroppedNodesAreReported(t *testing.T) {
 	all := strings.Join(warns, "\n")
 	for _, want := range []string{
 		`orphan (parent "nosuchnode" does not exist)`,
-		"other_root (a second root)",
+		`other_root (an earlier root; the last one, "drp", is the root)`,
 		`under_orphan (parent "orphan" is itself not connected)`,
 		`animation "walk"`,
 		"anim_orphan",

@@ -287,6 +287,7 @@ func TestDecompileOrderPerParent(t *testing.T) {
 	}
 	stored := append(append([]*Node{top}, m.Nodes...), tail...)
 	m.Nodes = append([]*Node(nil), stored...)
+	m.storedParent = nil // the tree was changed by hand: rebuild it from the names
 	declarationOrder(m, nil)
 	if slices.Equal(m.Nodes, stored) {
 		t.Fatal("stored order kept: the unsorted parent dropped the inverse sort of the other")

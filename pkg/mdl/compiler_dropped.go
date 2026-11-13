@@ -5,10 +5,11 @@ import (
 	"strings"
 )
 
-// A node whose parent cannot be found, a second root, or a cycle is never
-// reached when the tree is written, so it is left out of the binary. That used
-// to happen without a word; the engine's own handling of such nodes is not
-// established, so for now the compiler keeps its behaviour and says so.
+// A node whose parent cannot be found, an earlier root and its tree, or a
+// cycle is never reached when the tree is written, so it is left out of the
+// binary, and the compiler says so. The game's compiler writes only the last
+// root's tree (nwn-mdl-spec MDL-NODE-003) and crashes on a parent it cannot
+// find; the others are numbered all the same.
 
 const maxDroppedNamed = 5
 
@@ -29,6 +30,7 @@ func (c *compiler) warnDroppedGeometry() {
 		return
 	}
 	var names []string
+	root := c.model.RootNode()
 	for _, n := range c.model.Nodes {
 		if n == nil {
 			continue
@@ -40,6 +42,8 @@ func (c *compiler) warnDroppedGeometry() {
 		switch {
 		case n.Parent == "":
 			reason = "no parent"
+		case isRootParent(n.Parent) && root != nil:
+			reason = fmt.Sprintf("an earlier root; the last one, %q, is the root", root.Name)
 		case isRootParent(n.Parent):
 			reason = "a second root"
 		case c.geomNodeByName(n.Parent) == nil:

@@ -14,99 +14,215 @@
 // The compiler therefore has to keep duplicates intact, which means it cannot
 // use the name as a node's identity.
 //
-// Resolution rule: a node's parent is the NEAREST PRECEDING node whose name
-// matches its Parent field. Both producers of a Model emit nodes in DFS
-// pre-order — the binary decompiler appends each node before recursing into its
-// children, and ASCII sources declare parents before children — and in
-// pre-order the nearest preceding match is always the correct ancestor:
+// Resolution rule: the game's (nwn-mdl-spec MDL-NODE-002). When the engine
+// reads a node's `parent` line it looks the name up in the tree built so far
+// with FindMdlNode: depth first from the root, each node's children in the
+// order they were added, names compared case-insensitively, the first match
+// winning. `parent NULL` makes the node the root, and a later one replaces it
+// (MDL-NODE-003), so only the last root's tree is written.
 //
 //	torso_g
-//	  rbicep_g   <- #1
-//	    <child>        parent "rbicep_g" resolves to #1 (nearest preceding)
-//	  rbicep_g   <- #2
-//	    <child>        parent "rbicep_g" resolves to #2
+//	  armL
+//	    hook   <- declared second, but first in tree order
+//	  armR
+//	    hook   <- declared first
+//	  <child>  parent "hook" joins the hook under armL
+//
+// The nearest node of the name declared before the child is not what the
+// game takes: a child declared after armR's hook, or after a node's own
+// namesake child ("head" under "head"), still joins the copy the walk
+// reaches first.
+//
+// A parent the lookup does not find crashes the game's compiler. Such a
+// source (a child declared before its parent, or one whose parent is in a
+// tree a later root dropped) falls back to the nearest node of that name
+// declared before it, then to any node of that name, as the old name-keyed
+// lookup did.
 //
 // When every name is unique this rule degenerates to a plain name lookup, so
 // well-formed models compile exactly as they did before.
 package mdl
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
-// resolveGeomTree returns the parent of each node and each node's children,
-// both keyed by node identity rather than name. Child order follows the
-// declaration order of nodes so output stays deterministic.
-//
-// A node whose Parent does not resolve (the root, "NULL", or a dangling
-// reference) is absent from parentOf.
-func resolveGeomTree(nodes []*Node) (parentOf map[*Node]*Node, childrenOf map[*Node][]*Node) {
-	parentOf = make(map[*Node]*Node, len(nodes))
-	childrenOf = make(map[*Node][]*Node, len(nodes))
-
-	for i, n := range nodes {
-		if n == nil || isRootParent(n.Parent) {
-			continue
-		}
-		var parent *Node
-		// Nearest preceding match — the correct ancestor in DFS pre-order.
-		for j := i - 1; j >= 0; j-- {
-			if nodes[j] != nil && nodes[j] != n && strings.EqualFold(nodes[j].Name, n.Parent) {
-				parent = nodes[j]
-				break
-			}
-		}
-		if parent == nil {
-			// Fall back to any match, so sources that list a child before its
-			// parent still link up the way the old name-keyed lookup did.
-			for _, cand := range nodes {
-				if cand != nil && cand != n && strings.EqualFold(cand.Name, n.Parent) {
-					parent = cand
-					break
-				}
-			}
-		}
-		if parent == nil {
-			continue
-		}
-		parentOf[n] = parent
-		childrenOf[parent] = append(childrenOf[parent], n)
-	}
-	return parentOf, childrenOf
+// treeLookup is the game's parent lookup over a list of nodes read in
+// declaration order: each node is added under the node its parent names, as
+// FindMdlNode finds it in the tree built so far.
+type treeLookup[T comparable] struct {
+	name     func(T) string
+	root     T
+	hasRoot  bool
+	moved    bool // a later root replaced an earlier one
+	kids     map[T][]T
+	attached map[string][]T // lower-case name → nodes of that name added so far
 }
 
-// resolveAnimTree is resolveGeomTree for an animation's node list. Returned
-// pointers alias elements of nodes, so the caller must not append to the slice
-// while the maps are in use.
-func resolveAnimTree(nodes []AnimNode) (parentOf map[*AnimNode]*AnimNode, childrenOf map[*AnimNode][]*AnimNode) {
-	parentOf = make(map[*AnimNode]*AnimNode, len(nodes))
-	childrenOf = make(map[*AnimNode][]*AnimNode, len(nodes))
+func newTreeLookup[T comparable](name func(T) string, n int) *treeLookup[T] {
+	return &treeLookup[T]{name: name, kids: make(map[T][]T, n), attached: make(map[string][]T, n)}
+}
 
-	for i := range nodes {
-		n := &nodes[i]
-		if isRootParent(n.Parent) {
-			continue
+// setRoot makes n the tree's root, as `parent NULL` does.
+func (t *treeLookup[T]) setRoot(n T) {
+	if t.hasRoot {
+		t.moved = true
+	}
+	t.root, t.hasRoot = n, true
+	key := foldKey(t.name(n))
+	t.attached[key] = append(t.attached[key], n)
+}
+
+// add records n as a child of parent.
+func (t *treeLookup[T]) add(parent, n T) {
+	t.kids[parent] = append(t.kids[parent], n)
+	key := foldKey(t.name(n))
+	t.attached[key] = append(t.attached[key], n)
+}
+
+// foldKey returns a key two names share exactly when strings.EqualFold says
+// they are equal: each rune replaced by the smallest of its case-folding
+// orbit.
+func foldKey(s string) string {
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			ascii = false
+			break
 		}
-		var parent *AnimNode
-		for j := i - 1; j >= 0; j-- {
-			if cand := &nodes[j]; cand != n && strings.EqualFold(cand.Name, n.Parent) {
-				parent = cand
-				break
+	}
+	if ascii {
+		return strings.ToUpper(s) // an ASCII letter's orbit starts at its upper case
+	}
+	var b strings.Builder
+	for _, r := range s {
+		m := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < m {
+				m = f
 			}
 		}
-		if parent == nil {
-			for j := range nodes {
-				if cand := &nodes[j]; cand != n && strings.EqualFold(cand.Name, n.Parent) {
-					parent = cand
-					break
+		b.WriteRune(m)
+	}
+	return b.String()
+}
+
+// find returns the first node named name in the tree under the root, depth
+// first, children in the order they were added (FindMdlNode).
+func (t *treeLookup[T]) find(name string) (T, bool) {
+	var zero T
+	if !t.hasRoot {
+		return zero, false
+	}
+	cands := t.attached[foldKey(name)]
+	if len(cands) == 0 {
+		return zero, false
+	}
+	if len(cands) == 1 && !t.moved {
+		// Every added node hangs under the one root: the only node of that
+		// name is the one the walk finds.
+		return cands[0], true
+	}
+	stack := []T{t.root}
+	for len(stack) > 0 {
+		n := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if strings.EqualFold(t.name(n), name) {
+			return n, true
+		}
+		kids := t.kids[n]
+		for i := len(kids) - 1; i >= 0; i-- {
+			stack = append(stack, kids[i])
+		}
+	}
+	return zero, false
+}
+
+// resolveGeomTree returns the parent of each node and each node's children,
+// both keyed by node identity rather than name, resolved the game's way
+// (MDL-NODE-002). Child order follows the declaration order of nodes.
+//
+// A node whose Parent does not resolve (a root, "NULL", no parent line, or a
+// dangling reference) is absent from parentOf.
+func resolveGeomTree(nodes []*Node) (parentOf map[*Node]*Node, childrenOf map[*Node][]*Node) {
+	parentOf = make(map[*Node]*Node, len(nodes))
+	t := newTreeLookup(func(n *Node) string { return n.Name }, len(nodes))
+	for i, n := range nodes {
+		if n == nil || n.Parent == "" {
+			continue
+		}
+		if isRootParent(n.Parent) {
+			t.setRoot(n)
+			continue
+		}
+		parent, ok := t.find(n.Parent)
+		if !ok {
+			// The game's compiler crashes here. Fall back to the nearest
+			// node of that name declared before, then to any.
+			for j := i - 1; j >= 0 && parent == nil; j-- {
+				if nodes[j] != nil && nodes[j] != n && strings.EqualFold(nodes[j].Name, n.Parent) {
+					parent = nodes[j]
 				}
 			}
-		}
-		if parent == nil {
-			continue
+			for _, cand := range nodes {
+				if parent != nil {
+					break
+				}
+				if cand != nil && cand != n && strings.EqualFold(cand.Name, n.Parent) {
+					parent = cand
+				}
+			}
+			if parent == nil {
+				continue
+			}
 		}
 		parentOf[n] = parent
-		childrenOf[parent] = append(childrenOf[parent], n)
+		t.add(parent, n)
 	}
-	return parentOf, childrenOf
+	return parentOf, t.kids
+}
+
+// resolveAnimTree is resolveGeomTree for an animation's node list, which the
+// engine reads the same way (its own tree). Returned pointers alias elements
+// of nodes, so the caller must not append to the slice while the maps are in
+// use.
+func resolveAnimTree(nodes []AnimNode) (parentOf map[*AnimNode]*AnimNode, childrenOf map[*AnimNode][]*AnimNode) {
+	parentOf = make(map[*AnimNode]*AnimNode, len(nodes))
+	t := newTreeLookup(func(n *AnimNode) string { return n.Name }, len(nodes))
+	for i := range nodes {
+		n := &nodes[i]
+		if n.Parent == "" {
+			continue
+		}
+		if isRootParent(n.Parent) {
+			t.setRoot(n)
+			continue
+		}
+		parent, ok := t.find(n.Parent)
+		if !ok {
+			for j := i - 1; j >= 0 && parent == nil; j-- {
+				if cand := &nodes[j]; cand != n && strings.EqualFold(cand.Name, n.Parent) {
+					parent = cand
+				}
+			}
+			for j := range nodes {
+				if parent != nil {
+					break
+				}
+				if cand := &nodes[j]; cand != n && strings.EqualFold(cand.Name, n.Parent) {
+					parent = cand
+				}
+			}
+			if parent == nil {
+				continue
+			}
+		}
+		parentOf[n] = parent
+		t.add(parent, n)
+	}
+	return parentOf, t.kids
 }
 
 // nodeOccurrences groups nodes by lowercased name, preserving declaration
