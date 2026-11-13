@@ -1,0 +1,65 @@
+# nwn-mdl-spec conformance probe zspec_nrmcross (CC0-1.0)
+# Normals from smoothing groups where rounding decides the result.
+#  twosideA, twosideB: one triangle drawn from both sides (faces 0 1 2
+#        and 1 0 2, one group). The face normals cancel; what is left is
+#        rounding, and it differs between (p1-p0) x (p2-p1) and
+#        (p1-p0) x (p2-p0).
+#  bigsg: two faces sharing an edge, groups 1 and 16777217 (bit 0 and
+#        bit 24). They share bit 0; read through a float the second group
+#        becomes 16777216 and they share nothing.
+newmodel zspec_nrmcross
+setsupermodel zspec_nrmcross NULL
+classification character
+beginmodelgeom zspec_nrmcross
+node dummy zspec_nrmcross
+  parent NULL
+endnode
+node trimesh twosideA
+  parent zspec_nrmcross
+  bitmap zspec_t0
+  verts 3
+    -1.057003 -2.094905 0.905607
+    -2.565382 0.215292 -0.805866
+    -2.652006 0.044614 -2.775026
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    1 0 2 1 1 0 2 0
+endnode
+node trimesh twosideB
+  parent zspec_nrmcross
+  bitmap zspec_t0
+  verts 3
+    -0.398126 -2.580867 -2.455722
+    -0.452885 1.961113 -2.257188
+    -1.660566 0.764599 2.686254
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    1 0 2 1 1 0 2 0
+endnode
+node trimesh bigsg
+  parent zspec_nrmcross
+  bitmap zspec_t0
+  verts 4
+    0 0 4
+    1 0 4
+    0 1 4
+    1 1 5
+  tverts 4
+    0 0 0
+    1 0 0
+    0 1 0
+    1 1 0
+  faces 2
+    0 1 2 1 0 1 2 0
+    1 3 2 16777217 1 3 2 0
+endnode
+endmodelgeom zspec_nrmcross
+donemodel zspec_nrmcross

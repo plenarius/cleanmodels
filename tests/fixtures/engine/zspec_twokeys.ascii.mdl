@@ -1,0 +1,44 @@
+# nwn-mdl-spec conformance probe zspec_twokeys (CC0-1.0)
+# Key lists given twice on one animation node: positionkey with 2 keys
+# then 3 other keys, orientationkey with 2 keys then the same 2 keys
+# again (as tools write it). Which keys the compiler keeps.
+newmodel zspec_twokeys
+setsupermodel zspec_twokeys NULL
+classification character
+beginmodelgeom zspec_twokeys
+node dummy zspec_twokeys
+  parent NULL
+endnode
+node dummy mover
+  parent zspec_twokeys
+endnode
+endmodelgeom zspec_twokeys
+newanim move zspec_twokeys
+  length 1
+  transtime 0.25
+  animroot zspec_twokeys
+  node dummy zspec_twokeys
+    parent NULL
+  endnode
+  node dummy mover
+    parent zspec_twokeys
+    positionkey
+      0 1 0 0
+      1 2 0 0
+    endlist
+    positionkey
+      0 0 1 0
+      0.5 0 2 0
+      1 0 3 0
+    endlist
+    orientationkey
+      0 0 0 1 0.5
+      1 0 0 1 1
+    endlist
+    orientationkey
+      0 0 0 1 0.5
+      1 0 0 1 1
+    endlist
+  endnode
+doneanim move zspec_twokeys
+donemodel zspec_twokeys

@@ -1,0 +1,112 @@
+# nwn-mdl-spec conformance probe zspec_dupparent (CC0-1.0)
+# Duplicate node names named as a parent: which of them the child joins.
+#  hook: declared under armR first, then under armL (armL comes first in
+#        the tree). c1's parent "hook": the first declared is under armR,
+#        the first in tree order is under armL.
+#  grip: declared under armL, then under armR. c2's parent "grip": the
+#        nearest declared before c2 is under armR, the first in tree order
+#        under armL.
+#  head: a dummy with a child dummy of the same name. c3's parent "head":
+#        the nearest declared is the inner one, the first in tree order
+#        the outer one.
+# The animation repeats the tree, so its own parent lookups show too.
+newmodel zspec_dupparent
+setsupermodel zspec_dupparent NULL
+classification character
+beginmodelgeom zspec_dupparent
+node dummy zspec_dupparent
+  parent NULL
+endnode
+node dummy armL
+  parent zspec_dupparent
+  position -1 0 0
+endnode
+node dummy armR
+  parent zspec_dupparent
+  position 1 0 0
+endnode
+node dummy hook
+  parent armR
+  position 0 1 0
+endnode
+node dummy hook
+  parent armL
+  position 0 2 0
+endnode
+node dummy c1
+  parent hook
+  position 0 0 1
+endnode
+node dummy grip
+  parent armL
+  position 0 3 0
+endnode
+node dummy grip
+  parent armR
+  position 0 4 0
+endnode
+node dummy c2
+  parent grip
+  position 0 0 2
+endnode
+node dummy head
+  parent zspec_dupparent
+  position 0 0 5
+endnode
+node dummy head
+  parent head
+  position 0 0 0.5
+endnode
+node dummy c3
+  parent head
+  position 0 0 3
+endnode
+endmodelgeom zspec_dupparent
+newanim move zspec_dupparent
+  length 1
+  transtime 0.25
+  animroot zspec_dupparent
+  node dummy zspec_dupparent
+    parent NULL
+  endnode
+  node dummy armL
+    parent zspec_dupparent
+  endnode
+  node dummy armR
+    parent zspec_dupparent
+  endnode
+  node dummy hook
+    parent armR
+  endnode
+  node dummy hook
+    parent armL
+  endnode
+  node dummy c1
+    parent hook
+    positionkey 1
+      0 0 0 1
+  endnode
+  node dummy grip
+    parent armL
+  endnode
+  node dummy grip
+    parent armR
+  endnode
+  node dummy c2
+    parent grip
+    positionkey 1
+      0 0 0 2
+  endnode
+  node dummy head
+    parent zspec_dupparent
+  endnode
+  node dummy head
+    parent head
+  endnode
+  node dummy c3
+    parent head
+    positionkey 1
+      0 0 0 3
+  endnode
+doneanim move zspec_dupparent
+donemodel zspec_dupparent
