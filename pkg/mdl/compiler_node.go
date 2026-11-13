@@ -517,16 +517,20 @@ func (c *compiler) writeSkinHeader(n *Node, exp *expandedMesh) {
 // decompile produces an ASCII danglymesh whose `verts` and `constraints`
 // counts disagree. Expanding here keeps both sides aligned.
 //
+// The merge also reorders the vertices (the order of first use by the
+// faces, nwn-mdl-spec MDL-MESH-011), so the constraints are remapped even
+// when the count is unchanged: each GPU vertex takes its source vertex's
+// constraint (MDL-MESH-013, probe zspec_dangord).
+//
 // Returns dangly.Constraints unchanged when c.lastExpanded is unset (e.g.
-// danglymesh paths that didn't go through buildExpandedMesh) or when the
-// expanded vert count already matches — both cases mean no remap is
-// needed.
+// danglymesh paths that didn't go through buildExpandedMesh) or when every
+// GPU vertex is its own source vertex.
 func (c *compiler) expandedConstraints(dangly *DanglyData) []float32 {
 	if dangly == nil || len(dangly.Constraints) == 0 {
 		return nil
 	}
 	exp := c.lastExpanded
-	if exp == nil || len(exp.origVert) == len(dangly.Constraints) {
+	if exp == nil || identityOrder(exp.origVert, len(dangly.Constraints)) {
 		return dangly.Constraints
 	}
 	out := make([]float32, len(exp.origVert))
@@ -536,6 +540,20 @@ func (c *compiler) expandedConstraints(dangly *DanglyData) []float32 {
 		}
 	}
 	return out
+}
+
+// identityOrder reports whether origVert maps GPU vertex i to source vertex i
+// for all n source vertices.
+func identityOrder(origVert []int32, n int) bool {
+	if len(origVert) != n {
+		return false
+	}
+	for i, o := range origVert {
+		if int(o) != i {
+			return false
+		}
+	}
+	return true
 }
 
 // writeDanglyHeader writes header_dangly (24 bytes).
