@@ -1,0 +1,85 @@
+# nwn-mdl-spec conformance probe zspec_twolists (CC0-1.0)
+# Mesh lists given twice in one node, the second time with other values
+# and counts: whether the second list replaces the first, is added to it,
+# or is ignored.
+#  twice: verts, tverts and faces each twice. The second faces list does
+#         not repeat the first one's face.
+#  facestwice: only faces twice (1 face, then 2 others).
+#  vertstwice: only verts twice (4, then 4 others).
+newmodel zspec_twolists
+setsupermodel zspec_twolists NULL
+classification character
+beginmodelgeom zspec_twolists
+node dummy zspec_twolists
+  parent NULL
+endnode
+node trimesh twice
+  parent zspec_twolists
+  bitmap zspec_t0
+  verts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  tverts 3
+    0 0 0
+    1 0 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+  verts 4
+    0 0 2
+    2 0 2
+    2 2 2
+    0 2 2
+  tverts 4
+    0 0 0
+    0.5 0 0
+    0.5 0.5 0
+    0 0.5 0
+  faces 2
+    1 2 3 1 1 2 3 0
+    3 0 1 1 3 0 1 0
+endnode
+node trimesh facestwice
+  parent zspec_twolists
+  bitmap zspec_t0
+  verts 4
+    0 0 4
+    1 0 4
+    1 1 4
+    0 1 4
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  faces 1
+    0 1 2 1 0 1 2 0
+  faces 2
+    1 2 3 1 1 2 3 0
+    3 0 1 1 3 0 1 0
+endnode
+node trimesh vertstwice
+  parent zspec_twolists
+  bitmap zspec_t0
+  verts 4
+    0 0 6
+    1 0 6
+    1 1 6
+    0 1 6
+  tverts 4
+    0 0 0
+    1 0 0
+    1 1 0
+    0 1 0
+  verts 4
+    0 0 7
+    3 0 7
+    3 3 7
+    0 3 7
+  faces 2
+    0 1 2 1 0 1 2 0
+    0 2 3 1 0 2 3 0
+endnode
+endmodelgeom zspec_twolists
+donemodel zspec_twolists

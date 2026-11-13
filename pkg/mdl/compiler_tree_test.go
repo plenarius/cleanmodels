@@ -159,8 +159,11 @@ func TestResolveGeomTreeMeshHookIdiom(t *testing.T) {
 }
 
 // TestResolveGeomTreeDuplicatesShareParent covers two same-named siblings under
-// the SAME parent (c_asabmage has two "rbicep_g" under "torso_g"). Both must be
-// retained as separate children, and each keeps its own subtree.
+// the SAME parent (c_asabmage has two "rbicep_g" under "torso_g"). Both are
+// kept as separate children, and a child of that name joins the first of
+// them, as the game's compiler does (nwn-mdl-spec MDL-NODE-002, probe
+// zspec_dupparent: FindMdlNode takes the first match in tree order, not the
+// nearest declared before).
 func TestResolveGeomTreeDuplicatesShareParent(t *testing.T) {
 	root := nodeNamed("root", "NULL")
 	torso := nodeNamed("torso_g", "root")
@@ -173,13 +176,71 @@ func TestResolveGeomTreeDuplicatesShareParent(t *testing.T) {
 	if got := childrenOf[torso]; len(got) != 2 {
 		t.Fatalf("torso should keep both biceps, got %d children", len(got))
 	}
-	// Nearest-preceding resolution: each child binds to the bicep declared
-	// immediately above it, which is the DFS pre-order truth.
 	if parentOf[child1] != bicep1 {
 		t.Error("first forearm must attach to the first bicep")
 	}
-	if parentOf[child2] != bicep2 {
-		t.Error("second forearm must attach to the second bicep")
+	if parentOf[child2] != bicep1 {
+		t.Error("second forearm must attach to the first bicep, the first in tree order")
+	}
+	if got := childrenOf[bicep2]; len(got) != 0 {
+		t.Errorf("second bicep should have no children, got %v", got)
+	}
+}
+
+// TestResolveGeomTreeFirstInTreeOrder is zspec_dupparent: of two nodes of
+// one name, a child joins the one that comes first in a depth-first walk of
+// the tree built so far, whichever was declared first or last; and a node
+// named like its own parent ("head" under "head") does not take its
+// parent's later children.
+func TestResolveGeomTreeFirstInTreeOrder(t *testing.T) {
+	root := nodeNamed("root", "NULL")
+	armL := nodeNamed("armL", "root")
+	armR := nodeNamed("armR", "root")
+	hookR := nodeNamed("hook", "armR")
+	hookL := nodeNamed("hook", "armL")
+	c1 := nodeNamed("c1", "hook")
+	gripL := nodeNamed("grip", "armL")
+	gripR := nodeNamed("grip", "armR")
+	c2 := nodeNamed("c2", "grip")
+	head := nodeNamed("head", "root")
+	inner := nodeNamed("head", "head")
+	c3 := nodeNamed("c3", "head")
+	parentOf, _ := resolveGeomTree([]*Node{root, armL, armR, hookR, hookL, c1, gripL, gripR, c2, head, inner, c3})
+	for _, tc := range []struct {
+		n, want *Node
+		what    string
+	}{
+		{c1, hookL, "c1 joins the hook under armL, declared second"},
+		{c2, gripL, "c2 joins the grip under armL, not the nearer one under armR"},
+		{inner, head, "the inner head joins the outer"},
+		{c3, head, "c3 joins the outer head"},
+	} {
+		if parentOf[tc.n] != tc.want {
+			t.Error(tc.what)
+		}
+	}
+}
+
+// TestResolveGeomTreeLastRoot: of two parent NULL nodes the last is the
+// root (MDL-NODE-003); a node declared after it whose parent is only under
+// the first root is not found by the game's lookup, and falls back to the
+// nearest node of that name.
+func TestResolveGeomTreeLastRoot(t *testing.T) {
+	first := nodeNamed("first", "NULL")
+	a := nodeNamed("a", "first")
+	second := nodeNamed("second", "NULL")
+	b := nodeNamed("b", "second")
+	late := nodeNamed("late", "a")
+	m := &Model{Nodes: []*Node{first, a, second, b, late}}
+	if m.RootNode() != second {
+		t.Fatalf("root = %v, want the last parent NULL node", m.RootNode())
+	}
+	parentOf, children := resolveGeomTree(m.Nodes)
+	if parentOf[b] != second || parentOf[a] != first || parentOf[late] != a {
+		t.Error("parents not resolved")
+	}
+	if got := depthFirst(second, children); len(got) != 2 {
+		t.Errorf("the root's tree holds %d nodes, want 2", len(got))
 	}
 }
 
@@ -326,4 +387,18 @@ func countNodesNamed(nodes []*Node, name string) int {
 		}
 	}
 	return n
+}
+
+// TestFoldKeyMatchesEqualFold: two names share a key exactly when
+// strings.EqualFold says they are equal, so the lookup's fast path finds every
+// node of a name.
+func TestFoldKeyMatchesEqualFold(t *testing.T) {
+	names := []string{"k", "K", "K", "s", "S", "ſ", "Head", "HEAD", "hand", "é", "É", "a\xffb", "a\xfeb"}
+	for _, a := range names {
+		for _, b := range names {
+			if (foldKey(a) == foldKey(b)) != strings.EqualFold(a, b) {
+				t.Errorf("%q, %q: keys equal %v, EqualFold %v", a, b, foldKey(a) == foldKey(b), strings.EqualFold(a, b))
+			}
+		}
+	}
 }

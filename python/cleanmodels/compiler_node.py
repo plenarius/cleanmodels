@@ -448,7 +448,9 @@ class NodeMixin:
             return None
         exp = self.last_expanded
         cons = dangly.constraints
-        if exp is None or len(exp.orig_vert) == len(cons):
+        # remapped whenever the merge reordered the vertices (MDL-MESH-013)
+        if exp is None or (len(exp.orig_vert) == len(cons)
+                           and all(o == i for i, o in enumerate(exp.orig_vert))):
             return cons
         nc = len(cons)
         return [cons[oi] if 0 <= oi < nc else 0.0 for oi in exp.orig_vert]

@@ -124,13 +124,39 @@ func TestDuplicateNodeNamesRepointsOnlyOwnChildren(t *testing.T) {
 	if second.Name == "bicep" {
 		t.Fatal("second occurrence should have been renamed")
 	}
-	// The first bicep's child must still point at the original name; only the
-	// renamed bicep's child follows it.
+	// Both children hang off the first bicep, as the game's compiler reads
+	// them (nwn-mdl-spec MDL-NODE-002: the first node of the name in tree
+	// order), so neither follows the rename.
 	if firstChild.Parent != "bicep" {
 		t.Errorf("child of the first bicep repointed to %q, want %q", firstChild.Parent, "bicep")
 	}
-	if secondChild.Parent != second.Name {
-		t.Errorf("child of the renamed bicep points at %q, want %q", secondChild.Parent, second.Name)
+	if secondChild.Parent != "bicep" {
+		t.Errorf("second child repointed to %q, want %q: it hangs off the first bicep", secondChild.Parent, "bicep")
+	}
+}
+
+// TestDuplicateNodeNamesRepointsNestedHook: the renamed copy's own children
+// follow it. A hook dummy declared under the second bicep before any child
+// names "bicep" again belongs to the second bicep only when that is the one
+// the game finds first; here the second bicep is under an earlier arm.
+func TestDuplicateNodeNamesRepointsNestedHook(t *testing.T) {
+	node := func(name, parent string) *mdl.Node {
+		return &mdl.Node{Name: name, Parent: parent, Scale: 1, Orientation: mdl.Vec4{W: 1}}
+	}
+	armL, armR := node("armL", "torso"), node("armR", "torso")
+	first := node("bicep", "armR")
+	second := node("bicep", "armL") // first in tree order: armL comes first
+	child := node("fore", "bicep")
+	model := &mdl.Model{
+		Name:  "rig",
+		Nodes: []*mdl.Node{node("rig", "NULL"), node("torso", "rig"), armL, armR, first, second, child},
+	}
+	checkDuplicateNodeNames(model, "rig.mdl", true)
+	if second.Name == "bicep" {
+		t.Fatal("second occurrence should have been renamed")
+	}
+	if child.Parent != second.Name {
+		t.Errorf("child points at %q, want %q: the game attaches it to the bicep under armL", child.Parent, second.Name)
 	}
 }
 

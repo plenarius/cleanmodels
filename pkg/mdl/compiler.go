@@ -402,6 +402,11 @@ func (c *compiler) writeModel() error {
 	}
 	if c.nodeCountOverride > 0 {
 		nodeCount = c.nodeCountOverride
+	} else if declared := c.declaredNodeCount(); declared > nodeCount {
+		// The game counts every node it numbered, a node left out of the
+		// tree included (nwn-mdl-spec MDL-NODE-013, MDL-NODE-003: zspec_root2
+		// writes 2 nodes and counts 4).
+		nodeCount = declared
 	}
 	c.core.patchU32(countNodesOff, uint32(nodeCount))
 
@@ -462,11 +467,20 @@ func (c *compiler) writeAnimation(anim *Animation) int32 {
 
 	var animNodeCount int32
 	var rootAnimOff int32
+	// The root is the last node with parent NULL, as in the geometry
+	// (MDL-NODE-003); failing that, the first with no parent.
 	var rootAnimNode *AnimNode
 	for i := range anim.Nodes {
+		if strings.EqualFold(anim.Nodes[i].Parent, "NULL") {
+			rootAnimNode = &anim.Nodes[i]
+		}
+	}
+	for i := range anim.Nodes {
+		if rootAnimNode != nil {
+			break
+		}
 		if isRootParent(anim.Nodes[i].Parent) {
 			rootAnimNode = &anim.Nodes[i]
-			break
 		}
 	}
 	if rootAnimNode == nil && len(anim.Nodes) > 0 {

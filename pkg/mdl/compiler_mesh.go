@@ -431,10 +431,11 @@ func (c *compiler) writeMeshFaceData(mesh *MeshData, exp *expandedMesh) {
 				Y: float32(e1.Z*e2.X) - float32(e1.X*e2.Z),
 				Z: float32(e1.X*e2.Y) - float32(e1.Y*e2.X),
 			}
-			length := float32(math.Sqrt(float64(float32(n.X*n.X) + float32(n.Y*n.Y) + float32(n.Z*n.Z))))
-			if length > 1e-10 {
-				faceNormal = Vec3{X: n.X / length, Y: n.Y / length, Z: n.Z / length}
-			}
+			// NormalOf (0x5b3b00) makes it unit with normalize (0x5b37d0),
+			// the same rule as Vector::Normalize: dividing by the length
+			// differs in the last bit (nwn-mdl-spec MDL-MESH-021, probe
+			// zspec_nrmcross); a zero cross product gives (1, 0, 0).
+			faceNormal = gameNormalize(n)
 			dist = -(float32(faceNormal.X*p1.X) + float32(faceNormal.Y*p1.Y) + float32(faceNormal.Z*p1.Z))
 		}
 		c.core.vec3(faceNormal)

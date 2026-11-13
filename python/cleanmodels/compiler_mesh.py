@@ -11,7 +11,7 @@ the MDX block in the order real binaries use.
 import math
 import struct
 
-from .compiler_normals import face_cross, generate_normals
+from .compiler_normals import face_cross, game_normalize, generate_normals
 from .compiler_tangents import render_hint_value, resolve_tangents, use_existing_tangents, zero_length_tangents
 from .f32 import f32, f32_bits
 from .gomath import go_lower, go_quote
@@ -533,10 +533,8 @@ class MeshMixin:
             a, b, c = face.verts[0], face.verts[1], face.verts[2]
             if 0 <= a < nv and 0 <= b < nv and 0 <= c < nv:
                 p1 = verts[a]
-                cx, cy, cz = face_cross(p1, verts[b], verts[c])
-                length = f32(math.sqrt(f32(f32(f32(cx * cx) + f32(cy * cy)) + f32(cz * cz))))
-                if length > 1e-10:
-                    nx, ny, nz = f32(cx / length), f32(cy / length), f32(cz / length)
+                # NormalOf: the game's normalize, as Vector::Normalize (MDL-MESH-021)
+                nx, ny, nz = game_normalize(face_cross(p1, verts[b], verts[c]))
                 dist = -f32(f32(f32(nx * p1[0]) + f32(ny * p1[1])) + f32(nz * p1[2]))
             adj = adjacency[k]
             fv = exp.face_verts[k] if exp.record_verts is None else exp.record_verts[k]

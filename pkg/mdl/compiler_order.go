@@ -233,6 +233,19 @@ func (c *compiler) declarationIndex() map[*Node]int32 {
 	return decl
 }
 
+// declaredNodeCount is the number of geometry node blocks: the count the
+// game's compiler gives a model with no supermodel, whose numbers they all
+// take whether or not they are written.
+func (c *compiler) declaredNodeCount() int32 {
+	var n int32
+	for _, node := range c.model.Nodes {
+		if node != nil {
+			n++
+		}
+	}
+	return n
+}
+
 // walkTree calls visit for each node of the geometry tree under root,
 // depth-first in child order (the order the file is written in), with the
 // node's parent and its position in that walk. A visited set guards against

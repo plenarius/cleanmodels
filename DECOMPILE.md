@@ -104,14 +104,20 @@ only when a compile of it rebuilds the stored tree.
   donor's equal-hint siblings (`trlk1_o08_01`, whose donor's stored hint was
   the only one above 0, came back with them reversed), which changes the
   draw order.
-- **Duplicate names.** A parent is found by name: the nearest node of that
-  name declared before it. A name used twice by nodes that are no parent
-  changes nothing. Where a name used twice is some node's parent (a child
-  dummy named like the root, `eld02_p18_01`), which node a child goes under
-  depends on the order: such a model gets no part-number order, but the
-  inverse sort, checked against the stored parents, still applies. The writer
-  finds each node's children the same way when names repeat, so it writes
-  that order back.
+- **Duplicate names.** The game finds a parent by name: the first node of
+  that name in a depth-first walk of the tree built so far (`FindMdlNode`,
+  nwn-mdl-spec MDL-NODE-002, probe `zspec_dupparent`). A name used twice by
+  nodes that are no parent changes nothing. Where a name used twice is some
+  node's parent (a child dummy named like the root, `eld02_p18_01`), which
+  node a child goes under depends on the order. The decompiler keeps the
+  binary's own tree (each node's stored parent, not its name) and takes the
+  part-number order or the inverse sort only when compiling it gives every
+  node its stored parent; the original declaration order (part numbers) does
+  for anything the game compiled. When no order does (a child under a copy
+  the walk never reaches first), the node is named in a warning: compiled
+  from the ASCII it moves to the other copy. The writer finds each node's
+  children the game's way when names repeat, and writes the nodes as
+  declared when a depth-first walk would move one.
 
 The decompiler is **non-fatal on errors**. Truncated data, out-of-bounds
 pointers, and unknown controller types are recorded as

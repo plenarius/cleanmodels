@@ -1,0 +1,23 @@
+# nwn-mdl-spec conformance probe zspec_root2 (CC0-1.0)
+# Two nodes with "parent NULL", each with a child: which tree is written.
+newmodel zspec_root2
+setsupermodel zspec_root2 NULL
+classification character
+beginmodelgeom zspec_root2
+node dummy zspec_root2
+  parent NULL
+endnode
+node dummy first_kid
+  parent zspec_root2
+  position 1 0 0
+endnode
+node dummy second
+  parent NULL
+  position 0 0 1
+endnode
+node dummy second_kid
+  parent second
+  position 2 0 0
+endnode
+endmodelgeom zspec_root2
+donemodel zspec_root2

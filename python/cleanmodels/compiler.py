@@ -306,11 +306,14 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
         if self.warn is None:
             return
         names = []
+        root = self.model.root_node()
         for n in self.model.nodes:
             if n is None or n in self.node_ids:
                 continue
             if n.parent == "":
                 reason = "no parent"
+            elif is_root_parent(n.parent) and root is not None:
+                reason = "an earlier root; the last one, %s, is the root" % go_quote(root.name)
             elif is_root_parent(n.parent):
                 reason = "a second root"
             elif self.geom_node_by_name(n.parent) is None:
@@ -392,6 +395,11 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
             core.patch_u32(root_ptr_off, root_off)
         if self.node_count_override > 0:
             node_count = self.node_count_override
+        else:
+            # every node the game numbered counts, written or not (MDL-NODE-013)
+            declared = sum(1 for n in m.nodes if n is not None)
+            if declared > node_count:
+                node_count = declared
         core.patch_u32(count_nodes_off, node_count)
 
         for i, anim in enumerate(anims):
@@ -424,11 +432,16 @@ class Compiler(NodeMixin, MeshMixin, ControllersMixin, SkinBindMixin):
 
         count = 0
         root_off = 0
+        # the last node with parent NULL, as in the geometry (MDL-NODE-003)
         root_an = None
         for an in anim.nodes:
-            if is_root_parent(an.parent):
+            if equal_fold(an.parent, "NULL"):
                 root_an = an
-                break
+        if root_an is None:
+            for an in anim.nodes:
+                if is_root_parent(an.parent):
+                    root_an = an
+                    break
         if root_an is None and anim.nodes:
             root_an = anim.nodes[0]
         self.anim_numbers = anim_node_numbers(anim.nodes, root_an, self.model.root_node(), self.children_of,

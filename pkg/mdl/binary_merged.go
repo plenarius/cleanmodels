@@ -216,7 +216,12 @@ func (d *decompiler) unmergeRenderLists() {
 			continue
 		}
 		if idx == nil {
-			idx = nodeIndex(d.model)
+			// The stored tree: by name, a node under the second of two
+			// nodes of one name would take the first one's transform.
+			idx = d.storedParent
+			if idx == nil {
+				idx = nodeIndex(d.model)
+			}
 		}
 		rec.wr = worldOf(r)
 		recs = append(recs, rec)

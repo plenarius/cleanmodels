@@ -92,10 +92,14 @@ class _Writer:
                 self.write_node(n)
             return
         # where a name is used twice, each node's children are those the
-        # compiler gives it (resolve_geom_tree: the nearest node of the name
-        # declared before)
+        # compiler gives it (resolve_geom_tree, MDL-NODE-002); when depth first
+        # would move a node, the nodes are written as declared
         if _has_duplicate_names(m.nodes):
-            by_node = resolve_geom_tree(m.nodes)[1]
+            parent_of, by_node = resolve_geom_tree(m.nodes)
+            if not _depth_first_keeps_parents(root, by_node, parent_of):
+                for n in m.nodes:
+                    self.write_node(n)
+                return
 
             def kids_of(n):
                 return by_node.get(n, ())
@@ -485,21 +489,35 @@ def _handle(key, i, zero):
 def _declared_in_number_order(nodes, root):
     """declaredInNumberOrder: the nodes as listed are a declaration order to
     keep (part numbers 0..n-1 in list order, root first, each parent listed
-    before its child, no name used twice a parent)."""
+    before its child)."""
     if len(nodes) < 2 or nodes[0] is not root:
         return False
     seen = set()
-    dup = False
     for i, n in enumerate(nodes):
         if n is None or n.part_number != i:
             return False
         if i > 0 and go_lower(n.parent) not in seen:
             return False
-        name = go_lower(n.name)
-        if name in seen:
-            dup = True
-        seen.add(name)
-    return not dup or not duplicate_is_parent(nodes)
+        seen.add(go_lower(n.name))
+    return True
+
+
+def _depth_first_keeps_parents(root, children, parent_of):
+    """depthFirstKeepsParents: the tree under root written depth first gives
+    every node back its parent when read the game's way."""
+    order, visited, stack = [], set(), [root]
+    while stack:
+        n = stack.pop()
+        if id(n) in visited:
+            continue
+        visited.add(id(n))
+        order.append(n)
+        kids = children.get(n, ())
+        for k in range(len(kids) - 1, -1, -1):
+            if id(kids[k]) not in visited:
+                stack.append(kids[k])
+    got = resolve_geom_tree(order)[0]
+    return all(got.get(n) is parent_of.get(n) for n in order)
 
 
 def _has_duplicate_names(nodes):
@@ -513,15 +531,3 @@ def _has_duplicate_names(nodes):
             return True
         seen.add(key)
     return False
-
-
-def duplicate_is_parent(nodes):
-    """duplicateIsParent: a name two nodes share is some node's parent."""
-    seen = set()
-    dup = set()
-    for n in nodes:
-        key = go_lower(n.name)
-        if key in seen:
-            dup.add(key)
-        seen.add(key)
-    return any(go_lower(n.parent) in dup for n in nodes)

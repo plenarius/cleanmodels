@@ -271,12 +271,20 @@ func (w *writer) writeNodeTree(m *Model) {
 	}
 	// Parent → children (case-folded parent key) for O(1) child lookup per
 	// node. Where a name is used twice, each node's children are those the
-	// compiler gives it: a parent is the nearest node of its name declared
-	// before (resolveGeomTree), so a node named like its ancestor keeps its
-	// own children.
+	// compiler gives it: a parent is the first node of its name in the tree
+	// built so far (resolveGeomTree, nwn-mdl-spec MDL-NODE-002). Written depth
+	// first, a child can come after another node of its parent's name that
+	// the lookup reaches first; then the nodes are written as declared, the
+	// order the lookup gave them their parents in.
 	var kids func(n *Node) []*Node
 	if hasDuplicateNames(m.Nodes) {
-		_, byNode := resolveGeomTree(m.Nodes)
+		parentOf, byNode := resolveGeomTree(m.Nodes)
+		if !depthFirstKeepsParents(root, byNode, parentOf) {
+			for _, n := range m.Nodes {
+				w.writeNode(n)
+			}
+			return
+		}
 		kids = func(n *Node) []*Node { return byNode[n] }
 	} else {
 		children := make(map[string][]*Node)
@@ -291,6 +299,20 @@ func (w *writer) writeNodeTree(m *Model) {
 	}
 	visited := make(map[*Node]bool)
 	w.writeNodeRecursive(root, visited, 0, kids)
+}
+
+// depthFirstKeepsParents reports whether the tree under root, written depth
+// first, gives every node back its parent in parentOf when it is read the
+// game's way (resolveGeomTree).
+func depthFirstKeepsParents(root *Node, children map[*Node][]*Node, parentOf map[*Node]*Node) bool {
+	order := depthFirst(root, children)
+	got, _ := resolveGeomTree(order)
+	for _, n := range order {
+		if got[n] != parentOf[n] {
+			return false
+		}
+	}
+	return true
 }
 
 // hasDuplicateNames reports whether two nodes share a name (case-folded).
@@ -311,10 +333,10 @@ func hasDuplicateNames(nodes []*Node) bool {
 
 // declaredInNumberOrder reports whether nodes, as listed, are a declaration
 // order the writer keeps instead of walking the tree: the part numbers are
-// 0..n-1 in list order, the root comes first, every other node's parent is
-// listed before it, and no name used twice is a parent (where one is, which
-// node a child goes under depends on the order). The decompiler lists a model
-// in that order when it is how the original was declared (binary_order.go);
+// 0..n-1 in list order, the root comes first, and every other node's parent
+// is listed before it. The decompiler lists a model in that order when it is
+// how the original was declared (binary_order.go), having checked that the
+// game's parent lookup gives back the stored tree from it (MDL-NODE-002);
 // the game's compiler numbers nodes in declaration order, so writing them
 // depth first would renumber them. A list in tree order writes the same
 // either way.
@@ -323,7 +345,6 @@ func declaredInNumberOrder(nodes []*Node, root *Node) bool {
 		return false
 	}
 	seen := make(map[string]bool, len(nodes))
-	dup := false
 	for i, n := range nodes {
 		if n == nil || n.PartNumber != int32(i) {
 			return false
@@ -331,33 +352,9 @@ func declaredInNumberOrder(nodes []*Node, root *Node) bool {
 		if i > 0 && !seen[strings.ToLower(n.Parent)] {
 			return false
 		}
-		name := strings.ToLower(n.Name)
-		if seen[name] {
-			dup = true
-		}
-		seen[name] = true
+		seen[strings.ToLower(n.Name)] = true
 	}
-	return !dup || !duplicateIsParent(nodes)
-}
-
-// duplicateIsParent reports whether a name two nodes share (case-folded) is
-// some node's parent.
-func duplicateIsParent(nodes []*Node) bool {
-	seen := make(map[string]bool, len(nodes))
-	dup := make(map[string]bool)
-	for _, n := range nodes {
-		key := strings.ToLower(n.Name)
-		if seen[key] {
-			dup[key] = true
-		}
-		seen[key] = true
-	}
-	for _, n := range nodes {
-		if dup[strings.ToLower(n.Parent)] {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func (w *writer) writeNodeRecursive(node *Node, visited map[*Node]bool, depth int, kids func(*Node) []*Node) {

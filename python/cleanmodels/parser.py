@@ -37,6 +37,34 @@ _FLOAT_KEY_TABLE = {n + "key": n for n in ANIM_FLOAT_KEYS}
 _COLOR_KEY_TABLE = {n + "key": n for n in ANIM_COLOR_KEYS}
 _FLOAT_CTRL = frozenset(ANIM_FLOAT_KEYS)
 _COLOR_CTRL = frozenset(ANIM_COLOR_KEYS)
+
+
+def _anim_key_list(an, kw):
+    """animKeyList: (controller, keys held before the list, drop(n)) for a key
+    list keyword, None otherwise (and for orientation/detonate bezier keys,
+    which are read as their linear lists)."""
+    if an is None or kw in ("orientationbezierkey", "detonatebezierkey"):
+        return None
+    if kw.endswith("bezierkey"):
+        base = kw[:-len("bezierkey")]
+    elif kw.endswith("key"):
+        base = kw[:-len("key")]
+    else:
+        return None
+    if base == "position":
+        def drop(n):
+            an.position_keys = an.position_keys[n:]
+        return base, len(an.position_keys), drop
+    if base == "orientation":
+        def drop(n):
+            an.orientation_keys = an.orientation_keys[n:]
+        return base, len(an.orientation_keys), drop
+    for table, ctrl in ((an.float_keys, _FLOAT_CTRL), (an.color_keys, _COLOR_CTRL)):
+        if base in ctrl:
+            def drop(n, table=table):
+                table[base] = table[base][n:]
+            return base, len(table.get(base, ())), drop
+    return None
 _EMITTER_FLOATS = frozenset(EMITTER_FLOAT_FIELDS)
 _EMITTER_COLORS = frozenset(EMITTER_COLOR_FIELDS)
 _LIGHT_DECLARED = frozenset(("color", "radius", "multiplier", "shadowradius", "verticaldisplacement"))
@@ -290,6 +318,10 @@ class _Parser:
         self.node_stack = []
         self.keyword = ""  # first word of the parse_parameter line, for _ListWarn
         self.alloc_bytes = 0
+        # keyListsOf / keyLists: the controllers a key list was read for in the
+        # current animation node (MDL-CTRL-037)
+        self.key_lists_of = None
+        self.key_lists = set()
 
     def errorf(self, msg):
         self.errors.append(ParseError(self.line, msg))
@@ -682,6 +714,41 @@ class _Parser:
             return False
         return len(tokens) >= 2
 
+    def vec3_list_again(self, tokens, mesh, attr):
+        """parseVec3ListAgain: a vertex list given again replaces the first
+        (MDL-ASCII-054)."""
+        out = getattr(mesh, attr)
+        if not out:
+            c = self.counted(tokens)
+            if c is not None:
+                self.read_vec_list(out, c, 3)
+            return
+        again = []
+        c = self.counted(tokens)
+        if c is not None:
+            self.read_vec_list(again, c, 3)
+        if again:
+            setattr(mesh, attr, again)
+            _ListWarn(self).add("given again in the node: the game keeps this list and drops the first "
+                                "(nwn-mdl-spec MDL-ASCII-054)")
+
+    def face_list_again(self, tokens, mesh, attr):
+        """parseFaceListAgain: a faces list given again is read and dropped
+        (MDL-ASCII-054)."""
+        out = getattr(mesh, attr)
+        if not out:
+            c = self.counted(tokens)
+            if c is not None:
+                self.read_face_list(out, c)
+            return
+        again = []
+        c = self.counted(tokens)
+        if c is not None:
+            self.read_face_list(again, c)
+        if again:
+            _ListWarn(self).add("given again in the node: the game keeps the first faces list and drops this one "
+                                "(nwn-mdl-spec MDL-ASCII-054)")
+
     def counted(self, tokens):
         """The count of a "keyword N" list line when it is a usable N > 0, else None."""
         if len(tokens) >= 2:
@@ -713,13 +780,9 @@ class _Parser:
         elif kw == "lightmapped":
             pass  # not read by the game (parser.go)
         elif kw in _MESH_VEC3_LISTS:
-            c = self.counted(tokens)
-            if c is not None:
-                self.read_vec_list(getattr(mesh, _MESH_VEC3_LISTS[kw]), c, 3)
+            self.vec3_list_again(tokens, mesh, _MESH_VEC3_LISTS[kw])
         elif kw == "faces":
-            c = self.counted(tokens)
-            if c is not None:
-                self.read_face_list(mesh.faces, c)
+            self.face_list_again(tokens, mesh, "faces")
         elif kw == "tangents":
             c = self.counted(tokens)
             if c is not None:
@@ -875,6 +938,32 @@ class _Parser:
 
     def parse_anim_node_param(self, kw, tokens):
         an = self.current_anim_node
+        slot = _anim_key_list(an, kw)
+        if slot is None:
+            self._parse_anim_node_param(an, kw, tokens)
+            return
+        base, n, drop = slot
+        if self.key_lists_of is not an:
+            self.key_lists_of, self.key_lists = an, set()
+        again = base in self.key_lists and n > 0
+        self.key_lists.add(base)
+        self._parse_anim_node_param(an, kw, tokens)
+        if again:
+            self.key_list_again(an, kw, base, n, drop)
+
+    def key_list_again(self, an, kw, base, n, drop):
+        """keyListAgain: a second key list of one controller replaces the first
+        (the game keeps both as two controllers, the second applied last)."""
+        drop(n)
+        if not kw.endswith("bezierkey"):
+            if base == "position":
+                an.position_bezier = False
+            else:
+                an.bezier.discard(base)
+        self.errorf("node %s: %s given again: the game keeps both lists as two controllers and the second one is "
+                    "applied last, so only the second is kept (nwn-mdl-spec MDL-CTRL-037)" % (quote(an.name), kw))
+
+    def _parse_anim_node_param(self, an, kw, tokens):
         if kw == "parent":
             if self.parent_line(tokens, an.name):
                 an.parent = tokens[1]
@@ -907,13 +996,10 @@ class _Parser:
             if len(tokens) >= 2:
                 if an.mesh is None:
                     an.mesh = MeshData()
-                c = self.count_param(tokens)
-                if c is not None:
-                    if kw == "faces":
-                        self.read_face_list(an.mesh.faces, c)
-                    else:
-                        lst = {"verts": an.mesh.verts, "tverts": an.mesh.tverts, "normals": an.mesh.normals}[kw]
-                        self.read_vec_list(lst, c, 3)
+                if kw == "faces":
+                    self.face_list_again(tokens, an.mesh, "faces")
+                else:
+                    self.vec3_list_again(tokens, an.mesh, kw)
         elif kw in _ANIM_MESH_FLOATS:
             if len(tokens) >= 2:
                 if an.anim_mesh is None:

@@ -293,6 +293,20 @@ the scanner was checked against glibc's `sscanf` on the test's 140,000 number
 strings and 37,000 more (the only difference: glibc rounds the subnormal
 `0x1.000001p-150` to 0).
 
+A `parent` names a node the game's way (nwn-mdl-spec MDL-NODE-002): the
+first node of that name in a depth-first walk of the tree built so far, not
+the nearest one declared before, so of two nodes of one name a child joins
+the one the walk reaches first (`resolveGeomTree`, `resolveAnimTree`). Of
+several `parent NULL` nodes the last is the root and the earlier trees are
+not written, though their nodes keep their numbers and count in the header
+(MDL-NODE-003); the compiler names them in a warning. A second `verts`,
+`tverts`, `tverts1`-`3`, `normals` or `colors` list in a node replaces the
+first, and a second `faces` list is dropped (MDL-ASCII-054). A second key
+list of one controller in an animation node replaces the first: the game
+writes both as two controllers and applies the second last (MDL-CTRL-037),
+and running one on from the other would make the times go backwards. Each
+of these is reported.
+
 A keyword a node's parser does not read is ignored, as the game ignores it,
 with a warning naming the keyword it resembles (`setfillumcolor`, NWmax's
 `ambient_only`; finding 48). `parent` is read only in lower case, as in the
@@ -413,6 +427,13 @@ different revision of the binary, so tangents on some corners differ in sign
 or handedness: 0.65% of corners across the 18 `tangent_pairs` models, and the
 worst model (`tin01_a02_03`) is 97.3% exact. The core-game tangent fixtures
 are exact.
+
+- **Skin vertices with more than four weights.** The game reads the first
+four `bone weight` pairs of a row and nothing after them, and does not
+renormalise (nwn-mdl-spec MDL-SKIN-002). cleanmodels keeps the four heaviest
+and renormalises them to 1 (v4, `pickTopBoneInfluences`), so such a vertex
+deforms differently from the game's compile of the same ASCII (Layonara's
+robes `p*_robe238`-`240`).
 
 ## Known gaps
 

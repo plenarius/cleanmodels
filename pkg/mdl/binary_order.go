@@ -1,6 +1,7 @@
 package mdl
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -33,10 +34,14 @@ import (
 //
 // A candidate is only taken when compiling it rebuilds the stored tree, node
 // for node (apart from the children of such an unsorted node, which come back
-// as a compile of the stored order sorts them), so a model the compiler cannot
-// rebuild keeps its stored order. The writer keeps a part-number order as
-// listed (declaredInNumberOrder) and writes any other depth first, which is
-// how the inverse sort lists it.
+// as a compile of the stored order sorts them), each parent found the game's
+// way (MDL-NODE-002: by name, the first of that name in the tree built so
+// far), so a model the compiler cannot rebuild keeps its stored order. A node
+// that order puts under another node of its parent's name is warned about
+// (warnLostParents). The writer keeps a part-number order as listed
+// (declaredInNumberOrder) and writes any other depth first, which is how the
+// inverse sort lists it, unless depth first would move a node of a name used
+// twice.
 //
 // The candidates are planned and checked with the transparencyhints the
 // ASCII carries. storedHints holds the stored hint of each mesh the decompile
@@ -48,17 +53,18 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	if len(stored) < 2 || slices.Contains(stored, nil) {
 		return
 	}
-	// The writer and the compiler find a parent by name: the nearest node of
-	// that name declared before it (resolveGeomTree). Where a duplicate name
-	// is some node's parent, which one that is depends on the declaration
-	// order, and the writer keeps a part-number order only when no duplicate
-	// is a parent (declaredInNumberOrder): such a model gets no part-number
-	// order, and the inverse sort is checked against the stored parents.
-	dupParent := duplicateIsParent(stored)
-	parentOf, children := resolveGeomTree(stored)
+	// The stored tree is the binary's own (m.storedParent): where a name is
+	// used twice, the parent's name does not say which node it is. The
+	// compiler finds a parent the game's way (resolveGeomTree, MDL-NODE-002:
+	// the first node of the name in the tree built so far), so which one a
+	// child joins depends on the declaration order; every candidate below is
+	// checked against the stored parents (compilesTo), and the writer keeps
+	// the order chosen.
+	parentOf, children := storedParentTree(stored, m.storedParent)
 	if !walksAs(stored, children, stored) {
 		return
 	}
+	defer warnLostParents(m, parentOf)
 	stale := func(n *Node) int32 {
 		if h, ok := storedHints[n]; ok {
 			return h
@@ -77,15 +83,13 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	// the new hints keeps them, a draw order change (trlk1_o08_01,
 	// tcn01_s05_01).
 	order := []*Node(nil)
-	if !dupParent {
-		if part := partNumberOrder(m); part != nil {
-			switch {
-			case compilesTo(part, stored, parentOf, children, nil, true, meshHint):
-				order = part
-			case len(storedHints) > 0 && compilesTo(part, stored, parentOf, children, nil, true, stale) &&
-				keepsOthers(part, stored, parentOf, storedHints):
-				order = part
-			}
+	if part := partNumberOrder(m); part != nil {
+		switch {
+		case compilesTo(part, stored, parentOf, children, nil, true, meshHint):
+			order = part
+		case len(storedHints) > 0 && compilesTo(part, stored, parentOf, children, nil, true, stale) &&
+			keepsOthers(part, stored, parentOf, storedHints):
+			order = part
 		}
 	}
 	if order == nil {
@@ -99,7 +103,7 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	// gives the stored tree up to the donors' new places (plc_tn1_44,
 	// ttu01_o14_01).
 	if order == nil && len(storedHints) > 0 && !compilesTo(stored, stored, parentOf, children, nil, false, meshHint) {
-		if part := partNumberOrder(m); !dupParent && part != nil && compilesTo(part, stored, parentOf, children, nil, true, stale) {
+		if part := partNumberOrder(m); part != nil && compilesTo(part, stored, parentOf, children, nil, true, stale) {
 			order = part
 		} else if inv, unsorted := inverseSortOrder(stored, children, stale); inv != nil && compilesTo(inv, stored, parentOf, children, unsorted, false, stale) {
 			order = inv
@@ -107,6 +111,56 @@ func declarationOrder(m *Model, storedHints map[*Node]int32) {
 	}
 	if order != nil {
 		m.Nodes = order
+	}
+}
+
+// storedParentTree returns the stored tree of a decompile listed in stored
+// (depth-first) order: each node's parent from storedParent, the binary's own
+// tree, and the children in stored order. Without storedParent (a model built
+// in a test), each node's parent is the nearest node of its parent's name
+// listed before it, which is right unless a name is used twice.
+func storedParentTree(stored []*Node, storedParent map[*Node]*Node) (map[*Node]*Node, map[*Node][]*Node) {
+	parentOf := make(map[*Node]*Node, len(stored))
+	children := make(map[*Node][]*Node, len(stored))
+	for i, n := range stored {
+		var p *Node
+		if storedParent != nil {
+			p = storedParent[n]
+		} else if !isRootParent(n.Parent) {
+			for j := i - 1; j >= 0; j-- {
+				if strings.EqualFold(stored[j].Name, n.Parent) {
+					p = stored[j]
+					break
+				}
+			}
+		}
+		if p != nil {
+			parentOf[n] = p
+			children[p] = append(children[p], n)
+		}
+	}
+	return parentOf, children
+}
+
+// warnLostParents warns about each node the game's parent lookup
+// (MDL-NODE-002) would put under another node of its parent's name when
+// m.Nodes is compiled as declared: no declaration order the decompile tried
+// gives it its stored parent, so the ASCII cannot hold the binary's tree.
+func warnLostParents(m *Model, storedParent map[*Node]*Node) {
+	got, _ := resolveGeomTree(m.Nodes)
+	for _, n := range m.Nodes {
+		want := storedParent[n]
+		if want == nil || got[n] == want {
+			continue
+		}
+		m.Warnings = append(m.Warnings, DecompileWarning{
+			Kind: WarnGeneral,
+			Node: n.Name,
+			Message: fmt.Sprintf("node %q: its parent %q is one of several nodes of that name, and the game's compiler "+
+				"attaches a child to the first of them in tree order (nwn-mdl-spec MDL-NODE-002), not the one the "+
+				"binary has it under; compiled from this ASCII, the node moves. Rename one of the parents to keep it",
+				n.Name, n.Parent),
+		})
 	}
 }
 
