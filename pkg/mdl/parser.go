@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -138,6 +139,12 @@ type parser struct {
 
 	allocBytes int64
 	maxAlloc   int64
+
+	// keyListsOf is the animation node keyLists belongs to: the controllers
+	// (by name) a key list has been read for in that node, so a second list
+	// of one controller replaces the first (nwn-mdl-spec MDL-CTRL-037).
+	keyListsOf *AnimNode
+	keyLists   map[string]bool
 }
 
 func (p *parser) errorf(format string, args ...interface{}) {
@@ -898,21 +905,21 @@ func (p *parser) parseMeshParam(mesh *MeshData, keyword string, tokens []string)
 			// vec3 form -- ignore, not stored as mesh property
 		}
 	case "verts":
-		p.parseCountedVec3(tokens, &mesh.Verts)
+		p.parseVec3ListAgain(tokens, &mesh.Verts)
 	case "faces":
-		p.parseCountedFaces(tokens, &mesh.Faces)
+		p.parseFaceListAgain(tokens, &mesh.Faces)
 	case "tverts":
-		p.parseCountedVec3(tokens, &mesh.TVerts)
+		p.parseVec3ListAgain(tokens, &mesh.TVerts)
 	case "tverts1":
-		p.parseCountedVec3(tokens, &mesh.TVerts1)
+		p.parseVec3ListAgain(tokens, &mesh.TVerts1)
 	case "tverts2":
-		p.parseCountedVec3(tokens, &mesh.TVerts2)
+		p.parseVec3ListAgain(tokens, &mesh.TVerts2)
 	case "tverts3":
-		p.parseCountedVec3(tokens, &mesh.TVerts3)
+		p.parseVec3ListAgain(tokens, &mesh.TVerts3)
 	case "colors":
-		p.parseCountedVec3(tokens, &mesh.Colors)
+		p.parseVec3ListAgain(tokens, &mesh.Colors)
 	case "normals":
-		p.parseCountedVec3(tokens, &mesh.Normals)
+		p.parseVec3ListAgain(tokens, &mesh.Normals)
 	case "tangents":
 		p.parseCountedVec4(tokens, &mesh.Tangents)
 	case "texindices0":
@@ -1393,6 +1400,58 @@ func (an *AnimNode) setBezier(name string) {
 	an.Bezier[name] = true
 }
 
+// animKeyList returns, for a key-list keyword (positionkey, alphabezierkey,
+// ...), the controller it fills, how many keys that controller holds before
+// the list is read, and a function that drops the first n of them; drop is
+// nil for any other keyword, and for orientationbezierkey and
+// detonatebezierkey, which are read as their linear lists (and counted then).
+func animKeyList(an *AnimNode, keyword string) (string, int, func(int)) {
+	if keyword == "orientationbezierkey" || keyword == "detonatebezierkey" {
+		return "", 0, nil
+	}
+	base, ok := strings.CutSuffix(keyword, "bezierkey")
+	if !ok {
+		if base, ok = strings.CutSuffix(keyword, "key"); !ok {
+			return "", 0, nil
+		}
+	}
+	switch base {
+	case "position":
+		return base, len(an.PositionKeys), func(n int) { an.PositionKeys = slices.Clone(an.PositionKeys[n:]) }
+	case "orientation":
+		return base, len(an.OrientationKeys), func(n int) { an.OrientationKeys = slices.Clone(an.OrientationKeys[n:]) }
+	case "detonate":
+		return base, len(an.DetonateKeys), func(n int) { an.DetonateKeys = slices.Clone(an.DetonateKeys[n:]) }
+	}
+	if getter, ok := animControllerFloatTable[base]; ok {
+		k := getter(an)
+		return base, len(*k), func(n int) { *k = slices.Clone((*k)[n:]) }
+	}
+	if getter, ok := animControllerColorTable[base]; ok {
+		k := getter(an)
+		return base, len(*k), func(n int) { *k = slices.Clone((*k)[n:]) }
+	}
+	return "", 0, nil
+}
+
+// keyListAgain is called after a second key list of one controller in an
+// animation node was read onto the end of the first, which held n keys. The
+// game writes the two lists as two controllers of that id and applies them in
+// order, so the second one's keys are what the node shows; one controller
+// with both lists' keys would run its times backwards. The second list is
+// kept, which nwn-mdl-spec MDL-CTRL-037 allows (MDL-CTRL-036).
+func (p *parser) keyListAgain(an *AnimNode, keyword, base string, n int, drop func(int)) {
+	drop(n)
+	if !strings.HasSuffix(keyword, "bezierkey") {
+		if base == "position" {
+			an.PositionBezier = false
+		} else {
+			delete(an.Bezier, base)
+		}
+	}
+	p.errorf("node %q: %s given again: the game keeps both lists as two controllers and the second one is applied last, so only the second is kept (nwn-mdl-spec MDL-CTRL-037)", an.Name, keyword)
+}
+
 // tryAnimKeyTable handles table-driven float/color key parsing, linear
 // (<name>key) and bezier (<name>bezierkey: value, handle in, handle out).
 // Returns true if the keyword was handled.
@@ -1462,6 +1521,16 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 	if an == nil {
 		return
 	}
+	if base, n, drop := animKeyList(an, keyword); drop != nil {
+		if p.keyListsOf != an {
+			p.keyListsOf, p.keyLists = an, make(map[string]bool)
+		}
+		again := p.keyLists[base] && n > 0
+		p.keyLists[base] = true
+		if again {
+			defer p.keyListAgain(an, keyword, base, n, drop)
+		}
+	}
 
 	switch keyword {
 	case "parent":
@@ -1527,40 +1596,28 @@ func (p *parser) parseAnimNodeParam(keyword string, tokens []string) {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, ok := p.countParam(tokens)
-			if ok {
-				p.readVec3List(&an.Mesh.Verts, int(count))
-			}
+			p.parseVec3ListAgain(tokens, &an.Mesh.Verts)
 		}
 	case "faces":
 		if len(tokens) >= 2 {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, ok := p.countParam(tokens)
-			if ok {
-				p.readFaceList(&an.Mesh.Faces, int(count))
-			}
+			p.parseFaceListAgain(tokens, &an.Mesh.Faces)
 		}
 	case "tverts":
 		if len(tokens) >= 2 {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, ok := p.countParam(tokens)
-			if ok {
-				p.readVec3List(&an.Mesh.TVerts, int(count))
-			}
+			p.parseVec3ListAgain(tokens, &an.Mesh.TVerts)
 		}
 	case "normals":
 		if len(tokens) >= 2 {
 			if an.Mesh == nil {
 				an.Mesh = NewMeshData()
 			}
-			count, ok := p.countParam(tokens)
-			if ok {
-				p.readVec3List(&an.Mesh.Normals, int(count))
-			}
+			p.parseVec3ListAgain(tokens, &an.Mesh.Normals)
 		}
 	case "sampleperiod":
 		if len(tokens) >= 2 {
@@ -1668,6 +1725,39 @@ func (p *parser) parseCountedVec3(tokens []string, out *[]Vec3) {
 		if count, ok := p.countParam(tokens); ok && count > 0 {
 			p.readVec3List(out, int(count))
 		}
+	}
+}
+
+// parseVec3ListAgain reads a vertex list into out. Given a second time in a
+// node, the list replaces the first, as the game's reader does: the second
+// verts and tverts lists are the ones compiled (nwn-mdl-spec MDL-ASCII-054,
+// probe zspec_twolists), and normals, colors and tverts1-3 go through the
+// same reader (Parse<Vector>).
+func (p *parser) parseVec3ListAgain(tokens []string, out *[]Vec3) {
+	if len(*out) == 0 {
+		p.parseCountedVec3(tokens, out)
+		return
+	}
+	var again []Vec3
+	p.parseCountedVec3(tokens, &again)
+	if len(again) > 0 {
+		*out = again
+		p.newListWarn().add("given again in the node: the game keeps this list and drops the first (nwn-mdl-spec MDL-ASCII-054)")
+	}
+}
+
+// parseFaceListAgain reads a face list into out. Given a second time in a
+// node, the list is read and dropped: the game compiles the first faces list
+// (nwn-mdl-spec MDL-ASCII-054, probe zspec_twolists).
+func (p *parser) parseFaceListAgain(tokens []string, out *[]Face) {
+	if len(*out) == 0 {
+		p.parseCountedFaces(tokens, out)
+		return
+	}
+	var again []Face
+	p.parseCountedFaces(tokens, &again)
+	if len(again) > 0 {
+		p.newListWarn().add("given again in the node: the game keeps the first faces list and drops this one (nwn-mdl-spec MDL-ASCII-054)")
 	}
 }
 
