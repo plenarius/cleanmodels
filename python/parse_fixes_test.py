@@ -56,6 +56,46 @@ donemodel sg
 """
 
 
+SPLIT_ANIM = """newmodel forge
+setsupermodel forge NULL
+classification CHARACTER
+beginmodelgeom forge
+  node dummy forge
+    parent NULL
+  endnode
+  node trimesh body
+    parent forge
+    bitmap forge_d
+    verts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    tverts 3
+      0 0 0
+      1 0 0
+      0 1 0
+    faces 1
+      0 1 2 1 0 1 2 0
+  endnode
+endmodelgeom forge
+%s
+  length 1
+  transtime 0.25
+  animroot forge
+  node dummy forge
+    parent NULL
+  endnode
+  node trimesh body
+    parent forge
+    positionkey
+      0 0 0 0
+    endlist
+  endnode
+doneanim default forge
+donemodel forge
+"""
+
+
 class ParseFixes(unittest.TestCase):
     def test_negative_smooth_group_written_signed(self):
         text = write(parse(SMOOTH_GROUP.encode("latin-1")).model)
@@ -76,6 +116,18 @@ class ParseFixes(unittest.TestCase):
         self.assertEqual(len(decompile(compile(m)).nodes), 2)
         self.assertIsNone(parse((SMOOTH_GROUP + "\n# comment\n\n").encode("latin-1")).model.after_done_model)
 
+
+    def test_newanim_without_model_name(self):
+        # TestParseNewAnimWithoutModelName: the game reads only the name.
+        want = compile(parse((SPLIT_ANIM % "newanim default forge").encode("latin-1")).model)
+        for header in ("newanim default", "newanim default\n forge"):
+            r = parse((SPLIT_ANIM % header).encode("latin-1"))
+            self.assertEqual(r.errors, [], header)
+            self.assertEqual(len(r.model.nodes), 2, header)
+            self.assertEqual([a.name for a in r.model.animations], ["default"], header)
+            self.assertEqual(compile(r.model), want, header)
+        r = parse((SPLIT_ANIM % "newanim").encode("latin-1"))
+        self.assertIn("requires an animation name", r.errors[0].message)
 
 if __name__ == "__main__":
     unittest.main()
