@@ -63,4 +63,15 @@ func TestRefuseDroppedRoots(t *testing.T) {
 	if err := refuseDroppedRoots(split, true); err != nil {
 		t.Errorf("--force refused: %v", err)
 	}
+	// A mesh whose parent no node is named, one with no parent line, and a
+	// dummy in no tree (which draws nothing, so it is not refused).
+	orphans := &mdl.Model{Nodes: []*mdl.Node{dummy("forge", "NULL"), mesh("body", "forge"),
+		mesh("lost", "nosuchnode"), mesh("stray", ""), dummy("hook", "nosuchnode")}}
+	err = refuseDroppedRoots(orphans, false)
+	if err == nil || !strings.Contains(err.Error(), "2 mesh(es) (lost, stray) are not connected to the root") || strings.Contains(err.Error(), "hook") {
+		t.Errorf("meshes in no tree not refused: %v", err)
+	}
+	if err := refuseDroppedRoots(orphans, true); err != nil {
+		t.Errorf("--force refused: %v", err)
+	}
 }

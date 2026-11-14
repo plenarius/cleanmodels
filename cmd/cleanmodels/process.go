@@ -945,7 +945,9 @@ func refuseLostTriangles(model *mdl.Model, force bool) error {
 // accident is not: Emonom's HD forge (plc_j01) put each animation's model name
 // on the line after "newanim <name>", every animation's nodes were read as a
 // second geometry tree, the last of them (no meshes) became the root, and the
-// compiled forge was empty and invisible in the game. force compiles it anyway;
+// compiled forge was empty and invisible in the game. A mesh in no tree at all
+// (no parent line, a parent no node is named, a cycle) is left out the same
+// way and refused too. force compiles it anyway;
 // the compile's warning still lists what is left out.
 func refuseDroppedRoots(model *mdl.Model, force bool) error {
 	if force {
@@ -968,25 +970,43 @@ func refuseDroppedRoots(model *mdl.Model, force bool) error {
 		}
 		return nil // a cycle: not under any root
 	}
-	var meshes []string
+	// meshes are those under an earlier root; unattached those in no tree at
+	// all (no parent line, a parent no node has, or a cycle), which the
+	// binary loses the same way.
+	var meshes, unattached []string
 	for _, n := range model.Nodes {
 		if n == nil || (n.Mesh == nil && n.AnimMesh == nil) {
 			continue
 		}
 		t := top(n)
-		if t != nil && t != root && strings.EqualFold(t.Parent, "NULL") {
+		switch {
+		case t == root:
+		case t != nil && strings.EqualFold(t.Parent, "NULL"):
 			meshes = append(meshes, n.Name)
+		default:
+			unattached = append(unattached, n.Name)
 		}
 	}
-	if len(meshes) == 0 {
+	if len(meshes) == 0 && len(unattached) == 0 {
 		return nil
 	}
-	shown, more := meshes, ""
-	if len(shown) > 5 {
-		shown, more = shown[:5], fmt.Sprintf(" and %d more", len(meshes)-5)
+	list := func(names []string) string {
+		shown, more := names, ""
+		if len(shown) > 5 {
+			shown, more = shown[:5], fmt.Sprintf(" and %d more", len(names)-5)
+		}
+		return strings.Join(shown, ", ") + more
 	}
-	return fmt.Errorf("not written: %d mesh(es) (%s%s) hang under an earlier root than the last one, %q, and the binary keeps only the last root's tree, so the output would lose them (a newanim line without its model name makes the animation's nodes a second geometry tree); pass --force to write it anyway",
-		len(meshes), strings.Join(shown, ", "), more, root.Name)
+	var why []string
+	if len(meshes) > 0 {
+		why = append(why, fmt.Sprintf("%d mesh(es) (%s) hang under an earlier root than the last one, %q, and the binary keeps only the last root's tree (a newanim line without its model name makes the animation's nodes a second geometry tree)",
+			len(meshes), list(meshes), root.Name))
+	}
+	if len(unattached) > 0 {
+		why = append(why, fmt.Sprintf("%d mesh(es) (%s) are not connected to the root %q: no parent line, a parent no node is named, or a cycle",
+			len(unattached), list(unattached), root.Name))
+	}
+	return fmt.Errorf("not written: %s, so the output would lose them; pass --force to write it anyway", strings.Join(why, "; "))
 }
 
 // runSingle processes a single file with the given options and output configuration.
