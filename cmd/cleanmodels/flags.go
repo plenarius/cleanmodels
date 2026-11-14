@@ -86,9 +86,11 @@ func (cf *commonFlags) apply(o *procOpts) {
 
 // registerKeepLost adds --force to the commands that write a model back
 // (repair, compile, check --fix): write it even when reading the binary lost
-// triangles (refuseLostTriangles). decompile has a --force of its own.
+// triangles (refuseLostTriangles), or, for compile, when meshes hang under an
+// earlier root than the last (refuseDroppedRoots). decompile has a --force of
+// its own.
 func registerKeepLost(fs *flag.FlagSet) *bool {
-	return fs.Bool("force", false, "write the model even when reading the binary lost triangles (a render list drawing triangles that are in no mesh's faces)")
+	return fs.Bool("force", false, "write the model even when reading the binary lost triangles (a render list drawing triangles that are in no mesh's faces), or when compiling would leave out meshes under an earlier root than the last")
 }
 
 // validateColorMode rejects values outside the documented set.

@@ -809,6 +809,13 @@ func processOne(path, outputPath string, o procOpts) (res Result, model *mdl.Mod
 		}
 	}
 
+	if model != nil && !o.dryRun && o.compile {
+		if err := refuseDroppedRoots(model, o.force); err != nil {
+			res.Error = err.Error()
+			return res, model, parseErrs, err
+		}
+	}
+
 	if model != nil && !o.dryRun {
 		switch {
 		case o.compile:
@@ -929,6 +936,57 @@ func refuseLostTriangles(model *mdl.Model, force bool) error {
 	}
 	return fmt.Errorf("not written: %d triangles the binary draws (render lists of %s) are in no mesh's faces, so the output would lose them; pass --force to write it anyway",
 		lost, strings.Join(nodes, ", "))
+}
+
+// refuseDroppedRoots stops a compile whose model has meshes under a root that
+// is not the last one. The game's compiler writes only the last root's tree
+// (nwn-mdl-spec MDL-NODE-003), and so does compile, so those meshes would be
+// missing from the binary. A model that means it is rare; one that gets it by
+// accident is not: Emonom's HD forge (plc_j01) put each animation's model name
+// on the line after "newanim <name>", every animation's nodes were read as a
+// second geometry tree, the last of them (no meshes) became the root, and the
+// compiled forge was empty and invisible in the game. force compiles it anyway;
+// the compile's warning still lists what is left out.
+func refuseDroppedRoots(model *mdl.Model, force bool) error {
+	if force {
+		return nil
+	}
+	root := model.RootNode()
+	if root == nil {
+		return nil
+	}
+	parentOf := mdl.ResolveNodeParents(model.Nodes)
+	top := func(n *mdl.Node) *mdl.Node {
+		seen := map[*mdl.Node]bool{}
+		for !seen[n] {
+			seen[n] = true
+			p, ok := parentOf[n]
+			if !ok {
+				return n
+			}
+			n = p
+		}
+		return nil // a cycle: not under any root
+	}
+	var meshes []string
+	for _, n := range model.Nodes {
+		if n == nil || (n.Mesh == nil && n.AnimMesh == nil) {
+			continue
+		}
+		t := top(n)
+		if t != nil && t != root && strings.EqualFold(t.Parent, "NULL") {
+			meshes = append(meshes, n.Name)
+		}
+	}
+	if len(meshes) == 0 {
+		return nil
+	}
+	shown, more := meshes, ""
+	if len(shown) > 5 {
+		shown, more = shown[:5], fmt.Sprintf(" and %d more", len(meshes)-5)
+	}
+	return fmt.Errorf("not written: %d mesh(es) (%s%s) hang under an earlier root than the last one, %q, and the binary keeps only the last root's tree, so the output would lose them (a newanim line without its model name makes the animation's nodes a second geometry tree); pass --force to write it anyway",
+		len(meshes), strings.Join(shown, ", "), more, root.Name)
 }
 
 // runSingle processes a single file with the given options and output configuration.

@@ -255,6 +255,7 @@ cleanmodels cache prune --unused-for 30d ~/.cache/cleanmodels
 | `--resource-dir PATH` | Extra folder, or `.hak`/`.erf`/`.mod` archive, searched for supermodels and for `.mtr` materials (repeatable). The input file's own folder is always searched. |
 | `--supermodel-dir DIR` | Extra folder searched for the model's supermodel (repeatable). |
 | `--cache-dir DIR` | Keep each compile in this folder (created if missing) and write it again, without compiling, while nothing it depends on has changed. See below. |
+| `--force` | Write the binary even when meshes hang under an earlier root than the last one. The game's compiler keeps only the last root's tree, so those meshes would be missing from the binary, and without `--force` such a model is not written. The usual cause is a `newanim <name>` line whose model name is on the next line: the animation's nodes are then read as a second geometry tree. Also writes a model whose binary lost triangles (see `repair`). |
 
 `compile` always needs an output. `cleanmodels compile plc_torch.mdl` on its own is refused, because it would replace your ASCII source with the binary. To compile in place, name the input twice, as in the first example above.
 
