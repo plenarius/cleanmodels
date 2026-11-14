@@ -36,3 +36,31 @@ func TestSubcommandFlagsRegister(t *testing.T) {
 		}()
 	}
 }
+
+func TestRefuseDroppedRoots(t *testing.T) {
+	mesh := func(name, parent string) *mdl.Node {
+		return &mdl.Node{Name: name, Parent: parent, Mesh: &mdl.MeshData{}}
+	}
+	dummy := func(name, parent string) *mdl.Node { return &mdl.Node{Name: name, Parent: parent} }
+
+	one := &mdl.Model{Nodes: []*mdl.Node{dummy("forge", "NULL"), mesh("body", "forge")}}
+	if err := refuseDroppedRoots(one, false); err != nil {
+		t.Errorf("one root refused: %v", err)
+	}
+	// An earlier root holding only dummies loses nothing that draws.
+	dummies := &mdl.Model{Nodes: []*mdl.Node{dummy("forge", "NULL"), dummy("hand", "forge"),
+		dummy("forge", "NULL"), mesh("body", "forge")}}
+	if err := refuseDroppedRoots(dummies, false); err != nil {
+		t.Errorf("earlier root of dummies refused: %v", err)
+	}
+	// plc_j01: the geometry, then an animation's nodes read as a second tree.
+	split := &mdl.Model{Nodes: []*mdl.Node{dummy("forge", "NULL"), mesh("body", "forge"), mesh("bellows", "body"),
+		dummy("forge", "NULL"), dummy("hand", "forge")}}
+	err := refuseDroppedRoots(split, false)
+	if err == nil || !strings.Contains(err.Error(), "2 mesh(es) (body, bellows)") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("meshes under an earlier root not refused: %v", err)
+	}
+	if err := refuseDroppedRoots(split, true); err != nil {
+		t.Errorf("--force refused: %v", err)
+	}
+}
