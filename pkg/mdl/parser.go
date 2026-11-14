@@ -626,9 +626,14 @@ func (p *parser) parseNodeEnd() {
 	}
 }
 
+// parseNewAnim starts an animation. The game reads only the name: the model
+// name after it is not needed (nwn-mdl-spec MDL-ASCII-060), and an NWMax
+// export that put it on the next line (Emonom's HD forge, plc_j01) shows its
+// animations in the game. Without a name the line is refused, and the block's
+// nodes are read as geometry.
 func (p *parser) parseNewAnim(tokens []string) {
-	if len(tokens) < 3 {
-		p.errorf("newanim requires name and model name")
+	if len(tokens) < 2 {
+		p.errorf("newanim requires an animation name")
 		return
 	}
 	p.currentAnim = &Animation{

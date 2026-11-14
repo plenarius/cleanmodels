@@ -530,8 +530,9 @@ class _Parser:
             elif kw == "endnode":
                 self.parse_node_end()
             elif kw == "newanim":
-                if len(tokens) < 3:
-                    self.errorf("newanim requires name and model name")
+                # The game reads only the name (parseNewAnim).
+                if len(tokens) < 2:
+                    self.errorf("newanim requires an animation name")
                 else:
                     self.current_anim = Animation(name=tokens[1])
                     if self.done_model:
