@@ -15,7 +15,7 @@ func TestWriteWalkmesh(t *testing.T) {
 		t.Fatalf("WriteWalkmesh = %v, %v", ok, err)
 	}
 	got := buf.String()
-	for _, want := range []string{"#MAXWALKMESH  ASCII\n", "beginwalkmeshgeom tile\n", "node aabb wok\n", "endwalkmeshgeom tile\n"} {
+	for _, want := range []string{"#MAXWALKMESH  ASCII\n", "beginwalkmeshgeom tile\n", "node aabb wok\n", "position 0 0 0\n", "endwalkmeshgeom tile\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("walkmesh lacks %q:\n%s", want, got)
 		}
