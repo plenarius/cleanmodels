@@ -86,6 +86,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: ubuntu-latest
+    # The signing secrets live in this environment, which only v* tags can use.
+    environment: release
     permissions:
       contents: write
     strategy:
@@ -149,6 +151,39 @@ jobs:
             -ldflags="-s -w -X main.version=${VERSION_TAG} -X main.clientKey=${CLIENT_KEY}" \
             -o "cleanmodels-${GOOS}-${GOARCH}${EXT}" \
             ./cmd/cleanmodels
+
+      - name: Sign and notarize (macOS)
+        # Developer ID signature plus Apple notarization, so Gatekeeper opens
+        # the binary without the "unidentified developer" block. rcodesign
+        # does both from Linux. A bare binary can't be stapled; Gatekeeper
+        # checks the notarization online on first run.
+        if: matrix.goos == 'darwin'
+        env:
+          P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          RCS=apple-codesign-0.29.0-x86_64-unknown-linux-musl
+          curl -fsSLO "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0/${RCS}.tar.gz"
+          echo "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002  ${RCS}.tar.gz" | sha256sum -c -
+          tar xzf "${RCS}.tar.gz"
+          S="$(mktemp -d)"
+          echo "$P12" | base64 -d > "$S/id.p12"
+          printf '%s' "$P12_PASSWORD" > "$S/pass"
+          printf '%s\n' "$NOTARY_KEY" > "$S/key.p8"
+          # Only the Developer ID certificate and its key: the .p12 also holds
+          # Apple's intermediate, which rcodesign would otherwise sign with.
+          openssl pkcs12 -legacy -in "$S/id.p12" -passin "file:$S/pass" -nocerts -nodes -out "$S/key.pem"
+          openssl pkcs12 -legacy -in "$S/id.p12" -passin "file:$S/pass" -clcerts -nokeys -out "$S/cert.pem"
+          "$RCS/rcodesign" encode-app-store-connect-api-key -o "$S/api.json" "$NOTARY_ISSUER" "$NOTARY_KEY_ID" "$S/key.p8"
+          BIN="cleanmodels-${{ matrix.goos }}-${{ matrix.goarch }}"
+          "$RCS/rcodesign" sign --pem-file "$S/key.pem" --pem-file "$S/cert.pem" --code-signature-flags runtime "$BIN"
+          zip -q notarize.zip "$BIN"
+          "$RCS/rcodesign" notary-submit --api-key-file "$S/api.json" --max-wait-seconds 3600 --wait notarize.zip
+          rm -rf "$S" notarize.zip "${RCS}" "${RCS}.tar.gz"
 
       - name: Compress
         run: |
