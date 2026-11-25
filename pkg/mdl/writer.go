@@ -73,7 +73,9 @@ func WriteWalkmesh(model *Model, w io.Writer) (bool, error) {
 	if n == nil {
 		return false, nil
 	}
-	wr := &writer{w: w, useTexture0: model.UseTexture0}
+	// The server centres a tile walkmesh (+5, +5) only when it has a
+	// position line, so the walkmesh keeps one even at zero.
+	wr := &writer{w: w, useTexture0: model.UseTexture0, alwaysPosition: true}
 	wr.printf("# Rewritten by cleanmodels\n")
 	wr.line("#MAXWALKMESH  ASCII")
 	wr.printf("beginwalkmeshgeom %s\n", model.Name)
@@ -86,6 +88,8 @@ type writer struct {
 	w           io.Writer
 	err         error
 	useTexture0 bool
+	// alwaysPosition writes a zero position too (walkmeshes).
+	alwaysPosition bool
 	// scratch is a reusable buffer for hot-path line building. Hot loops
 	// (vert/normal/face/key lists) format directly into scratch and emit
 	// each line with a single Write, avoiding fmt.Sprintf allocations.
@@ -387,7 +391,7 @@ func (w *writer) writeNode(n *Node) {
 	}
 
 	// Common node properties (only write non-default values)
-	if n.Position.X != 0 || n.Position.Y != 0 || n.Position.Z != 0 {
+	if w.alwaysPosition || n.Position.X != 0 || n.Position.Y != 0 || n.Position.Z != 0 {
 		w.indent(4, "position %s", fmtVec3(n.Position))
 	}
 	// Only 0 0 0 0 is left out: the game reads a zero axis as +X, so

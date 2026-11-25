@@ -49,6 +49,8 @@ def write_walkmesh(model):
     if node is None:
         return None
     w = _Writer(model.use_texture0)
+    # The server centres a tile walkmesh (+5, +5) only when it has a position line.
+    w.always_position = True
     w.raw("# Rewritten by cleanmodels\n")
     w.raw("#MAXWALKMESH  ASCII\n")
     w.raw("beginwalkmeshgeom %s\n" % model.name)
@@ -66,6 +68,7 @@ class _Writer:
     def __init__(self, use_texture0):
         self.out = []
         self.use_texture0 = use_texture0
+        self.always_position = False
 
     def raw(self, s):
         self.out.append(s)
@@ -132,7 +135,7 @@ class _Writer:
         ind(4, "parent %s" % (n.parent if n.parent != "" else "NULL"))
         if n.part_number != 0:
             ind(4, "#part-number %d" % n.part_number)
-        if n.position != VEC3_ZERO:
+        if self.always_position or n.position != VEC3_ZERO:
             ind(4, "position %s" % fmt_vec3(n.position))
         o = n.orientation
         if o[0] != 0 or o[1] != 0 or o[2] != 0 or o[3] != 0:
