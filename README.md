@@ -8,7 +8,7 @@ A complete rewrite of [OldManBeard's CleanModels](https://neverwintervault.org/p
 
 Model files that load in the toolset can still misbehave in game: broken walkmeshes, wrong tile fade data, corrupt texture coordinates, skin weights that do not add up, animations that overrun their length. cleanmodels is the quality gate between your 3D editor (NWMax, Blender) or an inherited hak and the game.
 
-- **Check** a model or a whole folder against 49 rules, with a plain-language explanation of each finding.
+- **Check** a model or a whole folder against 57 rules, with a plain-language explanation of each finding.
 - **Repair** what can be repaired automatically (walkmesh pivots, AABB trees, tilefade, degenerate faces and more). Originals are never touched when you write to a separate folder, and the output lists every change it made.
 - **Compile and decompile** between ASCII and binary MDL. The compiler follows the engine's own mesh pipeline and is checked against models the game's compiler produced.
 - **Script it**: `--json` for one structured result, `--json-lines` for a live event stream. Both are stable and complete, and they are what the GUI uses.
